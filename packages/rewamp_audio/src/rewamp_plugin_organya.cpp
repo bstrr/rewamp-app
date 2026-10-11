@@ -37,6 +37,7 @@ extern "C" {
 int  org_play(const char* fn, char* buf);
 int  org_gensamples(char* buf, int samplesNb);
 int  org_setPosition(int pos_ms);
+void org_set_speed(double speed);
 void org_setLoopNb(int loopNb);
 void org_init(void);
 int  org_getlength(void);
@@ -127,6 +128,10 @@ static RewampDecoder* org_open_impl(const char* path, RewampAudioFormat* outForm
     return dec;
 }
 
+/* Vitesse NATIVE (org_set_speed: un pas dure tempo/vitesse). Singleton comme
+ * le coeur. */
+static double s_speed = 1.0, s_frac = 0.0;
+
 static uint64_t org_read_impl(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || frameCount == 0) return 0;
     if (dec->totalFrames > 0) {
@@ -145,7 +150,11 @@ static uint64_t org_read_impl(RewampDecoder* dec, float* out, uint64_t frameCoun
         float* dst = out + written * 2;
         for (uint32_t i = 0; i < want * 2; i++) dst[i] = s_buf[i] * scale;
         written += want;
-        dec->framePos += want;
+        /* framePos est en temps du MORCEAU: il avance de vitesse × le rendu. */
+        s_frac += (double)want * s_speed;
+        uint64_t whole = (uint64_t)s_frac;
+        s_frac -= (double)whole;
+        dec->framePos += whole;
     }
     return written;
 }
@@ -154,6 +163,7 @@ static void org_seek_impl(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec) return;
     org_setPosition((int)(frameIndex * 1000ull / ORG_RATE));
     dec->framePos = frameIndex;
+    s_frac = 0.0;
 }
 
 static uint64_t org_length_impl(RewampDecoder* dec) {
@@ -168,8 +178,17 @@ static void org_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
     if (dec != NULL && mode == 2) dec->totalFrames = 0;
 }
 
+static int org_set_speed_impl(RewampDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    s_speed = speed;
+    org_set_speed(speed);
+    return 1;
+}
+
 static void org_close_impl(RewampDecoder* dec) {
     if (!dec) return;
+    org_set_speed(1.0);
+    s_speed = 1.0; s_frac = 0.0;
     unload_org();
     free(dec);
 }
@@ -183,6 +202,13 @@ static const RewampPluginVTable kOrgVTable = {
     org_length_impl,
     org_close_impl,
     org_configure_loop_fn,
+    0,                      /* supportsNativeFadeout */
+    NULL,                   /* engine_id */
+    NULL,                   /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,                   /* probe_path */
+    0,                      /* noPrefixProbe */
+    org_set_speed_impl,     /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_organya_plugin(void) { return &kOrgVTable; }

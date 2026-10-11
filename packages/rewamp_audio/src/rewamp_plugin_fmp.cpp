@@ -52,6 +52,7 @@ extern "C" {
 // shared with PMD, which is why neither plugin owns it. fmp_ppz8_maxChannel is
 // libfmpmini's own extern, the count of PPZ8 PCM channels the tune uses.
 extern "C" {
+extern double opna_timer_rewamp_speed;   // libopna/opnatimer.c
 extern char bundlePath[1024];
 extern int  fmp_ppz8_maxChannel;
 }
@@ -63,6 +64,8 @@ struct RewampDecoder {
     int      lastMuteMask;  // diff generic_mute_mask against this before re-masking
     int      muteDirty;     // force a re-mask (a reset cleared libopna's mask)
     char     path[4096];
+    double   speed;         // native playback speed, 0 = 1×
+    double   posFrac;
 };
 
 static const char* const kFmpExts[] = { "opi", "ovi", "ozi", NULL };
@@ -191,7 +194,11 @@ static uint64_t fmp_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         float* dst = out + written * 2;
         for (uint32_t i = 0; i < want * 2; i++) dst[i] = s_buf[i] * scale;
         written += want;
-        dec->framePos += want;
+        /* framePos est en temps du MORCEAU: vitesse × le rendu. */
+        dec->posFrac += (double)want * (dec->speed > 0.0 ? dec->speed : 1.0);
+        uint64_t whole = (uint64_t)dec->posFrac;
+        dec->posFrac -= (double)whole;
+        dec->framePos += whole;
     }
     return written;
 }
@@ -207,12 +214,25 @@ static void fmp_seek(RewampDecoder* dec, uint64_t frameIndex) {
         dec->muteDirty = 1;   // fmpmini_reset re-applied g.mutemask, but re-sync anyway
         dec->framePos = 0;
     }
+    /* L'avance rapide est en temps du MORCEAU: à 1×. */
+    opna_timer_rewamp_speed = 1.0;
     while (dec->framePos < frameIndex) {
         uint64_t skip = frameIndex - dec->framePos;
         if (skip > SOUND_BUFFER_SIZE_SAMPLE) skip = SOUND_BUFFER_SIZE_SAMPLE;
         fmpmini_render(NULL, (int)skip);
         dec->framePos += skip;
     }
+    opna_timer_rewamp_speed = dec->speed > 0.0 ? dec->speed : 1.0;
+    dec->posFrac = 0.0;
+}
+
+/* Vitesse NATIVE: les timers OPNA, qui appellent le pilote, avancent de
+ * vitesse × les échantillons rendus (libopna/opnatimer.c). */
+static int fmp_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    opna_timer_rewamp_speed = speed;
+    return 1;
 }
 
 static uint64_t fmp_length(RewampDecoder* dec) {
@@ -237,6 +257,7 @@ static void fmp_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
 static void fmp_close(RewampDecoder* dec) {
     if (!dec) return;
     fmpmini_close();
+    opna_timer_rewamp_speed = 1.0;
     free(dec);
 }
 
@@ -249,6 +270,13 @@ static const RewampPluginVTable kFmpVTable = {
     fmp_length,
     fmp_close,
     fmp_configure_loop_fn,
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    fmp_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_fmp_plugin(void) { return &kFmpVTable; }

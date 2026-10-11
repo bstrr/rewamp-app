@@ -142,6 +142,12 @@ static int64_t g_ring_warmup[SOUND_MAXVOICES_BUFFER_FX]; /* samples written so f
  * g_ring_write_size (worst case 4096 for libvgm/openmpt backends):
  *   735 + 1700 = 2435 < 4096 ✓  */
 #define TRIGGER_SEARCH_LEN      1700
+/* rewamp_channel_data.h et ce fichier doivent s'accorder (le stéréo dimensionne
+ * ses tampons d'après l'en-tête). Tableau de taille négative plutôt que
+ * _Static_assert: MSVC ne l'accepte en C qu'avec /std:c11. */
+typedef char rewamp_trigger_consts_agree[
+    (REWAMP_TRIGGER_TEMPLATE_SIZE == TRIGGER_TEMPLATE_SIZE &&
+     REWAMP_TRIGGER_SEARCH_LEN == TRIGGER_SEARCH_LEN) ? 1 : -1];
 
 /* Per-channel template (beginning of previous aligned frame, full-res). */
 static int8_t g_trigger_template[SOUND_MAXVOICES_BUFFER_FX][TRIGGER_TEMPLATE_SIZE];
@@ -159,9 +165,6 @@ static int8_t g_trigger_template[SOUND_MAXVOICES_BUFFER_FX][TRIGGER_TEMPLATE_SIZ
 static signed char g_voice_sink[RING_BUF_SAMPLES];
 
 static int8_t g_trigger_raw[RING_BUF_SAMPLES];
-static int8_t g_trigger_raw_ds[RING_BUF_SAMPLES / TRIGGER_DECIM]; /* decimated raw */
-static int    g_trigger_tmpl_zm[TRIGGER_TEMPLATE_SIZE];           /* zero-mean, full-res */
-static int    g_trigger_tmpl_ds_zm[TRIGGER_TEMPLATE_SIZE / TRIGGER_DECIM]; /* coarse */
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
 
@@ -427,26 +430,24 @@ int rewamp_channel_buf(int ch, int8_t* out, int outLen) {
     return ring_read(ch, out, outLen);
 }
 
-int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen) {
-    if (g_channel_count == 0)            /* waveform fallback: raw, no trigger */
-        return rewamp_waveform_read_i8(ch, out, outLen);
-    if (ch < 0 || ch >= g_channel_count || !m_voice_buff[ch]) return 0;
-    if (outLen <= 0) return 0;
-    if (channel_muted(ch)) { memset(out, 0, (size_t)outLen); return outLen; }
-
-    int totalNeeded = outLen + TRIGGER_SEARCH_LEN;
-    if (totalNeeded > RING_BUF_SAMPLES) totalNeeded = RING_BUF_SAMPLES;
-
-    int got = ring_read(ch, g_trigger_raw, totalNeeded);
-    if (got < outLen) {
-        memcpy(out, g_trigger_raw, (size_t)got);
-        return got;
-    }
-
+/* Alignement d'oscilloscope par CORRÉLATION (NCC) contre le début de l'image
+ * précédente: rend le décalage d dans [0, got − outLen] où la fenêtre
+ * raw[d .. d+outLen) ressemble le plus à `tmpl`, puis recopie dans `tmpl` le
+ * début de cette fenêtre (TRIGGER_TEMPLATE_SIZE octets). Passe grossière
+ * décimée, puis passe fine à pleine résolution.
+ *
+ * PARTAGÉ par l'oscilloscope par voies et par le stéréo
+ * (`rewamp_viz_render.cpp`, un gabarit par canal): les deux stabilisent de la
+ * même façon. Tampons de travail sur la PILE, pas en statiques: le widget Dart
+ * des voies l'appelle depuis le fil UI, le stéréo depuis le fil GL. */
+int rewamp_trigger_align_i8(const int8_t* raw, int got, int outLen, int8_t* tmpl) {
+    if (!raw || !tmpl || outLen <= 0 || got <= outLen) return 0;
+    if (got > RING_BUF_SAMPLES) got = RING_BUF_SAMPLES;
+    int8_t raw_ds[RING_BUF_SAMPLES / TRIGGER_DECIM];
+    int    tmpl_zm[TRIGGER_TEMPLATE_SIZE];
+    int    tmpl_ds_zm[TRIGGER_TEMPLATE_SIZE / TRIGGER_DECIM];
     int searchLen = got - outLen;
     int best_d    = 0;
-
-    int8_t* tmpl = g_trigger_template[ch];
     int Mf = (TRIGGER_TEMPLATE_SIZE < outLen) ? TRIGGER_TEMPLATE_SIZE : outLen;
 
     /* ── Build full-res zero-mean template ──────────────────────────────── */
@@ -456,7 +457,7 @@ int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen) {
     int tmpl_energy = 0;
     for (int i = 0; i < Mf; i++) {
         int v = (int)tmpl[i] - tmpl_mean;
-        g_trigger_tmpl_zm[i] = v;
+        tmpl_zm[i] = v;
         tmpl_energy += (v < 0 ? -v : v);
     }
 
@@ -474,8 +475,8 @@ int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen) {
         /* Decimate raw buffer. */
         for (int i = 0; i < raw_ds_len; i++) {
             int s = 0;
-            for (int j = 0; j < D; j++) s += (int)g_trigger_raw[i * D + j];
-            g_trigger_raw_ds[i] = (int8_t)(s / D);
+            for (int j = 0; j < D; j++) s += (int)raw[i * D + j];
+            raw_ds[i] = (int8_t)(s / D);
         }
 
         /* Decimate template + zero-mean. */
@@ -483,14 +484,14 @@ int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen) {
         for (int i = 0; i < Mc; i++) {
             int s = 0;
             for (int j = 0; j < D; j++) s += (int)tmpl[i * D + j];
-            g_trigger_tmpl_ds_zm[i] = s / D; /* store raw mean first */
-            tmpl_ds_sum += g_trigger_tmpl_ds_zm[i];
+            tmpl_ds_zm[i] = s / D; /* store raw mean first */
+            tmpl_ds_sum += tmpl_ds_zm[i];
         }
         int tmpl_ds_mean = tmpl_ds_sum / Mc;
         int tmpl_ds_energy = 0;
         for (int i = 0; i < Mc; i++) {
-            int v = g_trigger_tmpl_ds_zm[i] - tmpl_ds_mean;
-            g_trigger_tmpl_ds_zm[i] = v;
+            int v = tmpl_ds_zm[i] - tmpl_ds_mean;
+            tmpl_ds_zm[i] = v;
             tmpl_ds_energy += (v < 0 ? -v : v);
         }
 
@@ -500,16 +501,16 @@ int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen) {
              * Overflow: |(ds[d+i] - mean)| ≤ 127, product ≤ 16 129,
              * sum of Mc=128 ≤ 2 064 512 < INT_MAX. */
             int win_sum = 0;
-            for (int i = 0; i < Mc; i++) win_sum += (int)g_trigger_raw_ds[i];
+            for (int i = 0; i < Mc; i++) win_sum += (int)raw_ds[i];
 
             int best_corr = INT_MIN;
             for (int d = 0; d < sc; d++) {
                 int wm   = win_sum / Mc;
                 int corr = 0;
                 for (int i = 0; i < Mc; i++)
-                    corr += ((int)g_trigger_raw_ds[d + i] - wm) * g_trigger_tmpl_ds_zm[i];
+                    corr += ((int)raw_ds[d + i] - wm) * tmpl_ds_zm[i];
                 if (corr > best_corr) { best_corr = corr; best_dc = d; }
-                win_sum += (int)g_trigger_raw_ds[d + Mc] - (int)g_trigger_raw_ds[d];
+                win_sum += (int)raw_ds[d + Mc] - (int)raw_ds[d];
             }
         }
 
@@ -525,20 +526,56 @@ int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen) {
             /* Local mean over [d, d+Mf) via running sum (recompute per step —
              * window is tiny so no sliding needed). */
             int lsum = 0;
-            for (int i = 0; i < Mf; i++) lsum += (int)g_trigger_raw[d + i];
+            for (int i = 0; i < Mf; i++) lsum += (int)raw[d + i];
             int lmean = lsum / Mf;
             int corr  = 0;
             for (int i = 0; i < Mf; i++)
-                corr += ((int)g_trigger_raw[d + i] - lmean) * g_trigger_tmpl_zm[i];
+                corr += ((int)raw[d + i] - lmean) * tmpl_zm[i];
             if (corr > best_corr_f) { best_corr_f = corr; best_d = d; }
         }
     }
 
-    memcpy(out, g_trigger_raw + best_d, (size_t)outLen);
 
     /* Update template with the beginning of the newly aligned frame. */
     int tmplCopy = (Mf < outLen) ? Mf : outLen;
-    memcpy(tmpl, g_trigger_raw + best_d, (size_t)tmplCopy);
+    memcpy(tmpl, raw + best_d, (size_t)tmplCopy);
+    return best_d;
+}
+
+int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen) {
+    if (g_channel_count == 0) {
+        /* Repli L/R (moteur sans données par voie): lu sans alignement jusqu'au
+         * 2026-10-10, donc il tremblait comme l'oscilloscope stéréo d'alors.
+         * Même corrélation, un gabarit par canal (slots 0 et 1, libres ici). */
+        if (ch < 0 || ch > 1 || outLen <= 0) return 0;
+        int need = outLen + TRIGGER_SEARCH_LEN;
+        if (need > RING_BUF_SAMPLES) need = RING_BUF_SAMPLES;
+        const int got = rewamp_waveform_read_i8(ch, g_trigger_raw, need);
+        if (got <= outLen) {
+            memcpy(out, g_trigger_raw, (size_t)(got > 0 ? got : 0));
+            return got;
+        }
+        const int d = rewamp_trigger_align_i8(g_trigger_raw, got, outLen,
+                                              g_trigger_template[ch]);
+        memcpy(out, g_trigger_raw + d, (size_t)outLen);
+        return outLen;
+    }
+    if (ch < 0 || ch >= g_channel_count || !m_voice_buff[ch]) return 0;
+    if (outLen <= 0) return 0;
+    if (channel_muted(ch)) { memset(out, 0, (size_t)outLen); return outLen; }
+
+    int totalNeeded = outLen + TRIGGER_SEARCH_LEN;
+    if (totalNeeded > RING_BUF_SAMPLES) totalNeeded = RING_BUF_SAMPLES;
+
+    int got = ring_read(ch, g_trigger_raw, totalNeeded);
+    if (got < outLen) {
+        memcpy(out, g_trigger_raw, (size_t)got);
+        return got;
+    }
+
+    const int best_d = rewamp_trigger_align_i8(g_trigger_raw, got, outLen,
+                                               g_trigger_template[ch]);
+    memcpy(out, g_trigger_raw + best_d, (size_t)outLen);
 
     return outLen;
 }

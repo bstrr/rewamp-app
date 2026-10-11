@@ -33,6 +33,10 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <dirent.h>
+#include <vector>
+#include <algorithm>
+#include <strings.h>
 
 // kssplay.c's YOYOFR post-loop reads this global to know how many voice buffers
 // to filter — the plugin owns it (like openmpt/sid/v2m/hvl).
@@ -51,6 +55,8 @@ struct RewampDecoder {
     int16_t*  pcm;        // scratch interleaved int16 stereo
     uint64_t  pcmFrames;
     uint64_t  lengthFrames;
+    double    speed;      // vitesse native (0 = 1×)
+    double    baseVsync;  // fréquence VSYNC du fichier, relevée à la 1re vitesse
 };
 
 static const char* const kKssExts[] = {
@@ -157,7 +163,189 @@ static uint8_t* kss_read_all(const char* path, size_t* outSize) {
 // que l'octet BSAVE `0xFE`, que ces formats portent aussi. Tenter la conversion
 // en premier produirait du bruit sur un fichier d'une autre famille; l'inverse
 // ne peut rien casser, la détection de libkss étant fondée sur le contenu.
+// MoonBlaster (.MBM) — son kit d'échantillons MSX-AUDIO est un fichier
+// COMPAGNON, le `.MBK`, et libkss ne le trouve que si on lui dit où chercher.
+//
+// `KSS_mbm2kss` charge le kit par `load_mbk()`, qui essaie les quatre chemins
+// que pose `KSS_autoload_mbk` — et personne ne l'appelait: les chemins
+// restaient VIDES, donc AUCUN .MBM ne chargeait son kit (panneau ⓘ: « MBK is
+// not Found »), et tout ce qui passe par les échantillons ADPCM manquait.
+//
+// Le nom du kit est dans l'en-tête, 8 caractères à l'offset 0x140 — 0x141
+// pour un fichier sauvé en mode ÉDITION (`MoonBlaster (edit mode)` chez
+// modland), qui porte un octet 0xFF de plus en tête et décale tout
+// l'en-tête d'un octet (vérifié: ses 320 premiers octets sont ceux de la
+// version normale, décalés). On résout nous-mêmes, SANS casse (un rip porte
+// « SP_ACE.MBK » comme « sp_ace.mbk »): d'abord le kit du même nom que le
+// morceau, puis celui que l'en-tête nomme. Le chemin trouvé passe à libkss
+// comme quatrième candidat (`dummy_file`), et au panneau ⓘ.
+static bool kss_find_ci(const char* dir, const char* name, char* out, size_t cap) {
+    DIR* d = opendir(dir[0] ? dir : ".");
+    if (!d) return false;
+    bool found = false;
+    while (struct dirent* e = readdir(d)) {
+        if (strcasecmp(e->d_name, name) == 0) {
+            snprintf(out, cap, "%s", e->d_name);
+            found = true;
+            break;
+        }
+    }
+    closedir(d);
+    return found;
+}
+
+static void kss_prepare_mbk(const char* cleanPath) {
+    const char* dot = strrchr(cleanPath, '.');
+    if (!dot || strcasecmp(dot, ".mbm") != 0) return;
+
+    const char* slash = strrchr(cleanPath, '/');
+#ifdef _WIN32
+    const char* bslash = strrchr(cleanPath, '\\');
+    if (!slash || (bslash && bslash > slash)) slash = bslash;
+#endif
+    char dir[4096] = ".";
+    if (slash) {
+        size_t n = (size_t)(slash - cleanPath);
+        if (n >= sizeof(dir)) return;
+        memcpy(dir, cleanPath, n);
+        dir[n] = '\0';
+    }
+
+    unsigned char head[0x149] = {0};
+    FILE* f = fopen(cleanPath, "rb");
+    size_t got = 0;
+    if (f) { got = fread(head, 1, sizeof(head), f); fclose(f); }
+
+    // 1) Le kit du même nom que le morceau (« SONG.MBM » → « SONG.MBK »).
+    char want[512];
+    const char* base = slash ? slash + 1 : cleanPath;
+    snprintf(want, sizeof(want), "%.*sMBK", (int)(dot - base) + 1, base);
+    char kit[512] = {0};
+    bool ok = kss_find_ci(dir, want, kit, sizeof(kit));
+
+    // 2) Celui que l'en-tête nomme (0x140, ou 0x141 en mode édition).
+    if (!ok && got >= sizeof(head)) {
+        const size_t off = head[0] == 0xFF ? 0x141 : 0x140;
+        char name[16];
+        size_t i = 0;
+        for (; i < 8 && head[off + i] > ' ' && head[off + i] < 0x7F; i++)
+            name[i] = (char)head[off + i];
+        name[i] = '\0';
+        if (i > 0) {
+            snprintf(want, sizeof(want), "%s.MBK", name);
+            ok = kss_find_ci(dir, want, kit, sizeof(kit));
+        }
+    }
+
+    // Toujours appelé pour un .MBM: les chemins de libkss sont GLOBAUX, et ceux
+    // du morceau précédent feraient sinon charger son kit à lui.
+    KSS_autoload_mbk(cleanPath, dir, ok ? kit : NULL);
+    if (ok) {
+        char full[4096];
+        snprintf(full, sizeof(full), "%s/%s", dir, kit);
+        rewamp_loaded_files_add(full);
+    }
+}
+
+// MoonBlaster sauvé en mode ÉDITION (modland « MoonBlaster (edit mode) », 129
+// fichiers) → mode UTILISATEUR, en mémoire. Le replayer MBR143 que libkss
+// embarque ne lit que le second: un fichier édition ne produisait aucune note,
+// ou jouait faux (« ACE IN SPACE LEVEL 1 »).
+//
+// Les MOTIFS sont compactés de la même façon dans les deux modes; seule
+// l'ENVELOPPE diffère (format: msx.org « MBM file format », et le lecteur
+// RoboPlay `players/src/mbm.c`, qui charge les deux modes). Offsets relatifs à
+// l'en-tête, c'est-à-dire APRÈS l'octet 0xFF de tête du mode édition:
+//   0x000  longueur du morceau `sl` (+ en-tête, identique dans les deux modes)
+//   0x178  positions — UTILISATEUR: sl+1 octets; ÉDITION: 201 octets fixes
+//   puis   pointeurs u16 LE vers les motifs, base = début de l'en-tête —
+//          UTILISATEUR: un par motif UTILISÉ (`hp` = plus haut numéro de la
+//          table des positions); ÉDITION: tous les motifs (76), dès 0x241
+//   puis   les motifs; l'UTILISATEUR finit par un 0x00.
+// Conversion: en-tête + positions tronquées à sl+1, puis les `hp` premiers
+// motifs recopiés à la suite avec une table de pointeurs refaite. La fin d'un
+// motif est le DÉBUT du motif suivant en mémoire (pointeurs triés), pas
+// celui du numéro suivant. Vérifié: depuis « level 1 BIG BOSS » édition, la
+// sortie égale la version utilisateur de modland octet pour octet, au nom du
+// kit près (les deux fichiers de modland n'ont pas le même).
+static uint8_t* kss_mbm_edit_to_user(const uint8_t* raw, size_t rawSize,
+                                     size_t* outSize) {
+    if (rawSize < 1 + 0x241 + 2 || raw[0] != 0xFF) return NULL;
+    const uint8_t* e = raw + 1;
+    const size_t n = rawSize - 1;
+    auto u16 = [&](size_t o) -> size_t { return (size_t)e[o] | ((size_t)e[o + 1] << 8); };
+
+    const size_t sl = e[0];
+    if (0x178 + sl + 1 > 0x241) return NULL;          // dépasserait les 201 cases
+    size_t hp = 0;
+    for (size_t i = 0; i <= sl; i++) if (e[0x178 + i] > hp) hp = e[0x178 + i];
+    if (hp == 0) return NULL;
+
+    const size_t p0 = u16(0x241);                     // 1er motif = fin de la table
+    if (p0 <= 0x241 || p0 > n || ((p0 - 0x241) & 1)) return NULL;
+    const size_t np = (p0 - 0x241) / 2;               // 76 dans les fichiers vus
+    if (hp > np) return NULL;
+    std::vector<size_t> ptr(np), sorted;
+    for (size_t i = 0; i < np; i++) {
+        ptr[i] = u16(0x241 + 2 * i);
+        if (ptr[i] < p0 || ptr[i] > n) return NULL;
+    }
+    sorted = ptr;
+    std::sort(sorted.begin(), sorted.end());
+
+    const size_t head = 0x178 + sl + 1;
+    std::vector<uint8_t> out(e, e + head);
+    const size_t base = head + 2 * hp;
+    std::vector<uint8_t> data;
+    for (size_t i = 0; i < hp; i++) {
+        const size_t start = ptr[i];
+        auto nx = std::upper_bound(sorted.begin(), sorted.end(), start);
+        const size_t end = nx != sorted.end() ? *nx : n;
+        const size_t at = base + data.size();
+        if (at > 0xFFFF) return NULL;
+        out.push_back((uint8_t)(at & 0xFF));
+        out.push_back((uint8_t)(at >> 8));
+        data.insert(data.end(), e + start, e + end);
+    }
+    out.insert(out.end(), data.begin(), data.end());
+    out.push_back(0x00);
+
+    uint8_t* buf = (uint8_t*)malloc(out.size());
+    if (!buf) return NULL;
+    memcpy(buf, out.data(), out.size());
+    *outSize = out.size();
+    return buf;
+}
+
+// Un .MBM en mode édition, converti puis remis à libkss par la même porte que
+// KSS_load_file (KSS_bin2kss, l'extension du chemin fait le type). NULL pour
+// tout autre fichier.
+static KSS* kss_load_mbm_edit(const char* cleanPath) {
+    const char* dot = strrchr(cleanPath, '.');
+    if (!dot || strcasecmp(dot, ".mbm") != 0) return NULL;
+    FILE* f = fopen(cleanPath, "rb");
+    if (!f) return NULL;
+    int first = fgetc(f);
+    if (first != 0xFF) { fclose(f); return NULL; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size <= 0 || size > 0x10000) { fclose(f); return NULL; }
+    std::vector<uint8_t> raw((size_t)size);
+    size_t got = fread(raw.data(), 1, raw.size(), f);
+    fclose(f);
+    if (got != raw.size()) return NULL;
+    size_t userSize = 0;
+    uint8_t* user = kss_mbm_edit_to_user(raw.data(), raw.size(), &userSize);
+    if (!user) return NULL;
+    KSS* kss = KSS_bin2kss(user, (uint32_t)userSize, cleanPath);
+    free(user);
+    return kss;
+}
+
 static KSS* kss_load_any(const char* cleanPath) {
+    kss_prepare_mbk(cleanPath);
+    if (KSS* edit = kss_load_mbm_edit(cleanPath)) return edit;
     // 1) Ce que libkss reconnaît lui-même, y compris sous l'extension .mus.
     if (KSS* direct = KSS_load_file((char*)cleanPath)) return direct;
 
@@ -332,11 +520,30 @@ static uint64_t kss_read_frames(RewampDecoder* dec, float* out, uint64_t frameCo
     return frameCount;   // KSS loops; the host enforces length/fade
 }
 
+/* Vitesse NATIVE: la fréquence VSYNC qui appelle la routine de jeu, × vitesse
+ * (VM_set_clock par KSSPLAY_set_speed); le Z80 et les puces gardent leur
+ * horloge — tempo changé, hauteur conservée. KSSPLAY_reset garde une
+ * vsync_freq non nulle: la vitesse survit au seek. */
+static double kss_base_vsync(RewampDecoder* dec) {
+    if (dec->baseVsync <= 0.0) dec->baseVsync = dec->play->vsync_freq;
+    return dec->baseVsync;
+}
+static int kss_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->play || speed < 0.2 || speed > 3.0) return 0;
+    const double base = kss_base_vsync(dec);
+    if (base <= 0.0) return 0;
+    dec->speed = speed;
+    dec->play->vsync_freq = base * speed;
+    KSSPLAY_set_speed(dec->play, dec->play->cpu_speed);
+    return 1;
+}
+
 static void kss_seek_frames(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->play) return;
     // No random seek: reset and render-skip to the target (Modizer approach).
+    // Cible en temps du MORCEAU ⇒ ÷ vitesse en trames de sortie.
     KSSPLAY_reset(dec->play, (uint32_t)dec->track, 0);
-    uint64_t remaining = frameIndex;
+    uint64_t remaining = (uint64_t)((double)frameIndex / (dec->speed > 0.0 ? dec->speed : 1.0) + 0.5);
     while (remaining > 0) {
         uint32_t chunk = remaining > 4096 ? 4096 : (uint32_t)remaining;
         KSSPLAY_calc_silent(dec->play, chunk);
@@ -414,6 +621,10 @@ static const RewampPluginVTable kKssVTable = {
     kss_seek_frames,
     kss_length_frames,
     kss_close,
+    nullptr, 0, nullptr, nullptr,              /* configure_loop … param_changed */
+    nullptr, nullptr, nullptr, nullptr, nullptr, /* pattern view */
+    nullptr, 0,                                /* probe_path, noPrefixProbe */
+    kss_set_speed,                             /* vitesse native (VSYNC) */
 };
 
 extern "C" const RewampPluginVTable* rewamp_kss_plugin(void) { return &kKssVTable; }

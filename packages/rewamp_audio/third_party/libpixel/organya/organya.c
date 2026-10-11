@@ -184,6 +184,11 @@ static int set_step(unsigned int new_step)
 }
 
 //yoyofr
+/* rewamp: vitesse de lecture NATIVE — un pas dure tempo/vitesse ms, les voix
+ * gardent leur fréquence, donc la hauteur ne bouge pas. 1 = la durée amont. */
+static double org_speed = 1.0;
+void org_set_speed(double speed) { org_speed = speed > 0.0 ? speed : 1.0; }
+
 int org_setPosition(int pos_ms) {
     if(!org.loaded || (org.tempo==0) )
         return -1000;
@@ -767,7 +772,8 @@ static int get_samples(char *buf,int samplesNb)
 					org.chan[i].pos -= org.chan[i].length;
 			}
 			org.tick++;
-			if(org.tick >= (unsigned)org.tempo*SAMPLERATE/1000)
+			if(org.tick >= (org_speed == 1.0 ? (unsigned)org.tempo*SAMPLERATE/1000
+			                                 : (unsigned)((double)org.tempo*SAMPLERATE/1000/org_speed)))
 			{
 				org.tick = 0;
 				if(set_step(org.step+1))

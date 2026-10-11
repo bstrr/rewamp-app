@@ -7526,6 +7526,15 @@ class LocalDb extends ChangeNotifier {
         songend:  r['songend'] as String?,
       ));
     }
+    // Un « pas dans la songdb » PÉRIME (kUadeEmptyCacheTtl): rendre null fait
+    // redemander le serveur, et la réponse suivante remplace la ligne.
+    if (!uadeCacheEntryUsable(
+          subsongCount:   (head['subsong_count'] as num?)?.toInt() ?? 0,
+          storedSubsongs: subs.length,
+          fetchedAtSec:   (head['fetched_at'] as num?)?.toInt() ?? 0,
+          nowSec:         DateTime.now().millisecondsSinceEpoch ~/ 1000)) {
+      return null;
+    }
     return UadeInfo(
       minSubsong:   (head['min_subsong'] as num?)?.toInt() ?? 1,
       subsongCount: (head['subsong_count'] as num?)?.toInt() ?? 0,

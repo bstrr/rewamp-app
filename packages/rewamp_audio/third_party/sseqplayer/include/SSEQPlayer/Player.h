@@ -21,6 +21,10 @@ struct Player
 {
 	uint8_t prio, nTracks;
 	uint16_t tempo, tempoCount, tempoRate /* 8.8 fixed point */;
+	// rewamp: native playback speed — the tempo counter advances speed
+	// times faster; the 192 Hz tick (envelopes, LFO, sweeps) keeps its rate,
+	// so pitch and note shapes do not move. 1 = upstream, bit for bit.
+	double rewampSpeed = 1.0, rewampTempoFrac = 0.0;
 	int16_t masterVol, sseqVol;
 
 	const SSEQ *sseq;

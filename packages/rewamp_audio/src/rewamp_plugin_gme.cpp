@@ -35,7 +35,27 @@ struct RewampDecoder {
     Music_Emu* emu;
     int        subsong;
     int64_t    lastMuteMask;   // applied generic_mute_mask snapshot
+    // Vitesse native (gme_set_tempo). gme compte TOUT en temps de SORTIE —
+    // sa fin (gme_set_fade_msecs) comme son seek (gme_seek_samples): le
+    // greffon tient donc le temps du MORCEAU et repose la fin à chaque
+    // changement de vitesse.
+    double     speed;
+    double     songMs;         // temps du morceau rendu
+    int        fadeArmed;      // une fin a été posée à l'ouverture
+    double     fadeStartSongMs, fadeLenSongMs;
 };
+
+/* Pose la fin (début du fondu + durée) en temps de SORTIE d'après sa place
+ * dans le MORCEAU et la vitesse en vigueur. */
+static void gme_rearm_fade(RewampDecoder* dec) {
+    if (!dec->fadeArmed || dec->speed <= 0.0) return;
+    const double nowOut = (double)gme_tell(dec->emu);
+    double startOut = nowOut + (dec->fadeStartSongMs - dec->songMs) / dec->speed;
+    if (startOut < nowOut) startOut = nowOut;
+    double lenOut = dec->fadeLenSongMs / dec->speed;
+    if (lenOut < 1.0) lenOut = 1.0;
+    gme_set_fade_msecs(dec->emu, (int)llround(startOut), (int)llround(lenOut));
+}
 
 static const char* const kGmeExts[] = {
     "nsf", "nsfe",  // NES
@@ -157,6 +177,8 @@ static RewampDecoder* gme_open_fn(const char* path, RewampAudioFormat* outFormat
 
     if (gme_start_track(emu, subsong)) { gme_delete(emu); return NULL; }
 
+    int fadeArmed = 0;
+    double fadeStartMs = 0, fadeLenMs = 0;
     gme_info_t* info = NULL;
     if (!gme_track_info(emu, &info, subsong) && info) {
         if (g_force_loop_mode == 2) {
@@ -173,10 +195,13 @@ static RewampDecoder* gme_open_fn(const char* path, RewampAudioFormat* outFormat
              * n'y en a pas). Sans crossfade: le fondu gme historique. */
             int fade_ms = (info->fade_length > 0) ? info->fade_length
                                                   : GME_FADE_MS;
-            if (g_crossfade_seconds > 0.0)
-                gme_set_fade_msecs(emu, info->play_length + fade_ms, 1);
-            else
-                gme_set_fade_msecs(emu, info->play_length, fade_ms);
+            if (g_crossfade_seconds > 0.0) {
+                fadeStartMs = info->play_length + fade_ms; fadeLenMs = 1;
+            } else {
+                fadeStartMs = info->play_length;           fadeLenMs = fade_ms;
+            }
+            gme_set_fade_msecs(emu, (int)fadeStartMs, (int)fadeLenMs);
+            fadeArmed = 1;
         }
         // Info panel: everything libgme knows about this track.
         struct { const char* v; const char* label; } kFields[] = {
@@ -198,6 +223,11 @@ static RewampDecoder* gme_open_fn(const char* path, RewampAudioFormat* outFormat
     if (!dec) { gme_delete(emu); return NULL; }
     dec->emu     = emu;
     dec->subsong = subsong;
+    dec->speed   = 1.0;
+    dec->songMs  = 0.0;
+    dec->fadeArmed       = fadeArmed;
+    dec->fadeStartSongMs = fadeStartMs;
+    dec->fadeLenSongMs   = fadeLenMs;
 
     if (outFormat) {
         outFormat->channels   = 2;
@@ -229,13 +259,29 @@ static uint64_t gme_read_fn(RewampDecoder* dec, float* out, uint64_t frameCount)
     for (int i = 0; i < sampleCount; i++)
         out[i] = buf[i] * scale;
     free(buf);
+    dec->songMs += (double)frameCount * 1000.0 / GME_SAMPLE_RATE * dec->speed;
     return frameCount;
 }
 
 static void gme_seek_fn(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->emu) return;
     // gme_seek_samples counts individual int16 values; stereo = 2 per frame.
-    gme_seek_samples(dec->emu, (int)(frameIndex * 2));
+    // Il saute des échantillons de SORTIE au tempo courant: une cible en temps
+    // du MORCEAU se divise par la vitesse.
+    const double outFrames = (double)frameIndex / (dec->speed > 0.0 ? dec->speed : 1.0);
+    gme_seek_samples(dec->emu, (int)llround(outFrames) * 2);
+    dec->songMs = (double)frameIndex * 1000.0 / GME_SAMPLE_RATE;
+    gme_rearm_fade(dec);
+}
+
+/* Vitesse NATIVE: gme_set_tempo — l'émulation tourne plus vite, la hauteur des
+ * puces ne bouge pas. Plage de gme: 0,02 à 4. */
+static int gme_set_speed_fn(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->emu || speed < 0.2 || speed > 3.0) return 0;
+    gme_set_tempo(dec->emu, speed);
+    dec->speed = speed;
+    gme_rearm_fade(dec);
+    return 1;
 }
 
 static uint64_t gme_length_fn(RewampDecoder* dec) {
@@ -277,6 +323,10 @@ static const RewampPluginVTable kGmeVTable = {
     0,                  /* supportsNativeFadeout */
     "gme",              /* engine_id */
     gme_param_changed,  /* live settings */
+    nullptr, nullptr, nullptr, nullptr, nullptr, /* pattern view */
+    nullptr,            /* probe_path */
+    0,                  /* noPrefixProbe */
+    gme_set_speed_fn,   /* vitesse native (tempo) */
 };
 
 extern "C" const RewampPluginVTable* rewamp_gme_plugin(void) { return &kGmeVTable; }

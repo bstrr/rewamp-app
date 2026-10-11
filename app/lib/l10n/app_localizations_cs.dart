@@ -852,6 +852,17 @@ class AppLocalizationsCs extends AppLocalizations {
       'Cave Story .org — vlastní engine autora Pixel';
 
   @override
+  String get engineDescNtgs =>
+      'Apple IIGS (Ensoniq 5503) — moduly NoiseTracker GS';
+
+  @override
+  String get engineDescRonKlaren => 'Amiga — moduly Ron Klaren (.rk)';
+
+  @override
+  String get engineDescSamCop =>
+      'SAM Coupé — programy Z80 řídící čip SAA1099 (.cop)';
+
+  @override
   String get engineDescPxtone => 'Pixelův tracker — .ptcop/.pttune';
 
   @override
@@ -1390,6 +1401,18 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get voicesTitle => 'Hlasy';
+
+  @override
+  String get voicesSpeed => 'Rychlost';
+
+  @override
+  String get voicesSpeedNormal => 'Normální rychlost';
+
+  @override
+  String get voicesSpeedNative => 'Tempo enginu — výška tónu beze změny';
+
+  @override
+  String get voicesSpeedResampled => 'Převzorkováno — mění se i výška tónu';
 
   @override
   String get voicesNone => 'Pro tuto skladbu nejsou žádné hlasy.';
@@ -2543,6 +2566,10 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get libraryOnAnotherDevice => 'Na jiném zařízení';
+
+  @override
+  String get libraryHideElsewhere =>
+      'Skrýt položky, které nejsou v tomto zařízení';
 
   @override
   String get localLibraryEmpty =>
@@ -4178,56 +4205,48 @@ class AppLocalizationsCs extends AppLocalizations {
   String get releaseNotesTitle => 'Novinky';
 
   @override
-  String get releaseNotesV8Windows =>
-      'Rewamp nyní běží ve Windows, se všemi jádry a vizualizacemi včetně projectM.';
+  String get releaseNotesV9Speed =>
+      'Rychlost přehrávání od 0,2× do 3× v panelu Hlasy. Většina enginů mění tempo a zachovává výšku tónu; ostatní převzorkovávají.';
 
   @override
-  String get releaseNotesV8Linux =>
-      'Linux: vizualizace nyní fungují i pod X11 (herní režim Steam Decku), volba „Vždy navrchu“ se tam vrací a zavření okna už aplikaci neshodí.';
+  String get releaseNotesV9Windows =>
+      'Windows: multimediální klávesy a systémové ovládání médií (okno hlasitosti, hlavní panel) ovládají přehrávání a vizualizace na celou obrazovku nyní vyplní celou obrazovku.';
 
   @override
-  String get releaseNotesV8Formats =>
-      'Nově se přehrávají soubory Game Boy .gbr a DefleMask .dmf.';
+  String get releaseNotesV9Formats =>
+      'Nové přehrávače: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) a programy .cop pro SAM Coupé.';
 
   @override
-  String get releaseNotesV8Smooth =>
-      'Plynulejší přehrávač i vizualizace: obrazovka se už nepřekresluje celá při každé změně pozice.';
+  String get releaseNotesV9Amiga =>
+      'Amiga a Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory a některé moduly Maximum Effect se nyní přehrávají.';
 
   @override
-  String get releaseNotesV8Scrolling =>
-      'Příliš dlouhý název se nyní posouvá dokola jedním směrem, místo aby jezdil tam a zpět.';
+  String get releaseNotesV9MoonBlaster =>
+      'MSX MoonBlaster: skladby načítají svou sadu samplů místo přehrávání šumu a soubory v režimu úprav se přehrávají správně.';
 
   @override
-  String get releaseNotesV8MouseDrag =>
-      'Počítače: vodorovné řady lze posouvat kliknutím a tažením myší.';
+  String get releaseNotesV9HideElsewhere =>
+      'Knihovna: „Skrýt položky, které nejsou v tomto zařízení“ skryje místní položky, jejichž soubor je v jiném zařízení.';
 
   @override
-  String get releaseNotesV8Presets =>
-      'projectM: balíčky předvoleb se instalují až devětkrát rychleji a velké složky předvoleb už nejsou oříznuté.';
+  String get releaseNotesV9ArtworkFullscreen =>
+      'Dlouhé stisknutí obalu v přehrávači ho zobrazí na celou obrazovku.';
 
   @override
-  String get releaseNotesV8Pause =>
-      'Opraveno: pozastavení mohlo přeskočit na další skladbu.';
+  String get releaseNotesV9Viz =>
+      'Vizualizace: ve výchozím stavu osciloskop pro každý hlas (čárové spektrum pro streamované formáty), mřížka a názvy hlasů přepínatelné přímo z osciloskopu a stabilnější stereo osciloskop.';
 
   @override
-  String get releaseNotesV8Psf =>
-      'Alba PSF (PlayStation, Nintendo DS…) dodaná jako jediný archiv se nyní rozbalí na jednotlivé skladby, i při přidání do fronty.';
+  String get releaseNotesV9PsfTrack =>
+      'Opraveno: klepnutí na skladbu některých alb PSF mohlo přehrát jinou.';
 
   @override
-  String get releaseNotesV8ArtistTracks =>
-      'Stránky interpretů: seznam skladeb opět ukazuje skladby, ne archivy celých alb.';
+  String get releaseNotesV9Playlists =>
+      'Složka s několika playlisty nyní tvoří jedno album se všemi jejich skladbami, bez duplicit.';
 
   @override
-  String get releaseNotesV8VizFixes =>
-      'Vizualizace: hlasy Nintenda 64 se správně zobrazují i ztlumují, piano si u každé skladby znovu upraví výřez a pozadí s obalem už nemizí.';
-
-  @override
-  String get releaseNotesV8ProjectMFixes =>
-      'projectM: předvolby sledují skutečnou snímkovou frekvenci (některé reagovaly líně) a dvě předvolby, které se nikdy neobjevily, jsou nyní k dispozici.';
-
-  @override
-  String get releaseNotesV8Covers =>
-      'Obaly se načítají mnohem rychleji: mřížka alb se zaplní najednou, ne po jednom obalu každou sekundu a půl.';
+  String get releaseNotesV9AmigaInfo =>
+      'Skladby z Amigy bez známé délky či autora se po týdnu znovu zeptají serveru, místo aby se už nikdy nezeptaly.';
 
   @override
   String get releaseNotesDataReset =>

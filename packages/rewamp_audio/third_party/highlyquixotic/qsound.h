@@ -18,6 +18,8 @@ const char* EMU_CALL qsound_getversion(void);
 sint32 EMU_CALL qsound_init(void);
 uint32 EMU_CALL qsound_get_state_size(void);
 void   EMU_CALL qsound_clear_state(void *state);
+/* rewamp: native playback speed (driver IRQ rate × speed) */
+void   EMU_CALL qsound_rewamp_speed(void *state, double speed);
 
 //
 // Obtain substates

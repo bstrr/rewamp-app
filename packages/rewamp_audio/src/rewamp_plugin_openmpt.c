@@ -37,6 +37,10 @@ struct RewampDecoder {
     // (pattern INSTRUMENT column at each new row), for the ⓘ highlight.
     uint8_t lastInstr[64];
     int32_t lastPattern, lastRow;
+    // Vitesse native (play.tempo_factor) et durée à 1×, figée AVANT tout
+    // changement de tempo: libopenmpt calcule ses durées au tempo COURANT.
+    double  speed;
+    double  durationSecs1x;
 
     // Immutable tracker-pattern table for the pattern visualizer, built once in
     // open() (single-threaded → no libopenmpt re-entry race with the producer).
@@ -175,6 +179,8 @@ static RewampDecoder* openmpt_open(const char* path, RewampAudioFormat* outForma
     if (dec == NULL) { openmpt_module_ext_destroy(modExt); return NULL; }
     dec->modExt = modExt;
     dec->mod    = mod;
+    dec->speed  = 1.0;
+    dec->durationSecs1x = openmpt_module_get_duration_seconds(mod);
     dec->lastPattern = dec->lastRow = -1;   /* capture row 0 too */
     dec->hasInteractive = openmpt_module_ext_get_interface(
         modExt, LIBOPENMPT_EXT_C_INTERFACE_INTERACTIVE,
@@ -368,12 +374,15 @@ static uint64_t openmpt_read(RewampDecoder* dec, float* out, uint64_t frameCount
 static void openmpt_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (dec == NULL || dec->mod == NULL) return;
     double seconds = (double)frameIndex / (double)OPENMPT_RENDER_RATE;
+    // set_position_seconds cherche sa cible au tempo COURANT (GetLength): en
+    // secondes de LECTURE. Le contrat est en temps du MORCEAU ⇒ ÷ vitesse.
+    if (dec->speed > 0.0) seconds /= dec->speed;
     openmpt_module_set_position_seconds(dec->mod, seconds);
 }
 
 static uint64_t openmpt_length(RewampDecoder* dec) {
     if (dec == NULL || dec->mod == NULL) return 0;
-    double seconds = openmpt_module_get_duration_seconds(dec->mod);
+    double seconds = dec->durationSecs1x;
     if (seconds <= 0.0) return 0;
     return (uint64_t)(seconds * OPENMPT_RENDER_RATE);
 }
@@ -608,6 +617,19 @@ static void openmpt_configure_loop(RewampDecoder* dec, int mode, int count) {
     openmpt_module_set_repeat_count(dec->mod, repeat);
 }
 
+/* Vitesse NATIVE: le facteur de tempo de libopenmpt — les lignes défilent
+ * plus vite, la hauteur des notes ne bouge pas. Sa durée et son
+ * positionnement restent en secondes de MORCEAU (vérifié par
+ * scripts/verify_playback_speed.sh: à 2×, le morceau entier se rend en la
+ * moitié des trames, et un seek à t reste à t). */
+static int openmpt_set_speed(RewampDecoder* dec, double speed) {
+    if (dec == NULL || dec->mod == NULL) return 0;
+    if (speed < 0.2 || speed > 3.0) return 0;
+    if (!openmpt_module_ctl_set_floatingpoint(dec->mod, "play.tempo_factor", speed)) return 0;
+    dec->speed = speed;
+    return 1;
+}
+
 static const RewampPluginVTable g_openmpt_vtable = {
     "libopenmpt",
     openmpt_probe,
@@ -625,6 +647,9 @@ static const RewampPluginVTable g_openmpt_vtable = {
     openmpt_pattern_num_rows,
     openmpt_pattern_get,
     openmpt_pattern_cursor,
+    NULL,                    /* probe_path */
+    0,                       /* noPrefixProbe */
+    openmpt_set_speed,       /* vitesse native (tempo) */
 };
 
 const RewampPluginVTable* rewamp_openmpt_plugin(void) {

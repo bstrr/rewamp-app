@@ -143,13 +143,23 @@ class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
   void initState() {
     super.initState();
     LocalDb.instance.addListener(_reload);
+    UserSettings.instance.addListener(_onSettings);
     _reload();
   }
 
   @override
   void dispose() {
     LocalDb.instance.removeListener(_reload);
+    UserSettings.instance.removeListener(_onSettings);
     super.dispose();
+  }
+
+  // « Masquer ce qui n'est pas sur cet appareil »: l'écran reste monté sous
+  // les autres, il doit suivre la bascule faite ailleurs (accueil, menu).
+  bool _hideElsewhere = UserSettings.instance.libraryHideElsewhere;
+  void _onSettings() {
+    final h = UserSettings.instance.libraryHideElsewhere;
+    if (h != _hideElsewhere && mounted) setState(() => _hideElsewhere = h);
   }
 
   void _reload() {
@@ -161,8 +171,14 @@ class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
     });
   }
 
-  List<LibraryItem> get _visible =>
-      sortLibraryItems(filterLibraryItems(_items, _query), _sort, _asc);
+  List<LibraryItem> get _visible => sortLibraryItems(
+      filterLibraryItems(
+          _hideElsewhere
+              ? [for (final i in _items) if (!_missing.contains(i.refId)) i]
+              : _items,
+          _query),
+      _sort,
+      _asc);
 
   /// Retrait: local ET compte. Passer par `recordTrackMembership` est ce qui
   /// évite le retour de l'entrée à la synchro suivante — le compte l'ayant
@@ -293,6 +309,7 @@ class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
                 sort: _sort,
                 ascending: _asc,
                 titleWording: true,
+                elsewhereToggle: _missing.isNotEmpty || _hideElsewhere,
                 onSort: (s, asc) => setState(() {
                   _sort = s;
                   _asc  = asc;

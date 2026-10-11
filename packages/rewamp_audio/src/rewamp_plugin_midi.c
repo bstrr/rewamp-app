@@ -164,6 +164,10 @@ typedef struct {
     /* Le fichier vise le MT-32 et on le joue quand même en GM: les numéros de
      * programme passent par la table (voir midi_program_for). */
     int                 mt32_to_gm;
+    /* Vitesse native: l'horloge des ÉVÉNEMENTS (time_ms, temps du MORCEAU)
+     * avance de vitesse × la durée rendue; le synthé — notes, enveloppes —
+     * reste en temps réel, donc la hauteur ne bouge pas. 0 = 1×. */
+    double              speed;
 } MidiDec;
 
 /* « Le morceau EN COURS est un MIDI MT-32 joué en GM faute de ROMs. »
@@ -522,7 +526,8 @@ static uint64_t midi_read(RewampDecoder* rd, float* out, uint64_t frameCount) {
         double untilMs = d->next ? (d->next->time - d->time_ms)
                                  : (double)(d->total_ms - d->time_ms);
         if (untilMs <= 0) untilMs = 0.1;
-        uint64_t chunk = (uint64_t)(untilMs * MIDI_SAMPLE_RATE / 1000.0) + 1;
+        const double sp = d->speed > 0.0 ? d->speed : 1.0;
+        uint64_t chunk = (uint64_t)(untilMs / sp * MIDI_SAMPLE_RATE / 1000.0) + 1;
         if (chunk > frameCount - done) chunk = frameCount - done;
 
         /* Il reste des événements: le morceau n'est pas fini, même si cette
@@ -535,7 +540,7 @@ static uint64_t midi_read(RewampDecoder* rd, float* out, uint64_t frameCount) {
                                 out + done * 2, 0, 2,
                                 out + done * 2, 1, 2);
         done += chunk;
-        d->time_ms += (double)chunk * 1000.0 / MIDI_SAMPLE_RATE;
+        d->time_ms += (double)chunk * 1000.0 / MIDI_SAMPLE_RATE * sp;
         if (d->time_ms >= d->total_ms && d->next == NULL) break;
     }
     return done;
@@ -593,6 +598,14 @@ static void midi_param_changed(RewampDecoder* rd, const char* key) {
     if (d) midi_apply_params(d->synth);
 }
 
+/* Vitesse NATIVE (voir MidiDec.speed). */
+static int midi_set_speed(RewampDecoder* rd, double speed) {
+    MidiDec* d = (MidiDec*)rd;
+    if (!d || speed < 0.2 || speed > 3.0) return 0;
+    d->speed = speed;
+    return 1;
+}
+
 static const RewampPluginVTable g_midi_vtable = {
     "fluidlite",
     midi_probe,
@@ -605,6 +618,10 @@ static const RewampPluginVTable g_midi_vtable = {
     0,                  /* supportsNativeFadeout */
     "midi",             /* engine_id */
     midi_param_changed, /* live settings */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,               /* probe_path */
+    0,                  /* noPrefixProbe */
+    midi_set_speed,     /* vitesse native (horloge des événements) */
 };
 
 const RewampPluginVTable* rewamp_midi_plugin(void) {

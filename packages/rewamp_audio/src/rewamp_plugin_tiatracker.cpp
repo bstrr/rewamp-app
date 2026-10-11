@@ -55,7 +55,13 @@
 enum { kAudC0 = 0x15, kAudC1 = 0x16, kAudF0 = 0x17, kAudF1 = 0x18,
        kAudV0 = 0x19, kAudV1 = 0x1a };
 
-struct RewampDecoder {
+// ⚠️ PAS `struct RewampDecoder`: ce type a un destructeur implicite non trivial
+// (std::vector) émis en symbole FAIBLE, et d'autres greffons C++ définissent
+// leur propre `struct RewampDecoder` d'une autre forme — l'éditeur de liens
+// n'en garderait qu'un (violation d'ODR). Type local à la TU, converti aux
+// frontières de la vtable.
+namespace {
+struct TttDecoder {
     TttTables     song;
     TttPlayer     player;
     TttTia::Audio tia;
@@ -67,6 +73,11 @@ struct RewampDecoder {
     double   tickAcc;           // fractional colour clocks owed to the core
 
     uint64_t framePos;          // output frames produced
+    // Vitesse native: le lecteur avance `speed` fois plus de cycles par
+    // échantillon, la TIA garde les siens (hauteur conservée). songPos = temps
+    // du MORCEAU (fin, seek), framePos restant en sortie.
+    double   speed;
+    double   songPos;
     uint64_t totalFrames;       // 0 when the song never repeats
     int64_t  lastMuteMask;
 
@@ -76,6 +87,7 @@ struct RewampDecoder {
     int      patRows;
     int64_t  rowIndex;          // live cursor, in rows since the start
 };
+}  // namespace
 
 static const char* const kTttExts[] = { "ttt", NULL };
 
@@ -122,7 +134,7 @@ static int ttt_semitone(double hz) {
 // rows are aligned in TIME. This walks that timeline once and cuts it into
 // fixed pages — exact, aligned, and stable across the song's repeats (the
 // cost being that a pattern played twice shows up as two pages).
-static void ttt_build_pattern_table(RewampDecoder* dec) {
+static void ttt_build_pattern_table(TttDecoder* dec) {
     dec->patCells.clear();
     dec->patRows = 0;
 
@@ -183,7 +195,7 @@ static void ttt_build_pattern_table(RewampDecoder* dec) {
     }
 }
 
-static int ttt_pattern_song_info(RewampDecoder* dec, RewampPatternSongInfo* out) {
+static int ttt_pattern_song_info(TttDecoder* dec, RewampPatternSongInfo* out) {
     if (!dec || !out || dec->patRows <= 0) return 0;
     const int pages = (dec->patRows + TTT_PAGE_ROWS - 1) / TTT_PAGE_ROWS;
     out->num_channels = TTT_VOICES;
@@ -198,13 +210,13 @@ static int ttt_pattern_song_info(RewampDecoder* dec, RewampPatternSongInfo* out)
     return 1;
 }
 
-static int ttt_pattern_order(RewampDecoder* dec, int order) {
+static int ttt_pattern_order(TttDecoder* dec, int order) {
     if (!dec || order < 0) return -1;
     const int pages = (dec->patRows + TTT_PAGE_ROWS - 1) / TTT_PAGE_ROWS;
     return order < pages ? order : -1;   // pages are their own order
 }
 
-static int ttt_pattern_num_rows(RewampDecoder* dec, int pattern) {
+static int ttt_pattern_num_rows(TttDecoder* dec, int pattern) {
     if (!dec || pattern < 0) return 0;
     const int start = pattern * TTT_PAGE_ROWS;
     if (start >= dec->patRows) return 0;
@@ -212,7 +224,7 @@ static int ttt_pattern_num_rows(RewampDecoder* dec, int pattern) {
     return left < TTT_PAGE_ROWS ? left : TTT_PAGE_ROWS;
 }
 
-static int ttt_pattern_get(RewampDecoder* dec, int pattern,
+static int ttt_pattern_get(TttDecoder* dec, int pattern,
                            RewampPatternCell* out, int maxCells) {
     if (!dec || !out) return 0;
     const int rows = ttt_pattern_num_rows(dec, pattern);
@@ -225,7 +237,7 @@ static int ttt_pattern_get(RewampDecoder* dec, int pattern,
     return cells;
 }
 
-static void ttt_pattern_cursor(RewampDecoder* dec, int* order, int* row) {
+static void ttt_pattern_cursor(TttDecoder* dec, int* order, int* row) {
     if (!dec || dec->patRows <= 0 || dec->rowIndex < 0) {
         if (order) *order = -1;
         if (row)   *row   = -1;
@@ -245,7 +257,7 @@ static int ttt_plugin_probe(const char* ext, const uint8_t* header, size_t n) {
     return extOk ? 60 : 0;
 }
 
-static void ttt_push_registers(RewampDecoder* dec) {
+static void ttt_push_registers(TttDecoder* dec) {
     const TttPlayer& p = dec->player;
     dec->tia.write(kAudC0, p.audc[0]);
     dec->tia.write(kAudC1, p.audc[1]);
@@ -269,13 +281,13 @@ static void ttt_push_registers(RewampDecoder* dec) {
     }
 }
 
-static void ttt_prepare_chip(RewampDecoder* dec) {
+static void ttt_prepare_chip(TttDecoder* dec) {
     dec->tia.reset(false);      // mono: myCurrentSample[0] is the summed output
     dec->frameAcc = dec->clocksPerFrame;   // frame one runs the player at once
     dec->tickAcc  = 0.0;
 }
 
-static RewampDecoder* ttt_open(const char* path, RewampAudioFormat* outFormat) {
+static TttDecoder* ttt_open(const char* path, RewampAudioFormat* outFormat) {
     if (!path) return NULL;
 
     char cleanPath[4096];
@@ -296,7 +308,7 @@ static RewampDecoder* ttt_open(const char* path, RewampAudioFormat* outFormat) {
     fclose(f);
     if (got != (size_t)size) { free(buf); return NULL; }
 
-    RewampDecoder* dec = new (std::nothrow) RewampDecoder();
+    TttDecoder* dec = new (std::nothrow) TttDecoder();
     if (!dec) { free(buf); return NULL; }
 
     std::string err;
@@ -313,6 +325,8 @@ static RewampDecoder* ttt_open(const char* path, RewampAudioFormat* outFormat) {
     dec->clocksPerSample = dec->colorClock / (double)TTT_RATE;
     dec->clocksPerFrame  = dec->colorClock / (double)dec->song.frameRateHz();
     dec->framePos        = 0;
+    dec->speed           = 1.0;
+    dec->songPos         = 0.0;
     dec->lastMuteMask    = generic_mute_mask;
 
     // Per-voice oscilloscope: two channels, and they must be reset BEFORE the
@@ -363,12 +377,14 @@ static RewampDecoder* ttt_open(const char* path, RewampAudioFormat* outFormat) {
     return dec;
 }
 
-static uint64_t ttt_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
+static uint64_t ttt_read(TttDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || !out || frameCount == 0) return 0;
     if (dec->totalFrames > 0) {
-        if (dec->framePos >= dec->totalFrames) return 0;
-        const uint64_t remain = dec->totalFrames - dec->framePos;
+        if (dec->songPos >= (double)dec->totalFrames) return 0;
+        const double remainSong = (double)dec->totalFrames - dec->songPos;
+        const uint64_t remain = (uint64_t)ceil(remainSong / dec->speed);
         if (frameCount > remain) frameCount = remain;
+        if (frameCount == 0) return 0;
     }
     if (dec->lastMuteMask != generic_mute_mask) {
         dec->lastMuteMask = generic_mute_mask;
@@ -382,7 +398,7 @@ static uint64_t ttt_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
 
     const float scale = 1.0f / 32768.0f;
     for (uint64_t i = 0; i < frameCount; ++i) {
-        dec->frameAcc += dec->clocksPerSample;
+        dec->frameAcc += dec->clocksPerSample * dec->speed;
         while (dec->frameAcc >= dec->clocksPerFrame) {
             dec->frameAcc -= dec->clocksPerFrame;
             dec->player.frame();
@@ -414,10 +430,11 @@ static uint64_t ttt_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         m_voice_current_ptr[v] += (int64_t)frameCount << MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
 
     dec->framePos += frameCount;
+    dec->songPos  += (double)frameCount * dec->speed;
     return frameCount;
 }
 
-static void ttt_seek(RewampDecoder* dec, uint64_t frameIndex) {
+static void ttt_seek(TttDecoder* dec, uint64_t frameIndex) {
     if (!dec) return;
     if (dec->totalFrames > 0 && frameIndex > dec->totalFrames)
         frameIndex = dec->totalFrames;
@@ -443,33 +460,71 @@ static void ttt_seek(RewampDecoder* dec, uint64_t frameIndex) {
     ttt_push_registers(dec);
 
     dec->framePos = frameIndex;
+    dec->songPos  = (double)frameIndex;   // frameIndex est en temps du MORCEAU
 }
 
-static uint64_t ttt_length(RewampDecoder* dec) {
+/* Vitesse NATIVE (voir TttDecoder.speed). */
+static int ttt_set_speed(TttDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    return 1;
+}
+
+static uint64_t ttt_length(TttDecoder* dec) {
     return dec ? dec->totalFrames : 0;
 }
 
-static void ttt_close(RewampDecoder* dec) {
+static void ttt_close(TttDecoder* dec) {
     delete dec;
 }
+
+static inline TttDecoder* ttt(RewampDecoder* d) { return reinterpret_cast<TttDecoder*>(d); }
+
+static RewampDecoder* ttt_open_v(const char* path, RewampAudioFormat* outFormat) {
+    return reinterpret_cast<RewampDecoder*>(ttt_open(path, outFormat));
+}
+static uint64_t ttt_read_v(RewampDecoder* d, float* out, uint64_t frameCount) {
+    return ttt_read(ttt(d), out, frameCount);
+}
+static void ttt_seek_v(RewampDecoder* d, uint64_t frameIndex) { ttt_seek(ttt(d), frameIndex); }
+static uint64_t ttt_length_v(RewampDecoder* d) { return ttt_length(ttt(d)); }
+static void ttt_close_v(RewampDecoder* d) { ttt_close(ttt(d)); }
+static int ttt_pattern_song_info_v(RewampDecoder* d, RewampPatternSongInfo* out) {
+    return ttt_pattern_song_info(ttt(d), out);
+}
+static int ttt_pattern_order_v(RewampDecoder* d, int order) { return ttt_pattern_order(ttt(d), order); }
+static int ttt_pattern_num_rows_v(RewampDecoder* d, int pattern) {
+    return ttt_pattern_num_rows(ttt(d), pattern);
+}
+static int ttt_pattern_get_v(RewampDecoder* d, int pattern,
+                             RewampPatternCell* out, int maxCells) {
+    return ttt_pattern_get(ttt(d), pattern, out, maxCells);
+}
+static void ttt_pattern_cursor_v(RewampDecoder* d, int* order, int* row) {
+    ttt_pattern_cursor(ttt(d), order, row);
+}
+static int ttt_set_speed_v(RewampDecoder* d, double speed) { return ttt_set_speed(ttt(d), speed); }
 
 static const RewampPluginVTable kTiaTrackerPlugin = {
     "tiatracker",
     ttt_plugin_probe,
-    ttt_open,
-    ttt_read,
-    ttt_seek,
-    ttt_length,
-    ttt_close,
+    ttt_open_v,
+    ttt_read_v,
+    ttt_seek_v,
+    ttt_length_v,
+    ttt_close_v,
     NULL,                    /* configure_loop */
     0,                       /* supportsNativeFadeout */
     NULL,                    /* engine_id */
     NULL,                    /* param_changed */
-    ttt_pattern_song_info,   /* pattern view */
-    ttt_pattern_order,
-    ttt_pattern_num_rows,
-    ttt_pattern_get,
-    ttt_pattern_cursor,
+    ttt_pattern_song_info_v, /* pattern view */
+    ttt_pattern_order_v,
+    ttt_pattern_num_rows_v,
+    ttt_pattern_get_v,
+    ttt_pattern_cursor_v,
+    NULL,                    /* probe_path */
+    0,                       /* noPrefixProbe */
+    ttt_set_speed_v,         /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_tiatracker_plugin(void) {

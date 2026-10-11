@@ -21,9 +21,9 @@ without regenerating turns the suite red.)
 See [LICENSING.md](LICENSING.md) for how these licences combine,
 and for the two that constrain what may be redistributed.
 
-## Playback engines (42)
+## Playback engines (45)
 
-1247 file extensions across all of them.
+1248 file extensions across all of them.
 
 | Engine | Licence | Authors | Role |
 | --- | --- | --- | --- |
@@ -54,11 +54,14 @@ and for the two that constrain what may be redistributed.
 | [Monkey's Audio (MACLib)](https://monkeysaudio.com/) | propriétaire (source dispo) | Matthew T. Ashland | Lossless .ape |
 | [munt mt32emu](https://github.com/munt/munt) | LGPL-2.1 | Dean Beeler, Jerome Fisher, Sergey V. Mikayev | Émulation Roland MT-32 / CM-32L pour le MIDI (.mid/.midi/.kar/.rmi) |
 | [NEZplug++](https://bitbucket.org/wothke/webnez/src/master/) | PDS (domaine public) | Mamiya ; portage webNEZ : Jürgen Wothke | PC-Engine HES + Sega SGC (SN76489/YM2413) |
+| [NoiseTracker GS](https://www.whatisthe2gs.apple2.org.za/noisetracker/index.html) | GPL-3.0-or-later (lecteur Rewamp) | Format: Olivier Goguel · FTA (1991-92) · lecteur Rewamp | Apple IIGS (Ensoniq 5503) — modules NoiseTracker GS |
 | [NSFPlay (libnsfplay)](https://github.com/bbbradsmith/nsfplay) | réutilisation libre, sans licence formelle | Brad Smith, Brezza | NES NSF/NSFe — voix par canal |
 | [Organya](https://www.wothke.ch/) | WTFPL | Daisuke Amaya (Pixel) ; portage webPixel : Jürgen Wothke | Cave Story .org — moteur natif de Pixel |
 | [PMD](https://github.com/mistydemeo/pmdmini) | GPL-2.0 | M. Kajihara (KAJA) ; pmdmini : Misty De Meo ; ymfm : Aaron Giles | PC-98 Professional Music Driver — .m/.m2/.mz |
 | [PSG play](https://github.com/frno7/psgplay) | GPL-2.0 | Fredrik Noring | Atari ST .sndh — machine complète, mixeur LMC1992 |
 | [PxTone Collage](https://pxtone.org/) | MIT (STUDIO PIXEL) | Daisuke Amaya (STUDIO PIXEL) | Tracker de Pixel — .ptcop/.pttune |
+| [Ron Klaren](https://github.com/neumatho/NostalgicPlayer) | MIT | Thomas Neumann (NostalgicPlayer) · port Rewamp | Amiga — modules Ron Klaren (.rk) |
+| [SAM Coupé COP](https://zxtune.bitbucket.io/) | GPL-3.0 (ZXTune) · z80ex GPL-2.0 | Lecteur Rewamp · SAA1099 : Vitamin/CAIG (ZXTune) · z80ex : Boo-boo | SAM Coupé — programmes Z80 + SAA1099 (.cop) |
 | [sc68](https://sourceforge.net/projects/sc68/) | GPL-3.0 | Benjamin Gerard | Atari ST (YM2149/STE) + Amiga (Paula) — vrai 68000 emu68 |
 | [snsf9x (snes9x / blargg)](https://github.com/loveemu/snsf9x) | non commercial / usage personnel (snes9x) | loveemu ; snes9x team | Super Nintendo .snsf/.minisnsf — SPC700/S-DSP (8 voix) |
 | [SSEQPlayer (Naram Qashat)](https://github.com/CyberBotX/SSEQPlayer) | aucune licence explicite | Naram Qashat (CyberBotX) | Nintendo DS .ncsf/.minincsf — synthé SDAT/SSEQ (16 voix) |
@@ -70,7 +73,7 @@ and for the two that constrain what may be redistributed.
 | [vio2sf (Cog / melonDS)](https://github.com/losnoco/Cog) | GPL-3.0 | Chris Moeller (kode54) ; melonDS : Arisotura | Nintendo DS .2sf/.mini2sf |
 | [ZXTune](https://zxtune.bitbucket.io/) | GPL-3.0 | Vitamin/CAIG | ZX Spectrum / AY (.ay/.vtx/.pt3/.stc/…) + .chp |
 
-## Bundled components (21)
+## Bundled components (22)
 
 Everything the binary redistributes that is not a decoder:
 archive handling, the visualizer, fonts, shaders, data sets.
@@ -97,6 +100,7 @@ archive handling, the visualizer, fonts, shaders, data sets.
 | [UnRAR](https://www.rarlab.com/license.htm) | licence UnRAR (décompression uniquement) | Alexander Roshal |
 | [unscii-16 (police bitmap)](http://viznut.fi/unscii/) | domaine public / CC0 | Viznut |
 | [webUADE (patches audio.device)](https://www.wothke.ch/) | GPL-2.0 | Jürgen Wothke |
+| [z80ex (émulateur Z80)](https://sourceforge.net/projects/z80ex/) | GPL-2.0 | Boo-boo (code du projet FUSE) |
 | [zlib (Windows)](https://zlib.net/) | Zlib | Jean-loup Gailly, Mark Adler |
 
 ## UnRAR — required notice

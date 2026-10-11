@@ -431,6 +431,11 @@ struct ASAP {
 	int currentSong;
 	int currentDuration;
 	int blocksPlayed;
+	/* REWAMP: vitesse de lecture. L'appel de la routine de jeu tombe tous les
+	 * 114 x fastplay / vitesse cycles; la POKEY garde son horloge (hauteur
+	 * conservee). 0 = 1x. */
+	double rewampSpeed;
+	double rewampFrac;
 	int silenceCycles;
 	int silenceCyclesCounter;
 	bool gtiaOrCovoxPlayedThisFrame;
@@ -2306,6 +2311,8 @@ static void ASAP_Construct(ASAP *self)
 	self->currentSampleRate = 44100;
 	self->silenceCycles = 0;
 	self->cpu.asap = self;
+	self->rewampSpeed = 1.0;	/* REWAMP: ASAP_New alloue sans mettre a zero */
+	self->rewampFrac = 0.0;
 }
 
 static void ASAP_Destruct(ASAP *self)
@@ -2530,9 +2537,44 @@ static void ASAP_HandleEvent(ASAP *self)
 		if (cycle - self->nextScanlineCycle < 50)
 			self->cpu.cycle = cycle += 9;
 		self->nextScanlineCycle += 114;
-		if (cycle >= self->nextPlayerCycle) {
+		/* REWAMP: sous vitesse, l'appel suivant peut tomber AVANT que la
+		 * routine precedente ait rendu la main — ASAP_Call6502 remplacerait
+		 * alors le PC et l'interromprait (registres jamais ecrits, musique
+		 * abimee). On differe l'appel jusqu'a son retour (CPU fige sur un JAM):
+		 * reteste a la ligne suivante. A 1x, rien ne
+		 * change. Seulement pour les types appeles par ASAP_Call6502. */
+		int rewampBusy = 0;
+		if (self->rewampSpeed > 0.0 && self->rewampSpeed != 1.0 && cycle >= self->nextPlayerCycle) {
+			switch (self->moduleInfo.type) {
+			case ASAPModuleType_SAP_D:
+			case ASAPModuleType_SAP_S:
+			case ASAPModuleType_MD1:
+			case ASAPModuleType_MD2:
+			case ASAPModuleType_D15:
+				break;
+			default:
+				{
+					/* au repos = CPU fige sur un JAM (opcode 210/242), quel que
+					 * soit l'endroit: 53763 apres un appel, 53760 avant le
+					 * premier */
+					int op = self->cpu.memory[self->cpu.pc & 0xffff];
+					rewampBusy = op != 210 && op != 242;
+				}
+				break;
+			}
+		}
+		if (cycle >= self->nextPlayerCycle && !rewampBusy) {
 			ASAP_Call6502Player(self);
-			self->nextPlayerCycle += 114 * ASAPInfo_GetPlayerRateScanlines(&self->moduleInfo);
+			if (self->rewampSpeed > 0.0 && self->rewampSpeed != 1.0) {	/* REWAMP */
+				double step = 114.0 * ASAPInfo_GetPlayerRateScanlines(&self->moduleInfo) / self->rewampSpeed + self->rewampFrac;
+				int istep = (int) step;
+				if (istep < 1)
+					istep = 1;
+				self->rewampFrac = step - istep;
+				self->nextPlayerCycle += istep;
+			}
+			else
+				self->nextPlayerCycle += 114 * ASAPInfo_GetPlayerRateScanlines(&self->moduleInfo);
 		}
 	}
 	int nextEventCycle = self->nextScanlineCycle;
@@ -2770,6 +2812,24 @@ void ASAP_MutePokeyChannels(ASAP *self, int mask)
 int ASAP_GetBlocksPlayed(const ASAP *self)
 {
 	return self->blocksPlayed;
+}
+
+/* REWAMP: vitesse de lecture (voir ASAP.rewampSpeed). La fin
+ * (currentDuration, comptee en SORTIE) est reposee d'apres la duree du
+ * MORCEAU et la position dans le morceau: sortie actuelle + reste / vitesse. */
+void ASAP_RewampSetSpeed(ASAP *self, double speed, int songDurationMs, int songPosMs)
+{
+	if (!(speed > 0.0))
+		speed = 1.0;
+	self->rewampSpeed = speed;
+	self->rewampFrac = 0.0;
+	if (songDurationMs > 0) {
+		int outPosMs = ASAP_GetPosition(self);
+		int remain = songDurationMs - songPosMs;
+		if (remain < 0)
+			remain = 0;
+		self->currentDuration = outPosMs + (int) (remain / speed + 0.5);
+	}
 }
 
 int ASAP_GetPosition(const ASAP *self)

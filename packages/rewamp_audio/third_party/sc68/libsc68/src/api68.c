@@ -246,6 +246,8 @@ struct _sc68_s {
     int		   stdlen;	 /**< Default number of PCM per pass.    */
     unsigned int   cycleperpass; /**< Number of 68K cycles per pass.     */
     int		   aga_blend;	 /**< Amiga LR blend factor [0..65535].  */
+    double	   rw_speed;	 /**< rewamp: native speed (0 = 1x).      */
+    double	   rw_frac;	 /**< rewamp: carried cycle remainder.    */
 
     unsigned int   pass_count;	 /**< Pass counter.                      */
     unsigned int   loop_count;	 /**< Loop counter.                      */
@@ -2071,8 +2073,11 @@ static int change_track(sc68_t * sc68, int track)
 
   /* Compute *REAL* required size (in PCM) for buffer and realloc */
   if (1) {
+    /* rewamp: a PSG pass may last up to 1/0.2 = 5 times as long under
+     * native slow-down (see sc68_rewamp_speed): room for it. The PSG path
+     * sets buflen from ymio_run(), so this changes nothing at 1x. */
     sc68->mix.bufreq = (m->hwflags & SC68_PSG)
-      ? ymio_buffersize(sc68->ymio, sc68->mix.cycleperpass)
+      ? ymio_buffersize(sc68->ymio, sc68->mix.cycleperpass * 5u + 256u)
       : sc68->mix.stdlen
       ;
     TRACE68(sc68_cat," -> mix buffer len  : %u\n", sc68->mix.bufreq);
@@ -2230,6 +2235,21 @@ int sc68_process(sc68_t * sc68, void * buf16st, int * _n)
 	if (sc68->asid_timers)
 	  sc68->emu68->mem[sc68->playaddr+17] = -!!(sc68->asid & SC68_ASID_ON);
 
+	/* rewamp: native playback speed - the pass (one call of the play
+	 * routine) lasts 1/speed as many cycles; the YM, the MFP timers (which
+	 * also make sound) and the DMA keep their clock. Kept a multiple of
+	 * 32 YM cycles like the nominal pass, remainder carried. */
+	cycle68_t rw_cycles = sc68->mix.cycleperpass;
+	if (sc68->mix.rw_speed > 0.0 && sc68->mix.rw_speed != 1.0
+	    && (sc68->mus->hwflags & SC68_PSG)) {
+	  const double t = (double)sc68->mix.cycleperpass / sc68->mix.rw_speed
+	    + sc68->mix.rw_frac;
+	  cycle68_t ym = ymio_cycle_cpu2ym(sc68->ymio, (cycle68_t)t) & ~31;
+	  if (!ym) ym = 32;
+	  rw_cycles = ymio_cycle_ym2cpu(sc68->ymio, ym);
+	  sc68->mix.rw_frac = t - (double)rw_cycles;
+	}
+
 	/* Run 68K emulator */
 	status = finish(sc68, sc68->playaddr+8, 0x2300, PLAY_MAX_INST);
 	if (status == EMU68_NRM) {
@@ -2238,7 +2258,7 @@ int sc68_process(sc68_t * sc68, void * buf16st, int * _n)
              and do not restore the SR by themself. Need to be sure
              this does not disrupt other musics. */
 	  sc68->emu68->reg.sr = 0x2300;
-	  status = emu68_interrupt(sc68->emu68, sc68->mix.cycleperpass);
+	  status = emu68_interrupt(sc68->emu68, rw_cycles);
 	}
 	if (status != EMU68_NRM) {
 	  error_addx(sc68,
@@ -2263,7 +2283,7 @@ int sc68_process(sc68_t * sc68, void * buf16st, int * _n)
 	  if (sc68->mus->hwflags & SC68_PSG) {
 	    int err =
 	      ymio_run(sc68->ymio, (s32*)sc68->mix.buffer,
-		       sc68->mix.cycleperpass);
+		       rw_cycles);
 		if (err < 0) {
 	      ret = SC68_ERROR;
 	      sc68->mix.buflen = 0;
@@ -2409,6 +2429,17 @@ void sc68_close(sc68_t * sc68)
     sc68->tobe3	    = 0;
     sc68->disk	    = 0;
   }
+}
+
+/* rewamp: native playback speed (0.2..3), see sc68_process. Only for YM
+ * music: the Amiga (Paula) and DMA-only paths size their pass otherwise. */
+int sc68_rewamp_speed(sc68_t * sc68, double speed)
+{
+  if (!sc68 || !sc68->mus || !(sc68->mus->hwflags & SC68_PSG))
+    return -1;
+  sc68->mix.rw_speed = speed;
+  if (speed == 1.0) sc68->mix.rw_frac = 0.0;
+  return 0;
 }
 
 int sc68_play(sc68_t * sc68, int track, int loop)

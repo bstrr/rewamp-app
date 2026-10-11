@@ -78,6 +78,11 @@ typedef void (*gbhw_stepcallback_fn)(const cycles_t cycles, const struct gbhw_ch
 
 struct gbhw {
 	long apu_on;
+	/* REWAMP: vitesse de lecture. Les compteurs d'interruption (VBlank, timer)
+	 * descendent de cycles x vitesse: la routine de jeu tourne plus vite, le
+	 * CPU et l'APU gardent leur horloge (hauteur conservee). 0 = 1x. */
+	double rewamp_speed;
+	double rewamp_frac_v, rewamp_frac_t;
 	long io_written;
 
 	long lminval, lmaxval, rminval, rmaxval;

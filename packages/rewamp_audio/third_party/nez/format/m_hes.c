@@ -163,14 +163,25 @@ __inline static void volume(HESHES *THIS_, Uint32 v)
 }
 
 
+/* rewamp: native playback speed - the VDC vsync and the timer IRQ, which
+ * drive the player, come 1/speed as far apart; the PSG keeps its clock, so
+ * the pitch does not move. 1.0 = upstream, bit for bit. */
+extern double nez_rewamp_speed;
+static Uint32 nez_rewamp_scaled(Uint32 cycles)
+{
+	if (nez_rewamp_speed == 1.0) return cycles;
+	Uint32 c = (Uint32)((double)cycles / nez_rewamp_speed + 0.5);
+	return c ? c : 1;
+}
+
 static void vsync_setup(HESHES *THIS_)
 {
-	kmevent_settimer(&THIS_->kme, THIS_->vsync, 4 * 342 * 262);
+	kmevent_settimer(&THIS_->kme, THIS_->vsync, nez_rewamp_scaled(4 * 342 * 262));
 }
 
 static void timer_setup(HESHES *THIS_)
 {
-	kmevent_settimer(&THIS_->kme, THIS_->timer, HES_TIMERCYCLES);
+	kmevent_settimer(&THIS_->kme, THIS_->timer, nez_rewamp_scaled(HES_TIMERCYCLES));
 }
 
 static void write_6270(HESHES *THIS_, Uint32 a, Uint32 v)

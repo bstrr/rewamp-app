@@ -35,6 +35,9 @@ extern "C" int g_force_loop_native_veto;
 #include "rewamp_psf_fade.h"   // fondu de fin décrit par le tag `fade`
 #include "ModizerVoicesData.h"
 #include "sega.h"
+#include "satsound.h"
+#include "dcsound.h"
+#include "yam.h"
 #include "libpsflib/psflib.h"
 
 #include <stdio.h>
@@ -53,7 +56,22 @@ struct RewampDecoder {
     uint64_t totalFrames;  // from length+fade tags; 0 = unknown
     uint64_t fadeFrames = 0;   // rampe finale (tag `fade`), 0 = aucune
     uint64_t framePos;
+    double   speed;        // native playback speed, 0 = 1×
+    double   posFrac;
+    int      seeking;      // the fast-forward runs (and counts) at 1×
 };
+
+// Native speed: the SCSP/AICA timers — what the sound driver is clocked by —
+// run `speed` times faster and the sound CPU gets `speed` times the cycles per
+// output sample (yam_rewamp_set_speed + satsound/dcsound); voices and
+// envelopes keep their clock, so the pitch does not move.
+static void ht_apply_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->core) return;
+    void* yam = (dec->version == 1)
+        ? satsound_get_yam_state(sega_get_satsound_state(dec->core))
+        : dcsound_get_yam_state(sega_get_dcsound_state(dec->core));
+    yam_rewamp_set_speed(yam, speed);
+}
 
 // ── psflib stdio callbacks ──────────────────────────────────────────────────
 static void*   ht_psf_fopen(const char* uri)                      { return fopen(uri, "rb"); }
@@ -243,9 +261,12 @@ static RewampDecoder* ht_open(const char* path, RewampAudioFormat* outFormat) {
 static uint64_t ht_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || frameCount == 0) return 0;
     const uint64_t fadeBase = dec->framePos;
+    const double sp = (dec->seeking || dec->speed <= 0.0) ? 1.0 : dec->speed;
     if (dec->totalFrames > 0) {
         if (dec->framePos >= dec->totalFrames) return 0;
+        // remain is song time; the output covers sp × as much of it
         uint64_t remain = dec->totalFrames - dec->framePos;
+        if (sp != 1.0) remain = (uint64_t)((double)remain / sp) + 1;
         if (frameCount > remain) frameCount = remain;
     }
 
@@ -261,11 +282,19 @@ static uint64_t ht_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         float* dst = out + written * 2;
         for (uint32_t i = 0; i < got * 2; i++) dst[i] = s_buf[i] * scale;
         written += got;
-        dec->framePos += got;
+        if (sp == 1.0) {
+            dec->framePos += got;
+        } else {
+            // framePos is SONG time
+            dec->posFrac += (double)got * sp;
+            const uint64_t whole = (uint64_t)dec->posFrac;
+            dec->posFrac -= (double)whole;
+            dec->framePos += whole;
+        }
         if (got < want) break;
     }
-    rewamp_psf_fade_apply(out, written, 2, fadeBase,
-                          dec->totalFrames, dec->fadeFrames);
+    rewamp_psf_fade_apply_speed(out, written, 2, fadeBase,
+                                dec->totalFrames, dec->fadeFrames, sp);
     return written;
 }
 
@@ -288,8 +317,11 @@ static void ht_seek(RewampDecoder* dec, uint64_t frameIndex) {
         ht_upload(dec);
         dec->framePos = 0;
     }
-    if (dec->framePos == frameIndex) return;
+    dec->posFrac = 0.0;
+    if (dec->framePos == frameIndex) { ht_apply_speed(dec, dec->speed); return; }
     g_is_seeking = 1;
+    dec->seeking = 1;
+    ht_apply_speed(dec, 1.0);   // the fast-forward is song time: 1×
     float tmp[256 * 2];
     while (dec->framePos < frameIndex && !g_seek_cancel) {
         uint64_t want = frameIndex - dec->framePos;
@@ -298,7 +330,16 @@ static void ht_seek(RewampDecoder* dec, uint64_t frameIndex) {
         g_seek_progress_s = (double)dec->framePos / (double)HT_RATE;
         if (got == 0) break;
     }
+    dec->seeking = 0;
+    ht_apply_speed(dec, dec->speed);
     g_is_seeking = 0;
+}
+
+static int ht_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->core || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    if (!dec->seeking) ht_apply_speed(dec, speed);
+    return 1;
 }
 
 static uint64_t ht_length(RewampDecoder* dec) {
@@ -339,6 +380,13 @@ static const RewampPluginVTable kHtVTable = {
     ht_length,
     ht_close,
     ht_configure_loop_fn,
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    ht_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_highlytheoritical_plugin(void) { return &kHtVTable; }

@@ -2181,11 +2181,17 @@ class PlayerController extends ChangeNotifier {
     final p  = audio.positionSeconds;
     final d  = _knownDuration ?? audio.durationSeconds;
 
-    // Accumulate real play time for log_play.
+    // Accumulate play time — en temps du MORCEAU: sous une vitesse ≠ 1 ces
+    // horloges pilotent la chronologie des boucles forcées et le compteur
+    // affiché, qui parlent le temps du morceau (comme la position que rend le
+    // natif). Corollaire assumé: à 2×, le seuil d'écoute de log_play est
+    // atteint deux fois plus tôt en temps réel.
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (isPlaying && !isSeeking && _lastTickMs > 0) {
-      _elapsedPlayMs += nowMs - _lastTickMs;
-      _playClockMs   += nowMs - _lastTickMs;
+      final dt = ((nowMs - _lastTickMs) * UserSettings.instance.playbackSpeed)
+          .round();
+      _elapsedPlayMs += dt;
+      _playClockMs   += dt;
     }
     _lastTickMs = nowMs;
 

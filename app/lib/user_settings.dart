@@ -211,8 +211,11 @@ class UserSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Last active visualizer effect: 'stereo' or 'voices'.
-  String get vizEffect => _p.getString(_kVizEffect) ?? 'stereo';
+  /// Last active visualizer effect (a VizEffect name). Défaut : l'oscilloscope
+  /// PAR VOIE ; sur une piste sans données par voie (mp3/ogg/vgmstream…), le
+  /// sélecteur retombe sur le spectre en mode ligne (cf. VizSelector._effective
+  /// et le défaut de spectrumPalette).
+  String get vizEffect => _p.getString(_kVizEffect) ?? 'voices';
 
   set vizEffect(String v) {
     _p.setString(_kVizEffect, v);
@@ -639,9 +642,11 @@ class UserSettings extends ChangeNotifier {
   bool get stereoBicolor => _p.getBool(_kStereoBicolor) ?? true;
   set stereoBicolor(bool v) { _p.setBool(_kStereoBicolor, v); notifyListeners(); }
 
-  /// Spectrum bars (viz mode 5): 0 = the scope's own colors, 1 = colored by
-  /// frequency with brightness following amplitude (the Modizer palette).
-  int get spectrumPalette => _p.getInt(_kSpectrumPalette) ?? 0;
+  /// Spectre (viz mode 5): 0 = Standard (les couleurs de l'oscilloscope),
+  /// 1 = Coloré (palette Modizer: teinte par fréquence, luminosité par
+  /// amplitude), 2 = Faisceau, 3 = Ligne, 4 = Anneau. Défaut: 3 « Ligne » —
+  /// c'est aussi le repli d'une piste sans données par voie (vizEffect).
+  int get spectrumPalette => _p.getInt(_kSpectrumPalette) ?? 3;
   set spectrumPalette(int v) { _p.setInt(_kSpectrumPalette, v); notifyListeners(); }
 
   /// Piano (viz mode 6): 0 = keyboards (one per voice, shared when zoomed —
@@ -1416,6 +1421,19 @@ class UserSettings extends ChangeNotifier {
   }
 
   // ── Bibliothèque: disposition et tri, par écran ──────────────────────────
+  /// Bibliothèque: masquer les entrées LOCALES dont le fichier n'est pas sur
+  /// cet appareil (« sur un autre appareil », ou « fichier manquant » pour un
+  /// compte anonyme — library_presence.dart). Faux par défaut: les montrer
+  /// grisées dit qu'elles existent. Vaut pour l'accueil de la bibliothèque,
+  /// Morceaux et Albums; PAS pour le contenu d'une playlist, qui se réordonne
+  /// par position (masquer des lignes y fausserait les index).
+  static const _kLibraryHideElsewhere = 'library.hide_elsewhere';
+  bool get libraryHideElsewhere => _p.getBool(_kLibraryHideElsewhere) ?? false;
+  set libraryHideElsewhere(bool v) {
+    _p.setBool(_kLibraryHideElsewhere, v);
+    notifyListeners();
+  }
+
   static const _kLibraryViewMode = 'library.view_mode';
 
   /// liste / grille / grille compacte pour les écrans de bibliothèque. Réglage
@@ -1786,6 +1804,18 @@ class UserSettings extends ChangeNotifier {
   double get crossfadeSeconds => _p.getDouble(_kCrossfadeSecs) ?? 0.0;
   set crossfadeSeconds(double v) {
     _p.setDouble(_kCrossfadeSecs, v.clamp(0.0, 8.0));
+    notifyListeners();
+  }
+
+  // ── Lecture — vitesse ───────────────────────────────────────────────────────
+  // 0,2 à 3, 1 = normale. Réglée depuis la feuille des voix; persistée comme
+  // dans Modizer (GLOB_PBRATIO). Le natif choisit le mécanisme (engine d'abord,
+  // sinon rééchantillonnage) — rewamp_set_playback_speed.
+  static const _kPlaybackSpeed = 'playback.speed';
+  double get playbackSpeed =>
+      (_p.getDouble(_kPlaybackSpeed) ?? 1.0).clamp(0.2, 3.0).toDouble();
+  set playbackSpeed(double v) {
+    _p.setDouble(_kPlaybackSpeed, v.clamp(0.2, 3.0).toDouble());
     notifyListeners();
   }
 

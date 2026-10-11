@@ -59,6 +59,9 @@ struct RewampDecoder
     uint64_t fadeFrames = 0;  // rampe finale (tag `fade`), 0 = aucune
     uint64_t framePos;
     int64_t lastMuteMask; // applied generic_mute_mask snapshot
+    double speed;         // native playback speed, 0 = 1×
+    double posFrac;
+    int seeking;          // the fast-forward runs (and counts) at 1×
 };
 
 // ── psflib stdio callbacks ──────────────────────────────────────────────────
@@ -392,11 +395,15 @@ static uint64_t hq_read(RewampDecoder *dec, float *out, uint64_t frameCount)
         qsoundc_set_mute_mask(qsound_get_qmix_state(dec->core), (UINT32)generic_mute_mask);
     }
 
+    const double sp = (dec->seeking || dec->speed <= 0.0) ? 1.0 : dec->speed;
     if (dec->totalFrames > 0)
     {
         if (dec->framePos >= dec->totalFrames)
             return 0;
+        // remain is song time; the output covers sp × as much of it
         uint64_t remain = dec->totalFrames - dec->framePos;
+        if (sp != 1.0)
+            remain = (uint64_t)((double)remain / sp) + 1;
         if (frameCount > remain)
             frameCount = remain;
     }
@@ -417,12 +424,21 @@ static uint64_t hq_read(RewampDecoder *dec, float *out, uint64_t frameCount)
         for (uint32_t i = 0; i < got * 2; i++)
             dst[i] = s_buf[i] * scale;
         written += got;
-        dec->framePos += got;
+        if (sp == 1.0)
+            dec->framePos += got;
+        else
+        {
+            // framePos is SONG time
+            dec->posFrac += (double)got * sp;
+            const uint64_t whole = (uint64_t)dec->posFrac;
+            dec->posFrac -= (double)whole;
+            dec->framePos += whole;
+        }
         if (got < want)
             break;
     }
-    rewamp_psf_fade_apply(out, written, 2, fadeBase,
-                          dec->totalFrames, dec->fadeFrames);
+    rewamp_psf_fade_apply_speed(out, written, 2, fadeBase,
+                                dec->totalFrames, dec->fadeFrames, sp);
     return written;
 }
 
@@ -445,9 +461,16 @@ static void hq_seek(RewampDecoder *dec, uint64_t frameIndex)
         hq_apply_roms(dec);
         dec->framePos = 0;
     }
+    dec->posFrac = 0.0;
     if (dec->framePos == frameIndex)
+    {
+        qsound_rewamp_speed(dec->core, dec->speed);
         return;
+    }
     g_is_seeking = 1;
+    // the fast-forward is in song time: 1×
+    dec->seeking = 1;
+    qsound_rewamp_speed(dec->core, 1.0);
     float tmp[256 * 2];
     while (dec->framePos < frameIndex && !g_seek_cancel)
     {
@@ -459,7 +482,21 @@ static void hq_seek(RewampDecoder *dec, uint64_t frameIndex)
         if (got == 0)
             break;
     }
+    dec->seeking = 0;
+    qsound_rewamp_speed(dec->core, dec->speed);
     g_is_seeking = 0;
+}
+
+// Native speed: the 250 Hz IRQ that calls the Z80 driver comes `speed`
+// times as often (qsound_rewamp_speed); the QSound mixer keeps its clock.
+static int hq_set_speed(RewampDecoder *dec, double speed)
+{
+    if (!dec || !dec->core || speed < 0.2 || speed > 3.0)
+        return 0;
+    dec->speed = speed;
+    if (!dec->seeking)
+        qsound_rewamp_speed(dec->core, speed);
+    return 1;
 }
 
 static uint64_t hq_length(RewampDecoder *dec)
@@ -504,6 +541,13 @@ static const RewampPluginVTable kHqVTable = {
     hq_length,
     hq_close,
     hq_configure_loop_fn,
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    hq_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable *rewamp_highlyquixotic_plugin(void) { return &kHqVTable; }

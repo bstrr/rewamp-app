@@ -10,18 +10,19 @@
 # Ce fichier voyage dans le dépôt PUBLIC (allowlist de publish_public.sh): les
 # binaires publiés sont construits par la CI de ce dépôt-là.
 #
-# Déclenchement MANUEL ou par TAG — jamais à chaque poussée: un build complet
-# est long (FFmpeg + le moteur, ~40 moteurs) et un instantané public en reçoit
-# un par version, pas un par commit.
+# Déclenchement MANUEL, ou APPELÉ par release.yml sur un tag `v*` — jamais à
+# chaque poussée: un build complet est long (FFmpeg + le moteur, ~40 moteurs)
+# et un instantané public en reçoit un par version, pas un par commit. La
+# release brouillon n'est PAS créée ici: release.yml la crée une seule fois,
+# avec les AppImage ET le zip Windows.
 name: AppImage
 
 on:
   workflow_dispatch:
-  push:
-    tags: ['v*']
+  workflow_call:
 
 permissions:
-  contents: write        # la création de release attache les AppImage
+  contents: read
 
 env:
   # ⚠️ ÉPINGLÉE, pas « stable »: une CI dont la chaîne d'outils bouge toute
@@ -145,21 +146,3 @@ jobs:
           name: Rewamp-${{ matrix.arch }}.AppImage
           path: app/build/appimage/Rewamp-*.AppImage
           if-no-files-found: error
-
-  # Sur un TAG seulement: une release brouillon qui porte les deux arches.
-  # Brouillon, pas publiée: le texte de release et le moment d'appuyer
-  # appartiennent à l'auteur (même règle que l'instantané public lui-même).
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - run: ls -lh dist
-      - uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: dist/Rewamp-*.AppImage

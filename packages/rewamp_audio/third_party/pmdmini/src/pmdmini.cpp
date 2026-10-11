@@ -297,6 +297,13 @@ int pmd_length_msec ( void )
     return pmd_length;
 }
 //YOYOFR
+// rewamp: native playback speed (see PMDWIN::getpcmdata).
+extern double pmd_rewamp_speed;
+void pmd_set_speed ( double speed )
+{
+	pmd_rewamp_speed = speed > 0.0 ? speed : 1.0;
+}
+
 void pmd_renderer ( short *buf , int len )
 {
 	getpcmdata ( buf , len );

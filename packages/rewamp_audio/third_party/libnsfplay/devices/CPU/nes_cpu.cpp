@@ -79,6 +79,8 @@ NES_CPU::NES_CPU (double clock)
   enable_nmi = false;
   nsf2_bits = 0;
   nsf2_irq = NULL;
+  rewamp_play_speed = 1.0; // REWAMP
+  rewamp_play_rate  = 0.0;
 }
 
 NES_CPU::~NES_CPU ()
@@ -297,7 +299,10 @@ void NES_CPU::Start (
 	play_addr = play_addr_;
 	song = song_;
 	region = region_;
-	fclocks_per_frame = (INT64)((double)((1 << FRAME_FIXED) * nes_basecycles) / play_rate );
+	// REWAMP: la periode de PLAY suit la vitesse de lecture (SetPlaySpeed).
+	rewamp_play_rate = play_rate;
+	if (!(rewamp_play_speed > 0.0)) rewamp_play_speed = 1.0;
+	fclocks_per_frame = (INT64)((double)((1 << FRAME_FIXED) * nes_basecycles) / (play_rate * rewamp_play_speed));
 	fclocks_left_in_frame = 0;
 	stolen_cycles = 0;
 	play_ready = false;
@@ -384,6 +389,18 @@ unsigned int NES_CPU::GetPC() const
 void NES_CPU::StealCycles(unsigned int cycles)
 {
 	stolen_cycles += cycles;
+}
+
+// REWAMP: vitesse de lecture (voir nes_cpu.h).
+void NES_CPU::SetPlaySpeed(double speed)
+{
+	if (!(speed > 0.0)) speed = 1.0;
+	rewamp_play_speed = speed;
+	if (rewamp_play_rate > 0.0)
+	{
+		fclocks_per_frame = (INT64)((double)((1 << FRAME_FIXED) * nes_basecycles) / (rewamp_play_rate * speed));
+		if (fclocks_left_in_frame > fclocks_per_frame) fclocks_left_in_frame = fclocks_per_frame;
+	}
 }
 
 void NES_CPU::EnableNMI(bool enable)

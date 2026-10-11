@@ -33,9 +33,15 @@ import 'user_settings.dart';
 /// nouveautés (Windows, Linux X11, formats, fluidité, défilement, souris,
 /// presets), puis les correctifs, le gain de chargement des pochettes en
 /// dernier.
-const kReleaseNotesVersion = 8;
+///
+/// **9 = beta 8** (`0.8.0+17`, 2026-10-11). La 7 a été PUBLIÉE, ses treize
+/// puces sont vues et RETIRÉES. La 7.1 (`0.7.1+16`) n'est jamais partie: ses
+/// correctifs (piste PSF, playlists fusionnées, défauts des visualiseurs)
+/// entrent dans cette note. Nouveautés d'abord (vitesse, Windows, formats,
+/// bibliothèque, pochette, visualiseurs), correctifs ensuite.
+const kReleaseNotesVersion = 9;
 
-const kReleaseNotesLabel = 'Beta 7';
+const kReleaseNotesLabel = 'Beta 8';
 
 /// Les points de la note, dans l'ordre d'affichage. Une note SYNTHÉTIQUE: ce
 /// que l'utilisateur verra changer, pas le journal des commits. Le dernier
@@ -43,19 +49,17 @@ const kReleaseNotesLabel = 'Beta 7';
 /// délibérément en dernier et signalé, c'est la seule ligne qui demande
 /// quelque chose au lecteur plutôt que de lui annoncer un gain.
 List<String> releaseNotesBullets(AppLocalizations l10n) => [
-      l10n.releaseNotesV8Windows,
-      l10n.releaseNotesV8Linux,
-      l10n.releaseNotesV8Formats,
-      l10n.releaseNotesV8Smooth,
-      l10n.releaseNotesV8Scrolling,
-      l10n.releaseNotesV8MouseDrag,
-      l10n.releaseNotesV8Presets,
-      l10n.releaseNotesV8Pause,
-      l10n.releaseNotesV8Psf,
-      l10n.releaseNotesV8ArtistTracks,
-      l10n.releaseNotesV8VizFixes,
-      l10n.releaseNotesV8ProjectMFixes,
-      l10n.releaseNotesV8Covers,
+      l10n.releaseNotesV9Speed,
+      l10n.releaseNotesV9Windows,
+      l10n.releaseNotesV9Formats,
+      l10n.releaseNotesV9Amiga,
+      l10n.releaseNotesV9MoonBlaster,
+      l10n.releaseNotesV9HideElsewhere,
+      l10n.releaseNotesV9ArtworkFullscreen,
+      l10n.releaseNotesV9Viz,
+      l10n.releaseNotesV9PsfTrack,
+      l10n.releaseNotesV9Playlists,
+      l10n.releaseNotesV9AmigaInfo,
     ];
 
 /// L'écran lui-même: fond du splash, logo réduit, la note, un bouton.

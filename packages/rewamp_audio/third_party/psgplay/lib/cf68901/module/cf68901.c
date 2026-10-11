@@ -123,6 +123,68 @@ static void timer_wr_interrupt_pending(struct cf68901_module *module,
 	mfp_wr_interrupt_pending(module, timer->channel, true);
 }
 
+/* rewamp: native playback speed (see cf68901_module.rewamp). */
+static bool rw_is(const struct cf68901_module *module,
+	const struct cf68901_timer *timer)
+{
+	const int t = module->rewamp.timer;
+	if (!t || module->rewamp.speed <= 0.0)
+		return false;
+	return (t == 'A' && timer->state == &module->state.timer_a) ||
+	       (t == 'B' && timer->state == &module->state.timer_b) ||
+	       (t == 'C' && timer->state == &module->state.timer_c) ||
+	       (t == 'D' && timer->state == &module->state.timer_d);
+}
+
+static struct cf68901_timer_cycle rw_virt(const struct cf68901_module *module,
+	const struct cf68901_timer *timer, struct cf68901_timer_cycle real)
+{
+	if (!rw_is(module, timer) || real.c < module->rewamp.base_real)
+		return real;
+	return (struct cf68901_timer_cycle) { .c = module->rewamp.base_virt +
+		(uint64_t)((double)(real.c - module->rewamp.base_real) *
+			   module->rewamp.speed) };
+}
+
+static struct cf68901_timer_cycle rw_real(const struct cf68901_module *module,
+	const struct cf68901_timer *timer, struct cf68901_timer_cycle virt)
+{
+	if (!rw_is(module, timer) || virt.c < module->rewamp.base_virt)
+		return virt;
+	const double d = (double)(virt.c - module->rewamp.base_virt) /
+		module->rewamp.speed;
+	return (struct cf68901_timer_cycle) {
+		.c = module->rewamp.base_real + (uint64_t)d +
+			((double)(uint64_t)d < d ? 1 : 0) };
+}
+
+/* A requested speed is adopted here, at a known real time: the virtual
+ * clock is rebased so it stays continuous. */
+static void rw_adopt(struct cf68901_module *module,
+	struct cf68901_timer_cycle now)
+{
+	if (module->rewamp.req == module->rewamp.speed)
+		return;
+	const double old = module->rewamp.speed > 0.0 ? module->rewamp.speed : 1.0;
+	if (now.c >= module->rewamp.base_real)
+		module->rewamp.base_virt += (uint64_t)((double)(now.c -
+			module->rewamp.base_real) * old);
+	module->rewamp.base_real = now.c;
+	module->rewamp.speed = module->rewamp.req;
+}
+
+void cf68901_rewamp_speed(struct cf68901_module *module, int timer, double speed)
+{
+	if (!module->rewamp.speed) {
+		/* first use: both clocks agree from now on */
+		module->rewamp.speed = 1.0;
+		module->rewamp.req = 1.0;
+		module->rewamp.base_real = module->rewamp.base_virt = 0;
+	}
+	module->rewamp.timer = timer;
+	module->rewamp.req = speed > 0.0 ? speed : 1.0;
+}
+
 static uint32_t timer_period(const struct cf68901_timer *timer)
 {
 	return *timer->data ? *timer->data : 256;
@@ -269,7 +331,8 @@ static void timer_delay_event(struct cf68901_module *module,
 
 request_event:; /* Label followed by a declaration is a C23 extension. */
 	const struct cf68901_clk e =
-		mfp_from_timer_cycle_align(module->frequency, *timeout);
+		mfp_from_timer_cycle_align(module->frequency,
+			rw_real(module, timer, *timeout));
 
 	if (!event->clk.c || e.c < event->clk.c)
 		event->clk = e;
@@ -337,15 +400,24 @@ static int assert_mfp_irq(struct cf68901_module *module)
 static struct cf68901_event mfp_event(struct cf68901_module *module,
 	const struct cf68901_clk clk)
 {
-	const struct cf68901_timer_cycle timer_cycle =
+	const struct cf68901_timer_cycle real_cycle =
 		timer_from_mfp_cycle(module->frequency, clk);
 	struct cf68901_event event = { };
 	DEFINE_TIMERS(module->state);
+	rw_adopt(module, real_cycle);
 
-	TIMER_OP_MODE(module->state.regs.tacr, &timer_a, &module->state.tai);
-	TIMER_OP_MODE(module->state.regs.tbcr, &timer_b, &module->state.tbi);
-	timer_delay_event(module, &event, &timer_c, timer_cycle);
-	timer_delay_event(module, &event, &timer_d, timer_cycle);
+	{
+		const struct cf68901_timer_cycle timer_cycle =
+			rw_virt(module, &timer_a, real_cycle);
+		TIMER_OP_MODE(module->state.regs.tacr, &timer_a, &module->state.tai);
+	}
+	{
+		const struct cf68901_timer_cycle timer_cycle =
+			rw_virt(module, &timer_b, real_cycle);
+		TIMER_OP_MODE(module->state.regs.tbcr, &timer_b, &module->state.tbi);
+	}
+	timer_delay_event(module, &event, &timer_c, rw_virt(module, &timer_c, real_cycle));
+	timer_delay_event(module, &event, &timer_d, rw_virt(module, &timer_d, real_cycle));
 
 	/*
 	 * Interrupts are masked for a channel by clearing the
@@ -421,10 +493,10 @@ static uint8_t mfp_rd_u8(struct cf68901_module *module,
 		return 0;
 
 	switch (reg) {
-	case CF68901_REG_TADR: return timer_counter(module, &timer_a, &module->state.tai, timer_cycle);
-	case CF68901_REG_TBDR: return timer_counter(module, &timer_b, &module->state.tbi, timer_cycle);
-	case CF68901_REG_TCDR: return timer_counter(module, &timer_c, NULL, timer_cycle);
-	case CF68901_REG_TDDR: return timer_counter(module, &timer_d, NULL, timer_cycle);
+	case CF68901_REG_TADR: return timer_counter(module, &timer_a, &module->state.tai, rw_virt(module, &timer_a, timer_cycle));
+	case CF68901_REG_TBDR: return timer_counter(module, &timer_b, &module->state.tbi, rw_virt(module, &timer_b, timer_cycle));
+	case CF68901_REG_TCDR: return timer_counter(module, &timer_c, NULL, rw_virt(module, &timer_c, timer_cycle));
+	case CF68901_REG_TDDR: return timer_counter(module, &timer_d, NULL, rw_virt(module, &timer_d, timer_cycle));
 	default:	       return module->state.regs.u8[reg];
 	}
 }

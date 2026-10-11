@@ -223,6 +223,12 @@ const kSunvoxExts = <String>{ 'sunvox' };
 /// which are JSON rather than a binary module.
 const kTiaTrackerExts = <String>{ 'ttt' };
 
+/// NoiseTracker GS 1.x — Apple IIGS (Ensoniq 5503). Les rips n'ont le plus
+/// souvent AUCUNE extension: le moteur les reconnaît au CONTENU (« FTA
+/// MODULEFILE »), et `ntgs` n'est que l'ÉTIQUETTE de format qu'on leur pose
+/// (voir `localAudioFormatOf`).
+const kNtgsExts = <String>{ 'ntgs' };
+
 /// Plain PCM / lossy audio (miniaudio fallback).
 const kPlainAudioExts = <String>{
   'mp3', 'ogg', 'flac', 'wav', 'opus', 'm4a', 'aiff', 'aif',
@@ -292,6 +298,7 @@ final kAllDecoderExts = <String>{
   ...kSc68Exts,
   ...kSunvoxExts,
   ...kTiaTrackerExts,
+  ...kNtgsExts,
   ...kPlainAudioExts,
 };
 

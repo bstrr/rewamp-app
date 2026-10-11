@@ -44,6 +44,8 @@ struct RewampDecoder {
     uint64_t totalFrames;
     uint64_t pos;
     int64_t  lastMuteMask;
+    double   speed;       /* vitesse native, 0 = 1× */
+    double   posFrac;
 };
 
 static const char* const kV2mExts[] = { "v2m", "v2mz", NULL };
@@ -172,7 +174,11 @@ static uint64_t v2m_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     }
 
     dec->player->render(out, (uint32_t)frameCount);
-    dec->pos += frameCount;
+    /* pos est en temps du MORCEAU: vitesse × le rendu. */
+    dec->posFrac += (double)frameCount * (dec->speed > 0.0 ? dec->speed : 1.0);
+    uint64_t whole = (uint64_t)dec->posFrac;
+    dec->posFrac -= (double)whole;
+    dec->pos += whole;
 
     /* Niveau par voix, lu-et-effacé à chaque bloc. C'est un vrai niveau, là où
      * l'ancien portage écrivait la constante 1 dans une échelle 0..255 — la
@@ -202,6 +208,16 @@ static void v2m_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->player) return;
     dec->player->play((uint32_t)(frameIndex * 1000ull / V2M_RATE));
     dec->pos = frameIndex;
+    dec->posFrac = 0.0;
+}
+
+/* Vitesse NATIVE: l'écart entre deux événements du séquenceur ÷ vitesse
+ * (V2MPlayer::SetSpeed), le synthé garde sa hauteur. */
+static int v2m_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->player || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    dec->player->setSpeed(speed);
+    return 1;
 }
 
 static uint64_t v2m_length(RewampDecoder* dec) {
@@ -222,6 +238,14 @@ static const RewampPluginVTable kV2mVTable = {
     v2m_seek,
     v2m_length,
     v2m_close,
+    NULL,             /* configure_loop */
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    v2m_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_v2m_plugin(void) { return &kV2mVTable; }

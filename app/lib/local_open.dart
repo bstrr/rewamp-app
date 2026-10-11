@@ -45,6 +45,9 @@ const kMultiTrackExts = {
   'kss', 'mgs', 'bgm', 'mpk', 'mbm', 'opx', 'mus',
   'hes', 'sgc',
   'ay', 'vtx', 'pt3', 'stc', 'chp',
+  // SAM Coupé `.cop`: un programme Z80 brut porte jusqu'à 17 morceaux (greffon
+  // samcop); un module E-Tracker n'en a qu'un et la sonde n'y revendique rien.
+  'cop',
   'gym', 's98', 'vgm', 'vgz', 'dro', 'dr0',
   'wsr',              // WonderSwan
   // Un `.adl` Westwood est une TABLE de morceaux — et sa sous-chanson 0 est
@@ -794,7 +797,10 @@ Future<List<TrackRecord>> _tracksForLocalPathInner(
   }
 
   // Multi-track container (NSF/GBS/SID/…): rebuild the full subsong queue.
-  if (kMultiTrackExts.contains(ext)) {
+  // Un `.rk` Ron Klaren aussi, mais à la condition du CONTENU: `rk` n'est pas
+  // une extension multi-pistes en soi (le reste des `.rk` part chez UADE, dont
+  // la songdb fait la liste plus bas) — voir UadeInfoService.isRonKlarenAt.
+  if (kMultiTrackExts.contains(ext) || UadeInfoService.isRonKlarenAt(path)) {
     // Un M3U voisin bat la sonde native — voir m3uSubsongsFor.
     final fromM3u = await m3uSubsongsFor(path, m3uCache: batch?.m3u);
     if (fromM3u != null) return fromM3u;
@@ -969,8 +975,10 @@ Future<List<TrackRecord>> expandLocalModules(
         ? name.substring(ext.length + 1)
         : name.replaceAll(RegExp(r'\.\w+$'), '');
 
-    // UADE multi-subsong (audacious-uade songdb).
-    if (UadeInfoService.isUadeFileAt(path)) {
+    // UADE multi-subsong (audacious-uade songdb). Sauf un Ron Klaren joué par
+    // le moteur natif: sa liste vient de la sonde, juste en dessous.
+    if (UadeInfoService.isUadeFileAt(path) &&
+        !UadeInfoService.isRonKlarenAt(path)) {
       final info = await UadeInfoService.instance.forPath(path);
       // NOSOUND slots filtered out — see UadeInfo.playableSubsongs.
       final playable = info?.playableSubsongs ?? const [];
@@ -995,8 +1003,8 @@ Future<List<TrackRecord>> expandLocalModules(
       continue;
     }
 
-    // Native multi-track container (NSF/GBS/SID/…).
-    if (kMultiTrackExts.contains(ext)) {
+    // Native multi-track container (NSF/GBS/SID/…, et Ron Klaren).
+    if (kMultiTrackExts.contains(ext) || UadeInfoService.isRonKlarenAt(path)) {
       // Le M3U de l'archive: extrait à côté du module, il nomme les morceaux
       // et ne liste que les vrais. Il était simplement ignoré — un `.zip`
       // GBgbs jouait ses cases mortes sous des titres numérotés.

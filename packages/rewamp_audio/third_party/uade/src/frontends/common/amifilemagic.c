@@ -1127,10 +1127,17 @@ void uade_filemagic(unsigned char *buf, size_t bufsize, char *pre,
 	     buf[4] == 0x4e && buf[5] == 0xfa &&
 	     buf[8] == 0x4e && buf[9] == 0xfa &&
 	     buf[2] == 0x00 && buf[6] == 0x06 && buf[10] == 0x07) {
-	     if (buf[3] == 0x2a && buf[7] == 0xfc && buf[11] == 0x7c) {
+	     /* Rewamp: un Sonic Arranger qui EMBARQUE son replay (table de sauts
+	      * en tête). L'amont ne reconnaissait que deux jeux d'octets exacts
+	      * (2a/fc/7c ⇒ SA_old, 1a/c6/3a ⇒ SA) et envoyait le second au player
+	      * SonicArranger, qui en refuse une partie (« module check failed »).
+	      * Mesuré sur les 133 .sa de ce type de modland « Sonic Arranger »:
+	      * SonicArranger-pc-all (« all versions player ») joue TOUS ceux dont le
+	      * premier saut vaut 0x1a ou 0x2a (variantes 06c6/06e4/06ec/06f4/06fc
+	      * comprises); seul « willy ingame.sa » (0x24) lui résiste — celui-là,
+	      * SonicArranger le joue, on ne le classe donc pas. */
+	     if (buf[3] == 0x2a || buf[3] == 0x1a) {
 	        strcpy(pre, "SA_old");
-	    } else if (buf[3] == 0x1a && buf[7] == 0xc6 && buf[11] == 0x3a) {
-	        strcpy(pre, "SA");
 	    }
 
   } else if (buf[0] == 0x4e && buf[1] == 0xfa &&

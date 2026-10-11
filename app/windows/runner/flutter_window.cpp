@@ -25,6 +25,10 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  // La session média se demande pour la fenêtre de PREMIER niveau (celle que
+  // la barre des tâches connaît), pas pour la vue enfant de Flutter.
+  media_controls_ = std::make_unique<MediaControls>(
+      GetHandle(), flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -40,6 +44,8 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  // Avant le moteur: le canal de la session vit sur son messager.
+  media_controls_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -62,6 +68,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
+    case MediaControls::kButtonMessage:
+      if (media_controls_) media_controls_->DrainPendingEvents();
+      return 0;
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;

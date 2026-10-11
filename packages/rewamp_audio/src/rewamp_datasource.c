@@ -138,36 +138,108 @@ double g_track_end_seconds = 0.0;
 /* Fin effective de la piste EN PRODUCTION, en frames RING absolues.
  * La longueur du décodeur fait foi quand il en a une; sinon la durée Dart.
  * 0 = pas de fin connue. */
-static int64_t ds_effective_end_ring(const RewampDataSource* ds) {
-    if (ds->trackLenRing > 0) return ds->trackBase + ds->trackLenRing;
+/* ── Horloge du morceau (voir RewampDataSource.seg) ─────────────────────── */
+
+/* Segment couvrant la position d'anneau `pos` (le dernier qui commence avant
+ * ou dessus). ringLock tenu par l'appelant. */
+static int ds_seg_index(const RewampDataSource* ds, int64_t pos) {
+    int i = ds->segCount - 1;
+    while (i > 0 && ds->seg[i].ring > pos) i--;
+    return i < 0 ? 0 : i;
+}
+static int64_t ds_seg_song(const RewampDataSource* ds, int i, int64_t pos) {
+    return ds->seg[i].song +
+           (int64_t)llround((double)(pos - ds->seg[i].ring) * ds->seg[i].songPerRing);
+}
+static int64_t ds_seg_native(const RewampDataSource* ds, int i, int64_t pos) {
+    return ds->seg[i].native +
+           (int64_t)llround((double)(pos - ds->seg[i].ring) * ds->seg[i].nativePerRing);
+}
+
+/* Facteurs de la piste que décode le producteur, à sa vitesse en vigueur. */
+static double ds_native_per_ring(const RewampDataSource* ds) {
+    /* La fréquence ENTIÈRE réellement posée au rééchantillonneur, pas
+     * taux×vitesse: sinon l'horloge dériverait de ce qu'il consomme. */
+    const uint32_t in = ds->rsActive ? ds->rsInRate : ds->nativeRate;
+    return (double)in / (double)DS_RING_RATE;
+}
+
+/* Ouvre un segment à la position du PRODUCTEUR. `song` < 0 = continuer
+ * l'horloge du segment précédent. ringLock tenu par l'appelant. */
+static void ds_seg_push(RewampDataSource* ds, int64_t song) {
+    const int64_t ring = ds->producerPos;
+    if (song < 0) {
+        song = ds->segCount > 0 ? ds_seg_song(ds, ds->segCount - 1, ring) : 0;
+    }
+    /* Un segment qui commence au même endroit que le dernier le REMPLACE
+     * (deux changements avant qu'une trame ne soit produite). */
+    if (ds->segCount > 0 && ds->seg[ds->segCount - 1].ring == ring) ds->segCount--;
+    if (ds->segCount == (int)(sizeof(ds->seg) / sizeof(ds->seg[0]))) {
+        /* Plein (des changements plus rapides que l'avance de l'anneau): on
+         * oublie le plus ancien — il est derrière le curseur ou presque. */
+        memmove(&ds->seg[0], &ds->seg[1], sizeof(ds->seg[0]) * (size_t)(ds->segCount - 1));
+        ds->segCount--;
+    }
+    ds->seg[ds->segCount].ring          = ring;
+    ds->seg[ds->segCount].native        = ds->producerPosNative;
+    ds->seg[ds->segCount].song          = song;
+    ds->seg[ds->segCount].nativePerRing = ds_native_per_ring(ds);
+    ds->seg[ds->segCount].songPerRing   = ds->effectiveSpeed;
+    ds->seg[ds->segCount].track         = ds->trackId;
+    ds->segCount++;
+}
+
+/* Le consommateur a dépassé le début du segment suivant: le premier ne sert
+ * plus. ringLock tenu par l'appelant. */
+static void ds_seg_prune(RewampDataSource* ds, int64_t cursor) {
+    int drop = 0;
+    while (drop + 1 < ds->segCount && ds->seg[drop + 1].ring <= cursor) drop++;
+    if (drop > 0) {
+        memmove(&ds->seg[0], &ds->seg[drop], sizeof(ds->seg[0]) * (size_t)(ds->segCount - drop));
+        ds->segCount -= drop;
+    }
+}
+
+/* Fin de la piste du PRODUCTEUR en temps du morceau (trames de 44100): sa
+ * longueur, sinon la fin posée par Dart; 0 = inconnue. */
+static int64_t ds_effective_end_song(const RewampDataSource* ds) {
+    if (ds->trackLenRing > 0) return ds->trackLenRing;
     if (g_track_end_seconds > 0.0)
-        return ds->trackBase + (int64_t)(g_track_end_seconds * DS_RING_RATE);
+        return (int64_t)(g_track_end_seconds * DS_RING_RATE);
     return 0;
+}
+
+/* La même fin, en position d'ANNEAU, d'après l'horloge en vigueur chez le
+ * producteur (son dernier segment). ringLock tenu par l'appelant. */
+static int64_t ds_effective_end_ring_locked(const RewampDataSource* ds) {
+    const int64_t endSong = ds_effective_end_song(ds);
+    if (endSong <= 0 || ds->segCount == 0) return 0;
+    const int i = ds->segCount - 1;
+    const double spr = ds->seg[i].songPerRing > 0 ? ds->seg[i].songPerRing : 1.0;
+    return ds->seg[i].ring +
+           (int64_t)llround((double)(endSong - ds->seg[i].song) / spr);
+}
+static int64_t ds_effective_end_ring(RewampDataSource* ds) {
+    ring_lock(&ds->ringLock);
+    const int64_t r = ds_effective_end_ring_locked(ds);
+    ring_unlock(&ds->ringLock);
+    return r;
 }
 
 /* Ring→native translation for the consumer-side capture reads. The store keys
  * are NATIVE frames (chip cores write one entry per native frame); the
- * consumer's cursor runs in ring frames. Segment-aware: while a boundary is
- * pending, frames before it still belong to the OUTGOING track and translate
- * through its rate/base. Identity when the segment's rate is DS_RING_RATE. */
-static int64_t ds_ring_to_native(const RewampDataSource* ds, int64_t ringPos) {
-    int64_t base, nbase;
-    uint32_t rate;
-    if (ds->handoffPending && ringPos < ds->handoffFrame) {
-        base  = ds->trackBase;
-        nbase = ds->trackBaseNative;
-        rate  = ds->prevNativeRate;
-    } else if (ds->handoffPending) {
-        base  = ds->handoffFrame;
-        nbase = ds->pendingBaseNative;
-        rate  = ds->nativeRate;
-    } else {
-        base  = ds->trackBase;
-        nbase = ds->trackBaseNative;
-        rate  = ds->nativeRate;
-    }
-    if (rate == DS_RING_RATE) return nbase + (ringPos - base);
-    return nbase + (ringPos - base) * (int64_t)rate / DS_RING_RATE;
+ * consumer's cursor runs in ring frames. Through the segment that covers the
+ * position: it carries both the gapless boundary (a new track opens a
+ * segment) and the playback speed. ringLock tenu par l'appelant. */
+static int64_t ds_ring_to_native_locked(const RewampDataSource* ds, int64_t ringPos) {
+    if (ds->segCount == 0) return ringPos;
+    return ds_seg_native(ds, ds_seg_index(ds, ringPos), ringPos);
+}
+static int64_t ds_ring_to_native(RewampDataSource* ds, int64_t ringPos) {
+    ring_lock(&ds->ringLock);
+    const int64_t r = ds_ring_to_native_locked(ds, ringPos);
+    ring_unlock(&ds->ringLock);
+    return r;
 }
 
 static inline int64_t ds_now_us(void) {
@@ -289,6 +361,60 @@ static uint64_t ds_decode(RewampDataSource* ds, float* dst, uint64_t want) {
     return ds->vt->read(ds->decoder, dst, want);
 }
 
+/* (Re)règle le rééchantillonneur du producteur pour taux natif × vitesse
+ * générique → DS_RING_RATE. Inactif quand le rapport vaut 1. Rend 0 s'il faut
+ * rééchantillonner et que c'est impossible. decodeLock tenu. */
+static int ds_update_resampler(RewampDataSource* ds) {
+    const uint32_t in = (uint32_t)llround((double)ds->nativeRate * ds->genericSpeed);
+    if (in == DS_RING_RATE || in == 0) { ds->rsActive = 0; return 1; }
+    if (ds->nativeBuf == NULL) return 0;
+    if (!ds->rsInit) {
+        ma_linear_resampler_config rc = ma_linear_resampler_config_init(
+            ma_format_f32, (ma_uint32)ds->channels, in, DS_RING_RATE);
+        rc.lpfOrder = MA_MAX_FILTER_ORDER;
+        if (ma_linear_resampler_init(&rc, NULL, &ds->rs) != MA_SUCCESS) return 0;
+        ds->rsInit = 1;
+    } else if (in != ds->rsInRate || !ds->rsActive) {
+        /* L'état (trames en cache, filtre) est GARDÉ: un changement de vitesse
+         * en cours de lecture ne doit pas claquer. */
+        ma_linear_resampler_set_rate(&ds->rs, in, DS_RING_RATE);
+    }
+    ds->rsInRate = in;
+    ds->rsActive = 1;
+    return 1;
+}
+
+/* Applique la vitesse `want` au décodeur courant: le mécanisme PROPRE de
+ * l'engine d'abord (vt->set_speed rend 1), sinon le rééchantillonnage
+ * générique. N'ouvre PAS de segment (l'appelant sait où). decodeLock tenu. */
+static void ds_configure_speed(RewampDataSource* ds, double want) {
+    const int unity = fabs(want - 1.0) < 1e-6;
+    int native = 0;
+    if (ds->decoder != NULL && ds->vt != NULL && ds->vt->set_speed != NULL) {
+        native = !unity && ds->vt->set_speed(ds->decoder, want) == 1;
+        /* Refusé (hors de sa plage) ou retour à 1×: l'engine revient à 1×. */
+        if (!native) ds->vt->set_speed(ds->decoder, 1.0);
+    }
+    ds->genericSpeed = (native || unity) ? 1.0 : want;
+    if (!ds_update_resampler(ds)) {
+        ds->genericSpeed = 1.0;            /* impossible: on reste à 1× */
+        ds_update_resampler(ds);
+    }
+    ds->appliedSpeed   = want;             /* la DEMANDE, pour ne pas reboucler */
+    ds->effectiveSpeed = native ? want : ds->genericSpeed;
+    ds->speedMode      = fabs(ds->effectiveSpeed - 1.0) < 1e-6 ? 0 : (native ? 1 : 2);
+    g_playback_speed_mode = ds->speedMode;
+}
+
+/* La vitesse demandée par Dart, bornée. */
+static double ds_wanted_speed(void) {
+    double v = g_playback_speed;
+    if (!(v > 0.0)) v = 1.0;
+    if (v < 0.2) v = 0.2;
+    if (v > 3.0) v = 3.0;
+    return v;
+}
+
 /* Read up to `ringWant` ring-frames' worth of NATIVE audio from the decoder,
  * into nativeBuf (when resampling) or straight into stepBuf (identity),
  * sampling the tracker cursor on the way. Advances producerPosNative.
@@ -302,7 +428,7 @@ static int ds_read_native_step(RewampDataSource* ds, int ringWant,
     int want = ringWant;
     float* dst = ds->stepBuf;
     if (ds->rsActive) {
-        want = (int)((int64_t)ringWant * ds->nativeRate / DS_RING_RATE);
+        want = (int)llround((double)ringWant * ds_native_per_ring(ds));
         if (want < 1) want = 1;
         if (want > ds->nativeBufCap) want = ds->nativeBufCap;
         dst = ds->nativeBuf;
@@ -395,8 +521,12 @@ static void ds_maybe_start_crossfade(RewampDataSource* ds) {
         // forcée avec fondu utilisateur), et une seule fois par piste (le
         // start >= 0 fait office de verrou; remis à -1 par load/handoff).
         if (g_loop_fadeout_start_frame < 0 && !ds->endFadeArmed) {
-            g_loop_fadeout_start_frame  = endRing - xfFrames;
-            g_loop_fadeout_total_frames = xfFrames;
+            /* La fenêtre vit en temps du MORCEAU: les xf secondes JOUÉES valent
+             * xf × vitesse secondes de morceau. */
+            const int64_t xfSong = (int64_t)llround((double)xfFrames * ds->effectiveSpeed);
+            g_loop_fadeout_track        = ds->trackId;
+            g_loop_fadeout_start_frame  = ds_effective_end_song(ds) - xfSong;
+            g_loop_fadeout_total_frames = xfSong;
             ds->endFadeArmed = 1;
         }
         return;
@@ -544,6 +674,21 @@ static void* ds_producer_main(void* arg) {
         int step = DS_STEP_FRAMES;
         if (step > room) step = room;
         if (step <= 0) { nanosleep(&idle, NULL); continue; }
+
+        // Vitesse de lecture changée par Dart: appliquée ICI, entre deux pas,
+        // et un segment d'horloge s'ouvre à la position du producteur — c'est
+        // là que l'oreille l'entendra, une avance d'anneau plus tard.
+        {
+            const double want = ds_wanted_speed();
+            if (ds->decoder != NULL && fabs(want - ds->appliedSpeed) > 1e-6) {
+                pthread_mutex_lock(&ds->decodeLock);
+                ds_configure_speed(ds, want);
+                ring_lock(&ds->ringLock);
+                ds_seg_push(ds, -1);
+                ring_unlock(&ds->ringLock);
+                pthread_mutex_unlock(&ds->decodeLock);
+            }
+        }
 
         // Crossfade trigger: the end of the current track approaches, a next
         // one is staged, and no boundary is already in flight → pull the whole
@@ -749,30 +894,23 @@ int rewamp_handoff_attempt(RewampDataSource* ds) {
     // Native-domain segment bookkeeping for the capture translation.
     ds->prevNativeRate    = ds->nativeRate;
     ds->nativeRate        = fmt.sampleRate;
-    ds->rsActive          = (fmt.sampleRate != DS_RING_RATE);
-    if (ds->rsActive) {
-        if (!ds->rsInit) {
-            ma_linear_resampler_config rc = ma_linear_resampler_config_init(
-                ma_format_f32, (ma_uint32)ds->channels,
-                fmt.sampleRate, DS_RING_RATE);
-            rc.lpfOrder = MA_MAX_FILTER_ORDER;
-            if (ma_linear_resampler_init(&rc, NULL, &ds->rs) == MA_SUCCESS)
-                ds->rsInit = 1;
-        } else {
-            ma_linear_resampler_set_rate(&ds->rs, fmt.sampleRate, DS_RING_RATE);
-            ma_linear_resampler_reset(&ds->rs);
-        }
-        if (!ds->rsInit || ds->nativeBuf == NULL) {
-            /* Can't resample — undo the swap and decline (plain end path). */
-            ds->decoder    = NULL;
-            ds->declick    = NULL;
-            ds->nativeRate = ds->prevNativeRate;
-            ds->rsActive   = (ds->nativeRate != DS_RING_RATE);
-            pthread_mutex_unlock(&ds->decodeLock);
-            if (vt->close != NULL) vt->close(dec);
-            rewamp_declick_destroy(dk);
-            return 0;
-        }
+    // Le nouveau décodeur repart à 1×: la vitesse en vigueur lui est appliquée
+    // (natif d'abord), et le rééchantillonneur suit son taux à lui.
+    ds->appliedSpeed = 1.0;
+    ds->genericSpeed = 1.0;
+    if (ds->rsInit) ma_linear_resampler_reset(&ds->rs);
+    ds_configure_speed(ds, ds_wanted_speed());
+    if (ds->rsActive == 0 && ds->nativeRate != DS_RING_RATE) {
+        /* Can't resample — undo the swap and decline (plain end path). */
+        ds->decoder    = NULL;
+        ds->declick    = NULL;
+        ds->nativeRate = ds->prevNativeRate;
+        ds->genericSpeed = 1.0;
+        ds_update_resampler(ds);
+        pthread_mutex_unlock(&ds->decodeLock);
+        if (vt->close != NULL) vt->close(dec);
+        rewamp_declick_destroy(dk);
+        return 0;
     }
     ds->pendingBaseNative = ds->producerPosNative;
     {
@@ -784,11 +922,14 @@ int rewamp_handoff_attempt(RewampDataSource* ds) {
     ds->handoffPending = 1;
     ds->handoffFrame   = ds->producerPos;
     g_handoff_pending  = 1;
+    // La nouvelle piste ouvre son segment d'horloge: morceau à 0, ses taux.
+    ds->trackId++;
+    ds_seg_push(ds, 0);
     ring_unlock(&ds->ringLock);
-    // The fadeout window the open computed is track-relative; the cursor runs
-    // absolute across handoffs.
+    // The fadeout window the open computed is relative to the NEW track's own
+    // song time; it belongs to that track from now on.
     if (g_loop_fadeout_start_frame >= 0)
-        g_loop_fadeout_start_frame += ds->handoffFrame;
+        g_loop_fadeout_track = ds->trackId;
     pthread_mutex_unlock(&ds->decodeLock);
 
     // ⚠️ **Ces états viz ne se remettent PAS à zéro sur une frontière gapless.**
@@ -936,19 +1077,29 @@ static ma_result ds_read(ma_data_source* pDataSource, void* pFramesOut,
         // produced frame's absolute position — compared against the window
         // rewamp_load_file() computed from the plugin's own single-pass
         // length x (loop count+1).
-        if (framesRead > 0 && g_loop_fadeout_start_frame >= 0) {
+        // La fenêtre vit en temps du MORCEAU de sa piste (g_loop_fadeout_track):
+        // chaque trame est traduite par le segment qui la couvre — il porte la
+        // vitesse ET la frontière gapless.
+        if (framesRead > 0 && g_loop_fadeout_start_frame >= 0 &&
+            g_loop_fadeout_total_frames > 0 && ds->ring != NULL) {
             const int64_t startPos = (int64_t)ds->cursor;
             float* buf = (float*)pFramesOut;
             const int ch = ds->channels;
+            ring_lock(&ds->ringLock);
+            int si = ds_seg_index(ds, startPos);
             for (ma_uint64 i = 0; i < framesRead; i++) {
                 const int64_t framePos = startPos + (int64_t)i;
-                if (framePos < g_loop_fadeout_start_frame) continue;
-                const int64_t into = framePos - g_loop_fadeout_start_frame;
+                while (si + 1 < ds->segCount && ds->seg[si + 1].ring <= framePos) si++;
+                if (ds->seg[si].track != g_loop_fadeout_track) continue;
+                const int64_t song = ds_seg_song(ds, si, framePos);
+                if (song < g_loop_fadeout_start_frame) continue;
+                const int64_t into = song - g_loop_fadeout_start_frame;
                 const float gain = (into >= g_loop_fadeout_total_frames)
                     ? 0.0f
                     : 1.0f - (float)into / (float)g_loop_fadeout_total_frames;
                 for (int c = 0; c < ch; c++) buf[i * ch + c] *= gain;
             }
+            ring_unlock(&ds->ringLock);
         }
         if (framesRead > 0)
             rewamp_waveform_write((const float*)pFramesOut, framesRead, ds->channels);
@@ -956,7 +1107,11 @@ static ma_result ds_read(ma_data_source* pDataSource, void* pFramesOut,
     ds->cursor += framesRead;
     {
         // Captures keyed NATIVE, cursor in ring frames — translate per segment.
-        const int64_t np = ds_ring_to_native(ds, (int64_t)ds->cursor);
+        // Les segments que le curseur a dépassés ne servent plus.
+        ring_lock(&ds->ringLock);
+        ds_seg_prune(ds, (int64_t)ds->cursor);
+        const int64_t np = ds_ring_to_native_locked(ds, (int64_t)ds->cursor);
+        ring_unlock(&ds->ringLock);
         rewamp_notes_set_played(np);
         rewamp_channel_data_set_consumer_pos(np);
         rewamp_pattern_cursor_set_played(np);
@@ -1038,6 +1193,10 @@ static ma_result ds_seek(ma_data_source* pDataSource, ma_uint64 frameIndex) {
     ds->ringHead = ds->ringTail = ds->ringFill = 0;
     ds->producerPos       = absIndex;
     ds->producerPosNative = nativeAbs;
+    // L'horloge repart de la cible: un seul segment, morceau = frameIndex
+    // (la position que Dart a demandée), à la vitesse en vigueur.
+    ds->segCount = 0;
+    ds_seg_push(ds, (int64_t)frameIndex);
     // A seek also interrupts the read cadence — don't clock the gap it leaves as
     // a late callback (same false positive as pause/resume).
     ds->lastReadUs  = 0;
@@ -1069,10 +1228,19 @@ static ma_result ds_get_data_format(ma_data_source* pDataSource, ma_format* pFor
 
 static ma_result ds_get_cursor(ma_data_source* pDataSource, ma_uint64* pCursor) {
     RewampDataSource* ds = (RewampDataSource*)pDataSource;
-    // Track-relative: the cursor runs absolute across gapless handoffs, the
-    // position the UI shows restarts at each audible boundary.
-    ma_uint64 base = (ma_uint64)ds->trackBase;
-    *pCursor = ds->cursor >= base ? ds->cursor - base : 0;
+    // Temps du MORCEAU, relatif à la piste: le segment qui couvre le curseur
+    // porte à la fois la frontière gapless (une piste neuve repart de 0) et la
+    // vitesse (à 2×, une seconde jouée = deux secondes de morceau).
+    if (ds->ring == NULL || ds->segCount == 0) {
+        ma_uint64 base = (ma_uint64)ds->trackBase;
+        *pCursor = ds->cursor >= base ? ds->cursor - base : 0;
+        return MA_SUCCESS;
+    }
+    ring_lock(&ds->ringLock);
+    const int64_t song = ds_seg_song(ds, ds_seg_index(ds, (int64_t)ds->cursor),
+                                     (int64_t)ds->cursor);
+    ring_unlock(&ds->ringLock);
+    *pCursor = song > 0 ? (ma_uint64)song : 0;
     return MA_SUCCESS;
 }
 
@@ -1161,6 +1329,15 @@ ma_result rewamp_data_source_init(RewampDataSource* ds,
     ds->xfTailPos         = 0;
     ds->xfMode            = 0;
     ds->endFadeArmed      = 0;
+    ds->appliedSpeed      = 1.0;
+    ds->genericSpeed      = 1.0;
+    ds->effectiveSpeed    = 1.0;
+    ds->speedMode         = 0;
+    ds->rsInRate          = nativeRate;
+    ds->trackId           = 0;
+    ds->segCount          = 0;
+    ds_seg_push(ds, 0);   /* producerPos/Native à 0: horloge identité au départ */
+    g_playback_speed_mode = 0;
     ds->format.sampleRate = DS_RING_RATE;
     {
         uint64_t lenN = (vt->length != NULL) ? vt->length(decoder) : 0;

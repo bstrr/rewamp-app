@@ -51,6 +51,8 @@ struct RewampDecoder {
     int32_t         fileLen;
     uint64_t        totalFrames;
     uint64_t        framePos;
+    double          speed;       /* vitesse native, 0 = 1× */
+    double          speedFrac;
 };
 
 static const char* const kPxtoneExts[] = { "ptcop", "pttune", NULL };
@@ -200,7 +202,11 @@ static uint64_t pxtone_read_impl(RewampDecoder* dec, float* out, uint64_t frameC
         float* dst = out + written * 2;
         for (uint32_t i = 0; i < want * 2; i++) dst[i] = s_buf[i] * scale;
         written += want;
-        dec->framePos += want;
+        /* framePos est en temps du MORCEAU: vitesse × le rendu. */
+        dec->speedFrac += (double)want * (dec->speed > 0.0 ? dec->speed : 1.0);
+        uint64_t whole = (uint64_t)dec->speedFrac;
+        dec->speedFrac -= (double)whole;
+        dec->framePos += whole;
     }
     return written;
 }
@@ -213,10 +219,20 @@ static void pxtone_seek_impl(RewampDecoder* dec, uint64_t frameIndex) {
     }
     dec->pxtn->prepareVomitPxtone((int)frameIndex);
     dec->framePos = frameIndex;
+    dec->speedFrac = 0.0;
 }
 
 static uint64_t pxtone_length_impl(RewampDecoder* dec) {
     return dec ? dec->totalFrames : 0;
+}
+
+/* Vitesse NATIVE: l'horloge des événements de pxtone (échantillons par
+ * clock ÷ vitesse); les voix gardent leur fréquence. */
+static int pxtone_set_speed_impl(RewampDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    dec->pxtn->rewamp_set_speed(speed);
+    return 1;
 }
 
 static void pxtone_close_impl(RewampDecoder* dec) {
@@ -235,6 +251,14 @@ static const RewampPluginVTable kPxtoneVTable = {
     pxtone_seek_impl,
     pxtone_length_impl,
     pxtone_close_impl,
+    NULL,                   /* configure_loop */
+    0,                      /* supportsNativeFadeout */
+    NULL,                   /* engine_id */
+    NULL,                   /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,                   /* probe_path */
+    0,                      /* noPrefixProbe */
+    pxtone_set_speed_impl,  /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_pxtone_plugin(void) { return &kPxtoneVTable; }

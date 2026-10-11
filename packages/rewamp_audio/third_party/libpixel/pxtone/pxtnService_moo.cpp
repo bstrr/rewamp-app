@@ -385,6 +385,8 @@ bool pxtnService::moo_preparation( const pxtnVOMITPREPARATION *p_prep )
     _moo_bt_num     = master->get_beat_num  ();
     _moo_bt_tempo   = master->get_beat_tempo();
     _moo_clock_rate = (float)( 60.0f * (double)_dst_sps / ( (double)_moo_bt_tempo * (double)_moo_bt_clock ) );
+    // rewamp: native speed — a clock lasts 1/speed as many samples.
+    if( _moo_speed != 1.0 ) _moo_clock_rate = (float)( _moo_clock_rate / _moo_speed );
     _moo_smp_stride = ( 44100.0f / _dst_sps );
     _moo_top        = 0x7fff;
     
@@ -394,7 +396,7 @@ bool pxtnService::moo_preparation( const pxtnVOMITPREPARATION *p_prep )
     _moo_smp_repeat = (int32_t)( (double)meas_repeat * (double)_moo_bt_num * (double)_moo_bt_clock * _moo_clock_rate );
     
     if     ( start_float  ){ _moo_smp_start = (int32_t)( (float)moo_get_total_sample() * start_float ); }
-    else if( start_sample ){ _moo_smp_start = start_sample; }
+    else if( start_sample ){ _moo_smp_start = (_moo_speed != 1.0) ? (int32_t)( start_sample / _moo_speed ) : start_sample; }
     else                   { _moo_smp_start = (int32_t)( (double)start_meas  * (double)_moo_bt_num * (double)_moo_bt_clock * _moo_clock_rate ); }
     
     _moo_smp_count  = _moo_smp_start;

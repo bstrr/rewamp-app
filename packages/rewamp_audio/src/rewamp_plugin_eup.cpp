@@ -31,6 +31,7 @@
 /* Boucle forcée (rewamp_audio.c) — lus à l'open. */
 extern "C" int g_force_loop_mode;
 extern "C" int g_force_loop_native_veto;
+extern double eup_rewamp_speed;   // eupplayer_townsEmulator.cpp: native speed
 #include "rewamp_loaded_files.h"
 #include "rewamp_channel_data.h"
 #include "ModizerVoicesData.h"
@@ -88,6 +89,8 @@ struct RewampDecoder {
     uint64_t           totalFrames;
     uint64_t           framePos;
     char               path[4096];
+    double             speed;      // native playback speed, 0 = 1×
+    double             posFrac;
 };
 
 static const char* const kEupExts[] = { "eup", NULL };
@@ -250,6 +253,7 @@ static RewampDecoder* eup_open(const char* path, RewampAudioFormat* outFormat) {
      * Dart compte les passes (voir configure_loop). */
     if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path) return NULL;
+    eup_rewamp_speed = 1.0;   // the length pass below counts at 1×
 
     RewampDecoder* dec = (RewampDecoder*)calloc(1, sizeof(*dec));
     if (!dec) return NULL;
@@ -338,7 +342,11 @@ static uint64_t eup_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
             if (eup_pcm.read_pos >= streamAudioBufferSamples) eup_pcm.read_pos = 0;
         }
         written    += take / 2;
-        dec->framePos += take / 2;
+        /* framePos est en temps du MORCEAU: vitesse × le rendu. */
+        dec->posFrac += (double)(take / 2) * (dec->speed > 0.0 ? dec->speed : 1.0);
+        uint64_t whole = (uint64_t)dec->posFrac;
+        dec->posFrac -= (double)whole;
+        dec->framePos += whole;
     }
     return written;
 }
@@ -347,6 +355,9 @@ static uint64_t eup_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
 // discard-render forward. Same idiom as UADE/vio2sf/PMD/MDX/FMP.
 static void eup_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec) return;
+    /* L'avance rapide est en temps du MORCEAU: à 1× (le reliquat de
+     * l'anneau, au plus un pas, garde la vitesse où il a été rendu). */
+    eup_rewamp_speed = 1.0;
     if (frameIndex < dec->framePos) {
         delete dec->player; delete dec->dev; free(dec->eupBuf);
         eup_setup_and_load(dec, NULL);
@@ -364,6 +375,17 @@ static void eup_seek(RewampDecoder* dec, uint64_t frameIndex) {
         eup_pcm.read_pos = (eup_pcm.read_pos + take) % streamAudioBufferSamples;
         dec->framePos += take / 2;
     }
+    eup_rewamp_speed = dec->speed > 0.0 ? dec->speed : 1.0;
+    dec->posFrac = 0.0;
+}
+
+/* Vitesse NATIVE: un pas du séquenceur rend 1/vitesse échantillons
+ * (EUP_TownsEmulator::nextTick), les puces gardent leur hauteur. */
+static int eup_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    eup_rewamp_speed = speed;
+    return 1;
 }
 
 static uint64_t eup_length(RewampDecoder* dec) {
@@ -387,6 +409,7 @@ static void eup_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
 
 static void eup_close(RewampDecoder* dec) {
     if (!dec) return;
+    eup_rewamp_speed = 1.0;
     if (dec->player) dec->player->stopPlaying();
     delete dec->player;
     delete dec->dev;
@@ -403,6 +426,13 @@ static const RewampPluginVTable kEupVTable = {
     eup_length,
     eup_close,
     eup_configure_loop_fn,
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    eup_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_eup_plugin(void) { return &kEupVTable; }

@@ -39,6 +39,22 @@ namespace
 		*smplrem   = newrem;
 		*smpldelta = quot + carry;
 	}
+
+	// rewamp: the same gap at playback speed `speed` (1 = bit for bit upstream).
+	inline void ScaleSampleDelta(double speed, sU32 *smpldelta)
+	{
+		if (speed != 1.0 && *smpldelta != (sU32)-1)
+			*smpldelta = (sU32)((double)*smpldelta / speed + 0.5);
+	}
+}
+
+void V2MPlayer::SetSpeed(double a_speed)
+{
+	if (a_speed <= 0.0) a_speed = 1.0;
+	if (a_speed == m_speed) return;
+	if (m_state.smpldelta != (sU32)-1)
+		m_state.smpldelta = (sU32)((double)m_state.smpldelta * m_speed / a_speed + 0.5);
+	m_speed = a_speed;
 }
 
 
@@ -397,6 +413,7 @@ void V2MPlayer::Play(sU32 a_time)
 			m_state.smpldelta=-1;
 	}
 	m_state.smpldelta-=(destsmpl-cursmpl);
+	ScaleSampleDelta(m_speed,&m_state.smpldelta);   // rewamp: seek is in 1x song time
 	m_timeoffset=cursmpl-m_state.cursmpl;
 	m_fadeval=1.0f;
 	m_fadedelta=0.0f;
@@ -448,7 +465,10 @@ void V2MPlayer::Render(sF32 *a_buffer, sU32 a_len, sBool a_add)
 			{
 				Tick();
 				if (m_state.state==PlayerState::PLAYING)
+				{
 					UpdateSampleDelta(m_state.nexttime,m_state.time,m_state.usecs,m_base.timediv2,&m_state.smplrem,&m_state.smpldelta);
+					ScaleSampleDelta(m_speed,&m_state.smpldelta);
+				}
 				else
 					m_state.smpldelta=-1;
 			}

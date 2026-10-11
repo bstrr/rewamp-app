@@ -142,7 +142,43 @@ typedef struct {
     // fichier, pas dans le moteur), traversé par TOUTES les lectures du
     // décodeur, réarmé par un seek à 0, détruit avec le décodeur.
     RewampDeclick*            declick;
+
+    // ── Vitesse de lecture et HORLOGE DU MORCEAU ────────────────────────────
+    // À une vitesse s ≠ 1, le temps du MORCEAU ne suit plus le temps JOUÉ, et
+    // la vitesse peut changer en cours de piste: la correspondance anneau →
+    // morceau (position, seek, fin, fenêtre de fondu) et anneau → natif (clés
+    // des captures) devient affine PAR MORCEAUX. Un segment s'ouvre à chaque
+    // changement de vitesse, à chaque seek et à chaque relais gapless; le
+    // consommateur lit celui qui couvre son curseur. Deux modes:
+    //  - NATIF (vt->set_speed a rendu 1): l'engine joue plus vite lui-même
+    //    (tempo d'un tracker, minutage d'un émulateur); sa SORTIE reste au
+    //    rythme réel ⇒ natif/anneau = taux/44100, morceau/anneau = s.
+    //  - GÉNÉRIQUE: le rééchantillonneur du producteur lit taux×s pour 44100
+    //    (vitesse ET hauteur, comme une bande) ⇒ natif/anneau = taux×s/44100.
+    // `song` est en trames de 44100 relatives au DÉBUT de la piste (l'unité de
+    // la position que Dart lit); `track` numérote les pistes de la source.
+    struct {
+        int64_t ring, native, song;
+        double  nativePerRing, songPerRing;
+        int64_t track;
+    }                         seg[32];
+    int                       segCount;
+    double                    appliedSpeed;   // vitesse en vigueur (producteur)
+    double                    genericSpeed;   // part appliquée par le resampler
+    double                    effectiveSpeed; // vitesse réellement en vigueur
+    uint32_t                  rsInRate;       // fréquence d'entrée ENTIÈRE posée au resampler
+    int                       speedMode;      // 0 = 1×, 1 = natif, 2 = générique
+    int64_t                   trackId;        // piste que le PRODUCTEUR décode
 } RewampDataSource;
+
+/* Vitesse demandée par Dart (rewamp_audio.c), lue par le producteur. */
+extern volatile double g_playback_speed;
+/* Mode de la vitesse en vigueur, miroir pour Dart: 0 = 1×, 1 = l'engine la
+ * gère lui-même (hauteur préservée), 2 = rééchantillonnage générique. */
+extern volatile int g_playback_speed_mode;
+/* Fenêtre de fondu générique (rewamp_audio.c): en trames de MORCEAU (44100)
+ * relatives au début de la piste `g_loop_fadeout_track`. */
+extern int64_t g_loop_fadeout_track;
 
 // Initialize a data source from an already-opened plugin decoder.
 // Takes ownership: rewamp_data_source_uninit calls vt->close on the decoder.

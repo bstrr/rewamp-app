@@ -11,6 +11,7 @@ import 'package:flutter/gestures.dart'
     show kTouchSlop, PointerPanZoomStartEvent, PointerPanZoomUpdateEvent;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:window_manager/window_manager.dart' show windowManager;
 
 import 'favorite_color.dart';
 import 'fullscreen_progress_line.dart';
@@ -27,6 +28,7 @@ import 'screen_wakelock.dart';
 import 'user_settings.dart';
 import 'artwork_image.dart';
 import 'artwork_palette.dart';
+import 'artwork_viewer.dart';
 import 'platform_artwork.dart' show platformAssetFor;
 import 'library_identity.dart';
 import 'local_db.dart';
@@ -221,6 +223,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   static const _windowCh = MethodChannel('rewamp/window');
   bool get _macDesktop => !kIsWeb && Platform.isMacOS;
+  // Windows: pas de canal maison, `window_manager` sait poser le plein écran
+  // natif (fenêtre sans cadre aux bornes du moniteur). Sans lui, le mode
+  // plein écran du viz ne faisait que masquer le chrome DANS la fenêtre.
+  bool get _winDesktop => !kIsWeb && Platform.isWindows;
 
   // Viz fills the whole sheet ONLY in viz-fullscreen mode (the viz button /
   // double-tap). Native window fullscreen taken by the user (green button)
@@ -386,6 +392,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       unawaited(ScreenWakelock.instance.release());
     }
     if (_macDesktop) _windowCh.setMethodCallHandler(null);
+    // Le lecteur part en plein écran viz: rendre la fenêtre, sinon elle reste
+    // sans cadre sur tout le moniteur derrière une interface ordinaire.
+    if (_winDesktop && _tookWindowFs) unawaited(_setWindowsFullscreen(false));
     _flightCtrl.dispose();
     _tintTick.dispose();
     super.dispose();
@@ -720,8 +729,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   // fullscreen if the window isn't already there; leaving only exits window
   // fullscreen when WE entered it (a green-button fullscreen stays untouched).
   void _toggleVizFullscreen() {
+    final entering = !_vizFs;
+    final releaseWinFs = !entering && _winDesktop && _tookWindowFs;
     setState(() {
-      if (!_vizFs) {
+      if (entering) {
         _vizFs = true;
         if (_macDesktop && !_windowFullscreen) {
           _tookWindowFs = true;
@@ -735,7 +746,35 @@ class _PlayerScreenState extends State<PlayerScreen>
         _tookWindowFs = false;
       }
     });
+    if (_winDesktop) {
+      if (entering) {
+        unawaited(_enterWindowsFullscreen());
+      } else if (releaseWinFs) {
+        unawaited(_setWindowsFullscreen(false));
+      }
+    }
     _syncOrientation();
+  }
+
+  // Une fenêtre déjà en plein écran (prise ailleurs) n'est pas à nous: on ne la
+  // rendra pas en sortant du mode viz — même règle que le bouton vert de macOS.
+  Future<void> _enterWindowsFullscreen() async {
+    try {
+      if (await windowManager.isFullScreen()) return;
+      if (!mounted || !_vizFs) return; // ressorti pendant l'attente
+      _tookWindowFs = true;
+      await windowManager.setFullScreen(true);
+    } catch (e) {
+      debugPrint('[viz] plein écran Windows: $e');
+    }
+  }
+
+  Future<void> _setWindowsFullscreen(bool on) async {
+    try {
+      await windowManager.setFullScreen(on);
+    } catch (e) {
+      debugPrint('[viz] plein écran Windows: $e');
+    }
   }
 
   void _onSettingsChanged() {
@@ -792,6 +831,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   // shows (the display may be on NetworkImage while _resolvedArtPath points at a
   // not-yet-decoded FileImage; painting the path then flashed on first frame).
   ImageProvider? _resolvedArtProvider;
+  // Ce provider est-il une VRAIE pochette (et pas le placeholder thématisé par
+  // plateforme)? Seule une vraie s'ouvre en grand à l'appui long — agrandir la
+  // marque générique n'apprendrait rien (artworkKeyIsRealCover).
+  bool _resolvedArtIsCover = false;
   // Drives the background repaint DIRECTLY. The background's _sheetBase(context)
   // is read inside DraggableScrollableSheet.builder → LayoutBuilder, which do
   // NOT re-run on this State's setState (LayoutBuilder rebuilds on constraint
@@ -831,6 +874,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     // new cover's onImageResolved (fires as soon as it paints).
     _resolvedArtPath = _artPathMemo[id];
     _resolvedArtProvider = null;
+    _resolvedArtIsCover = false;
     // New track: seed from the memo (known artwork → tint immediately; unknown →
     // neutral), then resolve directly — NOT via any displayed widget's
     // callbacks. The widget chain (offstage resolver / visible cover) proved
@@ -1895,7 +1939,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // UADE: append songdb metadata (authors / album / year) for the ⓘ panel.
     // Useful mostly for local files outside the server DB.
-    if (ctrl.backend == 'uade' && ctrl.filePath != null) {
+    if ((ctrl.backend == 'uade' || ctrl.backend == 'Ron Klaren') &&
+        ctrl.filePath != null) {
       try {
         final info = await UadeInfoService.instance.forPath(ctrl.filePath!);
         if (info != null) {
@@ -2856,6 +2901,20 @@ class _PlayerScreenState extends State<PlayerScreen>
         : GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _toggleVisualizer,
+            // Appui long = la pochette en grand, comme le tap sur celle d'un
+            // écran album. Ici le tap est déjà pris (il allume le visualiseur),
+            // d'où l'appui long; et la branche n'existe que SANS visualiseur.
+            // Le provider est celui que la pochette a PEINT — même image, déjà
+            // décodée, aucun second chemin de résolution.
+            onLongPress: () {
+              final provider = _resolvedArtProvider;
+              if (provider == null || !_resolvedArtIsCover) return;
+              final album = ctrl.currentAlbum;
+              showFullscreenArtwork(context, provider,
+                  title: (album != null && album.isNotEmpty)
+                      ? album
+                      : ctrl.displayTitle);
+            },
             child: _ArtworkPanel(
               imageKey: _artKey,
               cs: cs,
@@ -2869,7 +2928,12 @@ class _PlayerScreenState extends State<PlayerScreen>
               isPlaying:     ctrl.isPlaying,
               // Capture the exact provider the cover paints, so the queue flight
               // reuses it (already decoded) instead of re-deriving a path.
-              onImageResolved: (provider, _) => _resolvedArtProvider = provider,
+              // ⚠️ Appelé depuis le build() d'ArtworkImage: on ASSIGNE, jamais
+              // de setState (l'appui long relit les champs au moment du geste).
+              onImageResolved: (provider, key) {
+                _resolvedArtProvider = provider;
+                _resolvedArtIsCover = artworkKeyIsRealCover(key);
+              },
             ),
           );
     // Le balayage horizontal = piste précédente / suivante… SAUF quand le

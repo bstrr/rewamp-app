@@ -67,6 +67,8 @@ struct RewampDecoder {
     int      voices;
     uint64_t totalFrames;  // 0 = unknown
     uint64_t framePos;
+    double   speed;        // native playback speed, 0 = 1×
+    double   posFrac;
     // Note-attack tracking (see sc68_capture_notes).
     unsigned prevGate[4];
     unsigned prevSample[4];
@@ -387,7 +389,11 @@ static uint64_t sc68_read_impl(RewampDecoder* dec, float* out, uint64_t frameCou
         }
 
         written += (uint64_t)n;
-        dec->framePos += (uint64_t)n;
+        // framePos is SONG time: speed × the frames rendered.
+        dec->posFrac += (double)n * (dec->speed > 0.0 ? dec->speed : 1.0);
+        const uint64_t whole = (uint64_t)dec->posFrac;
+        dec->posFrac -= (double)whole;
+        dec->framePos += whole;
         if (code & SC68_END) break;
         if (n < want) break;
     }
@@ -405,6 +411,8 @@ static void sc68_seek_impl(RewampDecoder* dec, uint64_t frameIndex) {
         sc68_process(dec->sc68, NULL, NULL);
         dec->framePos = 0;
     }
+    // The fast-forward is in song time: 1×.
+    sc68_rewamp_speed(dec->sc68, 1.0);
     static int16_t s_skip[SC68_CHUNK * 2];
     while (dec->framePos < frameIndex) {
         int n = (int)(frameIndex - dec->framePos);
@@ -414,6 +422,18 @@ static void sc68_seek_impl(RewampDecoder* dec, uint64_t frameIndex) {
         dec->framePos += (uint64_t)n;
         if (code & SC68_END) break;
     }
+    if (dec->speed > 0.0) sc68_rewamp_speed(dec->sc68, dec->speed);
+    dec->posFrac = 0.0;
+}
+
+// Native speed: a pass (one call of the play routine) lasts 1/speed as many
+// cycles; the YM and the MFP timers (which also make sound) keep their clock.
+// YM music only (sc68_rewamp_speed refuses the Amiga/DMA-only paths).
+static int sc68_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->sc68 || speed < 0.2 || speed > 3.0) return 0;
+    if (sc68_rewamp_speed(dec->sc68, speed) < 0) return 0;
+    dec->speed = speed;
+    return 1;
 }
 
 static uint64_t sc68_length_impl(RewampDecoder* dec) {
@@ -503,6 +523,13 @@ static const RewampPluginVTable kSc68VTable = {
     sc68_length_impl,
     sc68_close_impl,
     sc68_configure_loop_fn,
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    sc68_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_sc68_plugin(void) { return &kSc68VTable; }

@@ -4,7 +4,7 @@ publish_to: 'none'
 # The part after "+" is the build number. TestFlight and the Play Console both
 # refuse an upload whose build number is not strictly greater than the last one
 # they accepted — bump it on EVERY upload, even when 0.1.0 does not move.
-version: 0.7.0+15
+version: 0.8.0+17
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -66,6 +66,9 @@ dependencies:
   liquid_glass_easy: ^4.3.3
   window_manager: ^0.5.2
   audio_service_mpris: ^0.2.1
+  # Windows: notre implémentation SMTC (lib/media_session_windows.dart)
+  # étend directement l'interface de plateforme d'audio_service.
+  audio_service_platform_interface: ^0.1.3
   dbus: ^0.7.15
 
 dev_dependencies:

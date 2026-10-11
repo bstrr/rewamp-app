@@ -132,6 +132,11 @@ void Player::setSeed(uint64_t seed)
   impl_->seq.SetSeed(seed); // applied at the next play() (Reset re-inits)
 }
 
+void Player::setSpeed(double speed)
+{
+  impl_->seq.SetSpeed(speed);
+}
+
 void Player::setChannelMask(uint32_t mask)
 {
   if (impl_->opened)

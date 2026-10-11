@@ -23,7 +23,8 @@
 // Because a bar's color now varies bar to bar, color is a VERTEX attribute
 // here (the oscilloscope's uColor uniform could only paint a whole batch).
 //
-// Audio: rewamp_get_waveform() with the FULL ring (2048 frames — the same
+// Audio: rewamp_get_waveform() over 2048 frames (a quarter of the ring since
+// it grew to 8192 for the stereo scope's correlation search — the same
 // smoothed read head the oscilloscope uses, so pause freezes both the same
 // way). Hann window, radix-2 FFT in-place, per-bar peak over log-spaced bins
 // (30 Hz – 16 kHz at the engine's fixed 44100), mapped through dB [-60, 0].
@@ -31,7 +32,7 @@
 // vsync says on Android): instant-ish attack, exponential release, linear
 // peak fall after a short hold.
 
-#define SP_FFT      2048                 /* REWAMP_WAVEFORM_FRAMES — whole ring */
+#define SP_FFT      2048                 /* ≤ REWAMP_WAVEFORM_FRAMES − MAX_LAG */
 #define SP_BINS     (SP_FFT / 2)
 #define SP_BARS     64
 /* Bands behind the beam palette — four times the bars, log-spaced the same way.

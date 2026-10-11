@@ -358,6 +358,17 @@ static void wrap_step_callback(const cycles_t cycles, const struct gbhw_channel 
 	gbs->step_cb(gbs, cycles, gbs->step_cb_channels, gbs->step_cb_priv);
 }
 
+/* REWAMP: vitesse de lecture (voir struct gbhw): les interruptions qui
+ * cadencent la routine de jeu avancent `speed` fois plus vite. Survit a
+ * gbs_init tant que gbhw_init ne remet pas le champ a zero; l'appelant la
+ * repose de toute facon apres chaque gbs_init. */
+void gbs_rewamp_set_speed(struct gbs* const gbs, double speed)
+{
+	gbs->gbhw.rewamp_speed = speed > 0.0 ? speed : 1.0;
+	gbs->gbhw.rewamp_frac_v = 0.0;
+	gbs->gbhw.rewamp_frac_t = 0.0;
+}
+
 void gbs_set_step_callback(struct gbs* const gbs, gbs_step_cb fn, void *priv)
 {
 	gbs->step_cb = fn;

@@ -7452,9 +7452,8 @@ class RewampDb {
       final input = InputFileStream(archivePath);
       try {
         final archive = ZipDecoder().decodeStream(input);
-        String? m3uRegular;
-        int m3uBestEntries = -1;   // regular playlist with the most entries wins
-        String? m3uTags; // vgmstream !tags.m3u — playlist of last resort
+        // TOUTES les playlists, fusionnées en fin de parcours (mergeM3uTexts).
+        final m3uTexts = <(String, String)>[];   // (nom, texte)
 
         // Entry paths RELATIVE to the archive's content root, mirroring what the
         // server stores in each row's `filename`.
@@ -7507,8 +7506,7 @@ class RewampDb {
             }
           } else if (playlistExts.contains(ext)) {
             // Save EVERY m3u to disk (so probe/complementary reads find them),
-            // and keep the regular playlist with the most entries; a !tags.m3u
-            // is the playlist only when it is the sole m3u.
+            // and merge them ALL into the playlist (mergeM3uTexts).
             final data = entry.content as List<int>;
             // ⚠️ Pas `String.fromCharCodes`: il fait d'un octet un caractère,
             // donc c'était faux même pour de l'UTF-8 (« Ã© » pour « é »), et
@@ -7522,18 +7520,12 @@ class RewampDb {
               dest.parent.createSync(recursive: true);
               dest.writeAsBytesSync(data);
             }
-            if (_isTagsM3uName(name)) {
-              m3uTags ??= text;
-            } else {
-              final n = _countM3uEntries(text);
-              if (n > m3uBestEntries) {
-                m3uBestEntries = n;
-                m3uRegular = text;
-              }
-            }
+            m3uTexts.add((name, text));
           }
         }
-        return m3uRegular ?? m3uTags;
+        if (m3uTexts.isEmpty) return null;
+        m3uTexts.sort((a, b) => comparePlaylistNames(a.$1, b.$1));
+        return mergeM3uTexts([for (final m in m3uTexts) m.$2]);
       } finally {
         input.closeSync();
       }
@@ -7750,6 +7742,20 @@ class RewampDb {
   /// vraiment, et sa liste est CREUSE comme celle d'un `.adl`.
   static const kNativeCountedContainerFormats = {'adl', 'gbr'};
 
+  /// [kNativeCountedContainerFormats], plus les `.cop` de MODLAND — bornés à
+  /// cette collection: la même extension y désigne deux choses. 166 des 191
+  /// fichiers « Sam Coupe COP » sont des modules E-Tracker (mono, zxtune);
+  /// les autres sont des programmes Z80 dont un lecteur porte jusqu'à 17
+  /// morceaux (`Frantisek Fuka/cop/manic.cop`: 11; le serveur répond 1). Seule
+  /// la sonde native les sépare (greffon samcop). Les `.cop` de zxart, tous
+  /// E-Tracker, gardent le compte du serveur — sans quoi chacun ferait un
+  /// aller-retour par l'écran des sous-chansons pour une seule ligne.
+  static bool isNativeCounted(SearchResult r) {
+    final ext = r.formatExt.toLowerCase();
+    if (kNativeCountedContainerFormats.contains(ext)) return true;
+    return ext == 'cop' && r.collection == 'modland';
+  }
+
   /// Formats dont les sous-chansons se numérotent à partir de **1** dans
   /// `?subsong=`: le moteur y lit le numéro NATIF du format (SNDH, sc68 —
   /// `rewamp_*_probe_base()` rend 1), et **0 n'y désigne pas « la première »
@@ -7801,7 +7807,7 @@ class RewampDb {
     // ne dit rien (voir kNativeCountedContainerFormats) — sauf sur une ligne
     // DÉJÀ résolue, qui désigne une sous-chanson précise et n'est donc pas le
     // conteneur.
-    if (!r.resolvedSubsong && kNativeCountedContainerFormats.contains(ext)) {
+    if (!r.resolvedSubsong && isNativeCounted(r)) {
       return true;
     }
     return r.subsongCount == null && kContainerFormats.contains(ext);
@@ -8245,6 +8251,18 @@ class RewampDb {
       // PSF archive with NO server tracklist — must discover by extracting +
       // scanning the dir (M3U order). Runs even for songs.length == 1.
       if (isPsfArchiveAlbum(songs)) {
+        // Lignes DÉJÀ résolues (`<uuid>#<i>`: tracklist serveur dépliée par
+        // l'écran d'album, ou découverte disque précédente): l'appelant a
+        // calculé son index de départ SUR CET ORDRE. downloadPsfAlbum les
+        // réordonnerait selon le M3U de l'archive, qui ne suit pas forcément
+        // la tracklist serveur (Memories Off 2nd jw_dsf: variantes « a »/« b »
+        // rangées autrement) — songs[startIndex] désignait alors une AUTRE
+        // piste que celle touchée. On garde l'extraction, jamais l'ordre.
+        if (songs.length > 1 &&
+            songs.every((s) => s.songId.contains('#') || s.resolvedSubsong)) {
+          await downloadPsfAlbum(songs, force: force);
+          return songs;
+        }
         return await downloadPsfAlbum(songs, force: force);
       }
       if (songs.length < 2) return songs;
@@ -8347,7 +8365,7 @@ class RewampDb {
     //   reference (e.g. "movies/cc_0001.vgmstream") so those are NOT added
     //   as standalone tracks.
     // - Any other audio file NOT referenced by a TXTP is added as a standalone track.
-    // - First M3U/M3U8 found is used for ordering when the server knows the tracklist.
+    // - All M3U/M3U8 playlists, MERGED (mergeM3uTexts), give the order.
     const kStandaloneAudioExts = {
       'adx', 'hca', 'at9', 'at3', 'aa3',
       'dsp', 'brstm', 'bcstm', 'bfstm', 'bcwav', 'bfwav',
@@ -8357,8 +8375,10 @@ class RewampDb {
     };
 
     String? m3uContent;
-    int m3uBestEntries = -1;   // regular playlist with the most entries wins
-    String? m3uTagsContent; // vgmstream !tags.m3u — playlist of last resort
+    // TOUTES les playlists (le !tags.m3u compris), fusionnées après le
+    // parcours — voir mergeM3uTexts.
+    final m3uTexts        = <(String, String)>[];   // (chemin, texte)
+    String? m3uTagsContent; // vgmstream !tags.m3u — titres %TITLE
     final trackFiles      = <File>[];         // txtp + psf → direct tracks
     final referencedNames = <String>{};       // basenames referenced inside txtp files
     final candidateAudio  = <File>[];         // other audio files (may be standalone)
@@ -8371,18 +8391,9 @@ class RewampDb {
         if (base.startsWith('.')) continue; // skip hidden files (.vgmstream.txth etc.)
         final ext = p.extension(e.path).replaceFirst('.', '').toLowerCase();
         if (ext == 'm3u' || ext == 'm3u8') {
-          if (_isTagsM3uName(base)) {
-            m3uTagsContent ??= await readM3uText(e);
-          } else {
-            // Keep the regular playlist with the most entries; the rest are
-            // complementary metadata only.
-            final text = await readM3uText(e);
-            final n = _countM3uEntries(text);
-            if (n > m3uBestEntries) {
-              m3uBestEntries = n;
-              m3uContent = text;
-            }
-          }
+          final text = await readM3uText(e);
+          if (_isTagsM3uName(base)) m3uTagsContent ??= text;
+          m3uTexts.add((e.path, text));
         } else if (kPsfFormats.contains(ext)) {
           trackFiles.add(e);
           if (ext == 'txtp') {
@@ -8412,8 +8423,12 @@ class RewampDb {
       }
     }
 
-    // A lone !tags.m3u doubles as the playlist (file lines are plain names).
-    m3uContent ??= m3uTagsContent;
+    // Playlists fusionnées: ordinaires par nom, !tags.m3u en dernier (seul,
+    // il sert de playlist — ses lignes de fichier sont des noms simples).
+    if (m3uTexts.isNotEmpty) {
+      m3uTexts.sort((a, b) => comparePlaylistNames(a.$1, b.$1));
+      m3uContent = mergeM3uTexts([for (final m in m3uTexts) m.$2]);
+    }
     // Per-file %TITLE overlay from the vgmstream tag file, when present.
     final tagsTitles = m3uTagsContent != null
         ? _parseTagsM3uTitles(m3uTagsContent)
@@ -8822,14 +8837,12 @@ class RewampDb {
       final dir = p.dirname(audioPath);
       final m3u = await _findM3uForFile(dir, audioPath, cache: cache);
       if (m3u == null) return null;
-      if (cache != null && cache.info.containsKey(m3u.path)) {
-        return cache.info[m3u.path];
+      if (cache != null && cache.info.containsKey(m3u.key)) {
+        return cache.info[m3u.key];
       }
-      final content = cache?.text[m3u.path] ?? await readM3uText(m3u);
-      if (cache != null) cache.text[m3u.path] = content;
-      final parsed = parseM3uInfo(content);
+      final parsed = parseM3uInfo(m3u.text);
       final info = parsed.isEmpty ? null : parsed;
-      if (cache != null) cache.info[m3u.path] = info;
+      if (cache != null) cache.info[m3u.key] = info;
       return info;
     } catch (_) {
       return null;
@@ -8865,15 +8878,13 @@ class RewampDb {
     final m3u = await _findM3uForFile(dir, audioPath, cache: cache);
     if (m3u == null) return null;
     if (cache != null) {
-      // Un même M3U sert TOUS les fichiers de son dossier: lu et parsé une fois.
-      final hit = cache.subs[m3u.path];
+      // Une même playlist sert TOUS les fichiers de son dossier: parsée une fois.
+      final hit = cache.subs[m3u.key];
       if (hit != null) return hit.isNotEmpty ? hit : null;
-      final content = cache.text[m3u.path] ??= await readM3uText(m3u);
-      final subs = cache.subs[m3u.path] = parseM3uToSubsongs(content, dir);
+      final subs = cache.subs[m3u.key] = parseM3uToSubsongs(m3u.text, dir);
       return subs.isNotEmpty ? subs : null;
     }
-    final content = await readM3uText(m3u);
-    final subs    = parseM3uToSubsongs(content, dir);
+    final subs = parseM3uToSubsongs(m3u.text, dir);
     return subs.isNotEmpty ? subs : null;
   }
 
@@ -8899,8 +8910,7 @@ class RewampDb {
     final dir  = p.dirname(path);
     final m3u  = await _findM3uForFile(dir, path);
     if (m3u != null) {
-      final content = await readM3uText(m3u);
-      final subs    = parseM3uToSubsongs(content, dir);
+      final subs = parseM3uToSubsongs(m3u.text, dir);
       if (subs.isNotEmpty) return subs;
     }
     return RewampAudio().probeSubsongs(path);
@@ -8925,57 +8935,115 @@ class RewampDb {
   static Future<String> readM3uText(File f) async =>
       decodeFileText(await f.readAsBytes());
 
-  /// Number of playable entries in an M3U (non-blank, non-comment lines).
-  /// `#EXTINF`/`# %TAG` metadata lines don't count — one path line per track.
-  static int _countM3uEntries(String content) {
-    var n = 0;
-    for (final raw in content.split('\n')) {
-      final l = raw.trim();
-      if (l.isEmpty || l.startsWith('#')) continue;
-      n++;
-    }
-    return n;
+  /// Ordre de fusion des playlists d'un dossier: les playlists ORDINAIRES
+  /// d'abord, par nom (déterministe — l'ordre d'un listage disque ne l'est
+  /// pas), le `!tags.m3u` en DERNIER: il ne fait qu'ajouter ce qu'elles ne
+  /// nomment pas. Une seule playlist ordinaire garde donc son ordre à elle,
+  /// comme avant la fusion.
+  static int comparePlaylistNames(String a, String b) {
+    final ta = _isTagsM3uName(a), tb = _isTagsM3uName(b);
+    if (ta != tb) return ta ? 1 : -1;
+    return p.basename(a).toLowerCase().compareTo(p.basename(b).toLowerCase());
   }
 
-  /// Picks THE playlist M3U from a set of candidates, per the archive rule:
-  /// among the regular (non `!tags.m3u`) playlists, the one with the MOST
-  /// entries wins; the others are complementary metadata only. A `!tags.m3u`
-  /// is chosen as the playlist solely when no regular M3U exists (it then
-  /// doubles as the track list). [stemForTie] (an audio basename sans ext),
-  /// when given, breaks ties in favour of the M3U named like the audio file.
-  /// Returns null when [m3us] is empty.
-  static Future<File?> _pickPlaylistM3u(List<File> m3us,
-      {String? stemForTie, M3uLookupCache? cache}) async {
-    File? best;
-    var bestN = -1;
-    File? tags;
-    for (final f in m3us) {
-      if (_isTagsM3uName(f.path)) {
-        tags ??= f;
-        continue;
-      }
-      final n = cache == null
-          ? _countM3uEntries(await readM3uText(f))
-          : (cache.entryCount[f.path] ??=
-              _countM3uEntries(cache.text[f.path] ??= await readM3uText(f)));
-      final isStem = stemForTie != null &&
-          p.basenameWithoutExtension(f.path).toLowerCase() == stemForTie;
-      // Strictly more entries wins; on a tie, the stem-matching M3U wins.
-      if (n > bestN || (n == bestN && isStem)) {
-        bestN = n;
-        best = f;
-      }
-    }
-    return best ?? tags;
+  /// Clé d'une entrée de playlist pour la fusion: le CHEMIN (séparateurs et
+  /// casse normalisés) et, pour une entrée de sous-chanson
+  /// (`fichier.nsf::NSF,3,Titre`), le numéro — jamais le titre, que deux
+  /// playlists écrivent chacune à leur façon.
+  static String _m3uEntryKey(String line) {
+    var s = line.trim().replaceAll('\\', '/').toLowerCase();
+    if (s.startsWith('./')) s = s.substring(2);
+    final i = s.indexOf('::');
+    if (i < 0) return s;
+    final fields = s.substring(i + 2).split(',');
+    return '${s.substring(0, i).trim()}::'
+        '${fields.take(2).map((f) => f.trim()).join(',')}';
   }
 
-  /// Finds the playlist M3U/M3U8 in [dir]. Among regular playlists the one with
-  /// the MOST entries wins (ties broken toward the M3U named like [audioPath]);
-  /// a `!tags.m3u` (vgmstream tagging file) is used only as LAST resort — when
-  /// it is the only M3U in a joshw 7z it doubles as the playlist.
-  static Future<File?> _findM3uForFile(String dir, String audioPath,
+  /// FUSIONNE les playlists d'un même dossier en une seule, sans doublon.
+  ///
+  /// Un rip peut livrer PLUSIEURS playlists qui ne listent pas les mêmes
+  /// fichiers — Memories Off 2nd (jw_dsf): `!playlist(InGame).m3u` nomme les
+  /// versions « a », `!playlist(MusicPlayer).m3u` les versions « b », chacune
+  /// avec les pistes communes; seul le `!tags.m3u` les nomme toutes. Choisir
+  /// LA plus longue (l'ancienne règle) laissait l'autre moitié de côté: en
+  /// queue d'album triée par nom, ou DÉMOTÉE en compagnon à l'import. Deux
+  /// playlists de tailles différentes peuvent aussi ne rien partager.
+  ///
+  /// [texts] arrive dans l'ordre de fusion (voir [comparePlaylistNames]).
+  /// Une entrée déjà vue (même [_m3uEntryKey]) est sautée AVEC son bloc de
+  /// commentaires (`#EXTINF`, `# %TITLE` — ils la décrivent, ils
+  /// décriraient sinon l'entrée suivante). Les lignes GLOBALES du préambule
+  /// de chaque playlist (`# @ALBUM`, `#EXTALB:`, bloc libre) remontent en
+  /// tête, dédoublonnées: l'en-tête s'arrête au premier `#EXTINF` ou à la
+  /// première entrée, et le nom d'album d'un `!tags.m3u` fusionné en dernier
+  /// serait sinon perdu. Une playlist seule est rendue TELLE QUELLE.
+  static String mergeM3uTexts(List<String> texts) {
+    if (texts.length == 1) return texts.first;
+    final header = <String>[];
+    final headerSeen = <String>{};
+    final body = <String>[];
+    final seen = <String>{};
+    for (final text in texts) {
+      var block = <String>[];
+      var preamble = true;
+      for (final raw in text.split('\n')) {
+        final line =
+            raw.endsWith('\r') ? raw.substring(0, raw.length - 1) : raw;
+        final t = line.trim();
+        if (t.isEmpty) continue;
+        if (t.startsWith('#')) {
+          final perEntry = t.startsWith('#EXTINF') ||
+              RegExp(r'^#\s*%').hasMatch(t);
+          if (perEntry) preamble = false;
+          if (preamble) {
+            if (headerSeen.add(t)) header.add(line);
+          } else {
+            block.add(line);
+          }
+          continue;
+        }
+        preamble = false;
+        if (seen.add(_m3uEntryKey(t))) {
+          body
+            ..addAll(block)
+            ..add(line);
+        }
+        block = [];
+      }
+    }
+    return [...header, ...body].join('\n');
+  }
+
+  /// La playlist d'un dossier: la FUSION de tous ses M3U ([mergeM3uTexts]),
+  /// `!tags.m3u` compris. [key] identifie l'ensemble pour [M3uLookupCache].
+  /// null quand [m3us] est vide.
+  static Future<({String key, String text})?> _mergedPlaylist(
+      List<File> m3us, {M3uLookupCache? cache}) async {
+    if (m3us.isEmpty) return null;
+    final files = [...m3us]
+      ..sort((a, b) => comparePlaylistNames(a.path, b.path));
+    final key = files.map((f) => f.path).join('\u0000');
+    final known = cache?.text[key];
+    if (known != null) return (key: key, text: known);
+    final texts = <String>[
+      for (final f in files)
+        cache == null
+            ? await readM3uText(f)
+            : (cache.text[f.path] ??= await readM3uText(f)),
+    ];
+    final text = mergeM3uTexts(texts);
+    cache?.text[key] = text;
+    return (key: key, text: text);
+  }
+
+  /// La playlist du dossier de [audioPath]: TOUS ses M3U fusionnés (voir
+  /// [mergeM3uTexts]). Le filtrage « ce qui concerne CE fichier » appartient
+  /// aux appelants (`m3uSubsongsFor`, [localM3uEntryFor]), qui le faisaient
+  /// déjà: deux `.gbs` d'un même dossier gardent chacun leurs sous-chansons.
+  static Future<({String key, String text})?> _findM3uForFile(
+      String dir, String audioPath,
       {M3uLookupCache? cache}) async {
-    final stem = p.basenameWithoutExtension(audioPath).toLowerCase();
     var m3us = cache?.m3usByDir[dir];
     if (m3us == null) {
       m3us = <File>[];
@@ -8986,7 +9054,7 @@ class RewampDb {
       }
       cache?.m3usByDir[dir] = m3us;
     }
-    return _pickPlaylistM3u(m3us, stemForTie: stem, cache: cache);
+    return _mergedPlaylist(m3us, cache: cache);
   }
 
   static Future<List<SubsongInfo>> _probeArchive(String path) async {
@@ -9004,11 +9072,10 @@ class RewampDb {
         .toList();
 
     if (m3uCandidates.isNotEmpty) {
-      // Regular playlist with the most entries; a lone !tags.m3u doubles as it.
-      final chosen = await _pickPlaylistM3u(m3uCandidates);
-      if (chosen != null) {
-        final content = await readM3uText(chosen);
-        final subs    = parseM3uToSubsongs(content, dir);
+      // Toutes les playlists du dossier, fusionnées (mergeM3uTexts).
+      final merged = await _mergedPlaylist(m3uCandidates);
+      if (merged != null) {
+        final subs = parseM3uToSubsongs(merged.text, dir);
         if (subs.isNotEmpty) return subs;
       }
     }
@@ -9497,7 +9564,7 @@ class RewampDb {
     var year        = container.year;
     final m3uFile   = await _findM3uForFile(p.dirname(localPath), localPath);
     if (m3uFile != null) {
-      final m3uContent = await readM3uText(m3uFile);
+      final m3uContent = m3uFile.text;
       final m3uArtists = _parseM3uArtists(m3uContent);
       if (m3uArtists.isNotEmpty) artistNames = m3uArtists;
       final m3uYear = _parseM3uYear(m3uContent);
@@ -11312,13 +11379,12 @@ class RewampDb {
 class M3uLookupCache {
   /// Les fichiers `.m3u`/`.m3u8` de chaque dossier déjà listé.
   final Map<String, List<File>> m3usByDir = {};
-  /// Texte de chaque M3U lu (tolérant UTF-8 / Latin-1, voir readM3uText).
+  /// Texte de chaque M3U lu (tolérant UTF-8 / Latin-1, voir readM3uText), et
+  /// la playlist FUSIONNÉE de chaque dossier sous sa clé d'ensemble.
   final Map<String, String> text = {};
-  /// Nombre d'entrées de chaque M3U (choix de la playlist du dossier).
-  final Map<String, int> entryCount = {};
-  /// Sous-chansons parsées de chaque M3U retenu.
+  /// Sous-chansons parsées de chaque playlist fusionnée.
   final Map<String, List<SubsongInfo>> subs = {};
-  /// En-tête parsé de chaque M3U retenu (album, artistes, bloc libre).
+  /// En-tête parsé de chaque playlist fusionnée (album, artistes, bloc libre).
   final Map<String, M3uInfo?> info = {};
 }
 

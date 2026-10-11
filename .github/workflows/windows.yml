@@ -8,13 +8,17 @@
 # appimage.yml): les binaires publiés sont construits par la CI de ce dépôt-là,
 # où les minutes Windows sont gratuites.
 #
-# Déclenchement MANUEL ou par TAG — jamais à chaque poussée.
+# Déclenchement MANUEL, ou APPELÉ par release.yml sur un tag `v*` — jamais à
+# chaque poussée. La release brouillon est créée par release.yml, qui y joint
+# ce zip avec les AppImage.
 name: Windows
 
 on:
   workflow_dispatch:
-  push:
-    tags: ['v*']
+  workflow_call:
+
+permissions:
+  contents: read
 
 env:
   # ⚠️ ÉPINGLÉE (même règle qu'appimage.yml): la version validée sous Windows.
@@ -126,16 +130,18 @@ jobs:
 
       - name: Zip
         run: |
-          $v = (Select-String -Path app\pubspec.yaml -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
+          # Version SANS le build number: un `+` dans le nom d'un fichier de
+          # release est réécrit par GitHub (et le build n'intéresse que les stores).
+          $v = (Select-String -Path app\pubspec.yaml -Pattern '^version:\s*([^+\s]+)').Matches[0].Groups[1].Value
           $name = "Rewamp-$v-windows-x64.zip"
           Compress-Archive -Path app\build\windows\x64\runner\Release\* -DestinationPath $name
           "ZIP_NAME=$name" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           "{0}: {1:N1} Mo" -f $name, ((Get-Item $name).Length / 1MB)
 
-      # Pas de release attachée ici, même sur un tag: appimage.yml crée déjà la
-      # release BROUILLON du tag, et action-gh-release ne retrouve pas un
-      # brouillon par son tag — deux workflows en créeraient deux. Le zip est
-      # l'artefact du run; il se joint à la release à la main.
+      # Pas de release ici: deux workflows qui créent chacun « le brouillon du
+      # tag » en créent DEUX (action-gh-release ne retrouve pas un brouillon
+      # par son tag). release.yml récupère cet artefact et le joint au SEUL
+      # brouillon, avec les AppImage.
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIP_NAME }}

@@ -448,13 +448,18 @@ class HomeScreen extends StatelessWidget {
                               // else". The songdb owns that list (real idx
                               // values, NOSOUND slots dropped, per-subsong
                               // lengths); the native probe cannot count them.
+                              // Ron Klaren natif: la sonde, pas la songdb
+                              // (UadeInfoService.isRonKlarenAt).
+                              final rkNative =
+                                  UadeInfoService.isRonKlarenAt(fp);
                               if (allSameFile &&
-                                  UadeInfoService.isUadePath(fp)) {
+                                  UadeInfoService.isUadePath(fp) &&
+                                  !rkNative) {
                                 final rows = await _uadeSubsongRows(
                                     fp, dbTracks, dbTracks.first);
                                 if (rows.length > dbTracks.length) tracks = rows;
                               } else if (allSameFile &&
-                                  kMultiTrackExts.contains(ext)) {
+                                  (kMultiTrackExts.contains(ext) || rkNative)) {
                                 // For joshw-style files an M3U alongside the
                                 // audio file defines the real track list.
                                 // Prefer it over C probe (which returns the raw
@@ -770,7 +775,8 @@ class HomeScreen extends StatelessWidget {
                         // probe cannot count these, and the catalogue's
                         // track_count includes the NOSOUND slots the songdb
                         // drops (22 vs the 21 that actually play).
-                        if (UadeInfoService.isUadePath(entry.filePath)) {
+                        if (UadeInfoService.isUadePath(entry.filePath) &&
+                            !UadeInfoService.isRonKlarenAt(entry.filePath)) {
                           final rows = await _uadeSubsongRows(
                               entry.filePath, dbTracks,
                               dbTracks.isNotEmpty ? dbTracks.first : null);

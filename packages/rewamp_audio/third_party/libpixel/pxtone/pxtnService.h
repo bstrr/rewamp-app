@@ -103,6 +103,7 @@ private:
 
 	int32_t  _moo_smp_smooth  ;
 	float    _moo_clock_rate  ; // as the sample
+	double   _moo_speed = 1.0 ; // rewamp: native playback speed (clock rate ÷ speed)
 	int32_t  _moo_smp_count   ;
 	int32_t  _moo_smp_start   ;
 	int32_t  _moo_smp_end     ;
@@ -174,6 +175,8 @@ public :
     
     //YOYOFR
     bool prepareVomitPxtone(int start_pos);
+    // rewamp: native playback speed. Positions stay in 1× samples outside.
+    void rewamp_set_speed(double speed);
     //YOYOFR
 
 	// delay.

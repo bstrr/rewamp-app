@@ -139,6 +139,12 @@ void SongInfo::reset()		 	{ _pimpl->reset(); }
 class ZxTuneWrapper::ZxTuneWrapperImpl {
 private:
 	unsigned int _frameDurationMs;
+	// REWAMP: vitesse de lecture. La duree de trame du RENDU (FRAMEDURATION)
+	// devient nominale / vitesse: les trames du lecteur se rapprochent, les
+	// puces gardent leur horloge (hauteur conservee). _frameDurationMs reste
+	// la NOMINALE: position, duree et seek (trames x _frameDurationMs)
+	// restent donc en temps du MORCEAU.
+	long long _frameDurationUsNominal = 0;
 public:
 	ZxTuneWrapperImpl(std::string modulePath, const void* data, size_t size, int sampleRate) {
 		_sampleRate = sampleRate;
@@ -230,6 +236,18 @@ public:
 		Parameters::Container::Ptr params= _player->GetParameters();
 		const Sound::RenderParameters::Ptr sound = Sound::RenderParameters::Create(params);
 		_frameDurationMs = sound->FrameDuration().Get() / 1000;	// API delivers micros NOT millis
+		_frameDurationUsNominal = sound->FrameDuration().Get();
+	}
+
+	// REWAMP: vitesse de lecture (voir _frameDurationUsNominal).
+	bool set_speed(double speed) {
+		if (!_player || _frameDurationUsNominal <= 0 || !(speed > 0.0)) return false;
+		long long us = (long long)((double)_frameDurationUsNominal / speed + 0.5);
+		if (us < Parameters::ZXTune::Sound::FRAMEDURATION_MIN ||
+		    us > Parameters::ZXTune::Sound::FRAMEDURATION_MAX) return false;
+		Parameters::Container::Ptr params = _player->GetParameters();
+		params->SetValue(Parameters::ZXTune::Sound::FRAMEDURATION, us);
+		return true;
 	}
 	
 	void get_song_info(unsigned int p_subsong, SongInfo & p_info)	{
@@ -640,6 +658,10 @@ int ZxTuneWrapper::get_current_position() {
 
 void ZxTuneWrapper::seek_position(int ms) {
 	return _pimpl->seek_position(ms);
+}
+
+bool ZxTuneWrapper::set_speed(double speed) {
+	return _pimpl->set_speed(speed);
 }
 
 int ZxTuneWrapper::get_max_position() {

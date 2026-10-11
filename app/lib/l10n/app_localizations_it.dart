@@ -836,6 +836,17 @@ class AppLocalizationsIt extends AppLocalizations {
       'Cave Story .org — il motore originale di Pixel';
 
   @override
+  String get engineDescNtgs =>
+      'Apple IIGS (Ensoniq 5503) — moduli NoiseTracker GS';
+
+  @override
+  String get engineDescRonKlaren => 'Amiga — moduli Ron Klaren (.rk)';
+
+  @override
+  String get engineDescSamCop =>
+      'SAM Coupé — programmi Z80 che pilotano il SAA1099 (.cop)';
+
+  @override
   String get engineDescPxtone => 'Il tracker di Pixel — .ptcop/.pttune';
 
   @override
@@ -1345,6 +1356,19 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get voicesTitle => 'Voci';
+
+  @override
+  String get voicesSpeed => 'Velocità';
+
+  @override
+  String get voicesSpeedNormal => 'Velocità normale';
+
+  @override
+  String get voicesSpeedNative => 'Tempo del motore — intonazione invariata';
+
+  @override
+  String get voicesSpeedResampled =>
+      'Ricampionato — cambia anche l\'intonazione';
 
   @override
   String get voicesNone => 'Nessuna voce per questo brano.';
@@ -2477,6 +2501,10 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get libraryOnAnotherDevice => 'Su un altro dispositivo';
+
+  @override
+  String get libraryHideElsewhere =>
+      'Nascondi ciò che non è su questo dispositivo';
 
   @override
   String get localLibraryEmpty =>
@@ -4104,56 +4132,48 @@ class AppLocalizationsIt extends AppLocalizations {
   String get releaseNotesTitle => 'Novità';
 
   @override
-  String get releaseNotesV8Windows =>
-      'Rewamp ora funziona su Windows, con tutti i motori e i visualizzatori, projectM compreso.';
+  String get releaseNotesV9Speed =>
+      'Velocità di riproduzione da 0,2× a 3×, nel pannello Voci. La maggior parte dei motori cambia il tempo e mantiene l\'intonazione; gli altri ricampionano.';
 
   @override
-  String get releaseNotesV8Linux =>
-      'Linux: i visualizzatori funzionano anche sotto X11 (modalità gioco di Steam Deck), «Sempre in primo piano» vi ritorna, e chiudere la finestra non manda più in crash l\'app.';
+  String get releaseNotesV9Windows =>
+      'Windows: i tasti multimediali e i controlli multimediali di sistema (riquadro del volume, barra delle applicazioni) comandano la riproduzione, e il visualizzatore a schermo intero ora occupa tutto lo schermo.';
 
   @override
-  String get releaseNotesV8Formats =>
-      'Ora vengono riprodotti i file Game Boy .gbr e DefleMask .dmf.';
+  String get releaseNotesV9Formats =>
+      'Nuovi lettori: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) e i programmi .cop del SAM Coupé.';
 
   @override
-  String get releaseNotesV8Smooth =>
-      'Lettore e visualizzatori più fluidi: lo schermo non ridisegna più tutto a ogni avanzamento della posizione.';
+  String get releaseNotesV9Amiga =>
+      'Amiga e Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory e alcuni moduli Maximum Effect ora vengono riprodotti.';
 
   @override
-  String get releaseNotesV8Scrolling =>
-      'Un titolo troppo lungo per il suo spazio ora scorre in loop, in un solo verso, invece di andare avanti e indietro.';
+  String get releaseNotesV9MoonBlaster =>
+      'MSX MoonBlaster: i brani caricano il loro kit di campioni invece di suonare rumore, e i file in modalità modifica vengono riprodotti correttamente.';
 
   @override
-  String get releaseNotesV8MouseDrag =>
-      'Computer: le righe orizzontali scorrono con clic e trascinamento del mouse.';
+  String get releaseNotesV9HideElsewhere =>
+      'Libreria: «Nascondi ciò che non è su questo dispositivo» nasconde le voci locali il cui file si trova su un altro dispositivo.';
 
   @override
-  String get releaseNotesV8Presets =>
-      'projectM: i pacchetti di preset si installano fino a nove volte più velocemente, e le cartelle di preset grandi non vengono più troncate.';
+  String get releaseNotesV9ArtworkFullscreen =>
+      'Una pressione prolungata sulla copertina nel lettore la mostra a schermo intero.';
 
   @override
-  String get releaseNotesV8Pause =>
-      'Corretto: mettere in pausa poteva passare al brano successivo.';
+  String get releaseNotesV9Viz =>
+      'Visualizzatori: oscilloscopio per voce come predefinito (spettro a linea per i formati in streaming), griglia e nomi delle voci regolabili dall\'oscilloscopio, e un oscilloscopio stereo più stabile.';
 
   @override
-  String get releaseNotesV8Psf =>
-      'Gli album PSF (PlayStation, Nintendo DS…) forniti come un unico archivio si espandono nelle loro tracce, anche quando li aggiungi alla coda.';
+  String get releaseNotesV9PsfTrack =>
+      'Corretto: toccare un brano di alcuni album PSF poteva riprodurne un altro.';
 
   @override
-  String get releaseNotesV8ArtistTracks =>
-      'Pagine artista: l\'elenco dei brani mostra di nuovo tracce, non archivi di album interi.';
+  String get releaseNotesV9Playlists =>
+      'Una cartella con più playlist forma ora un unico album con tutti i loro brani, senza duplicati.';
 
   @override
-  String get releaseNotesV8VizFixes =>
-      'Visualizzatori: le voci del Nintendo 64 vengono mostrate e silenziate correttamente, il piano si reinquadra a ogni brano e lo sfondo con la copertina non scompare più.';
-
-  @override
-  String get releaseNotesV8ProjectMFixes =>
-      'projectM: i preset seguono la frequenza dei fotogrammi reale (alcuni reagivano lentamente), e due preset che non comparivano mai ora ci sono.';
-
-  @override
-  String get releaseNotesV8Covers =>
-      'Le copertine si caricano molto più in fretta: una griglia di album si riempie subito, invece di una copertina ogni secondo e mezzo.';
+  String get releaseNotesV9AmigaInfo =>
+      'I brani Amiga senza durata o autore noti interrogano di nuovo il server dopo una settimana, invece che mai.';
 
   @override
   String get releaseNotesDataReset =>

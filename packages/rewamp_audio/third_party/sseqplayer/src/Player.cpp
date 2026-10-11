@@ -160,7 +160,16 @@ void Player::Run()
 		for (uint8_t i = 0; i < this->nTracks; ++i)
 			this->tracks[this->trackIds[i]].Run();
 	}
-	this->tempoCount += (static_cast<int>(this->tempo) * static_cast<int>(this->tempoRate)) >> 8;
+	if (this->rewampSpeed == 1.0)
+		this->tempoCount += (static_cast<int>(this->tempo) * static_cast<int>(this->tempoRate)) >> 8;
+	else
+	{
+		const double add = static_cast<double>((static_cast<int>(this->tempo) * static_cast<int>(this->tempoRate)) >> 8)
+			* this->rewampSpeed + this->rewampTempoFrac;
+		const int whole = static_cast<int>(add);
+		this->rewampTempoFrac = add - whole;
+		this->tempoCount += whole;
+	}
 }
 
 void Player::UpdateTracks()

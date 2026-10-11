@@ -21,6 +21,10 @@ extern "C" {
 sint32 EMU_CALL yam_init(void);
 uint32 EMU_CALL yam_get_state_size(uint8 version);
 void   EMU_CALL yam_clear_state(void *state, uint8 version);
+/* rewamp: native playback speed (timers x speed, voices unchanged) */
+void   EMU_CALL yam_rewamp_set_speed(void *state, double speed);
+double EMU_CALL yam_rewamp_speed(void *state);
+void   EMU_CALL yam_rewamp_advance_timers(void *state, uint32 tsamples);
 
 void   EMU_CALL yam_enable_dry(void *state, uint8 enable);
 void   EMU_CALL yam_enable_dsp(void *state, uint8 enable);

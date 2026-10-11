@@ -239,6 +239,16 @@ typedef struct {
      * un champ inséré au milieu décalerait les 39 greffons. */
     int noPrefixProbe;
 
+    /* OPTIONNEL (NULL = l'engine n'a pas de mécanisme de vitesse). Applique la
+     * vitesse de lecture `speed` (0,2 à 3; 1 = normale) avec le mécanisme
+     * PROPRE de l'engine — tempo d'un tracker, minutage d'un émulateur — et
+     * rend 1 si c'est fait. Rendre 0 (vitesse hors de ce que l'engine sait
+     * faire) veut dire « je reste à 1× »: la source applique alors la vitesse
+     * par rééchantillonnage générique (hauteur comprise). Appelé par le
+     * producteur sous decodeLock, avant la première lecture puis à chaque
+     * changement; length() et seek() restent en temps du MORCEAU à 1×.
+     * ⚠️ Dernier champ: les vtables s'initialisent par POSITION. */
+    int (*set_speed)(RewampDecoder* dec, double speed);
 } RewampPluginVTable;
 
 // Helper for plugins: returns 1 if `ext` (lowercase, no dot) is in a

@@ -813,6 +813,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get engineDescOrganya => 'Cave Story .org — Pixel 的原生引擎';
 
   @override
+  String get engineDescNtgs => 'Apple IIGS（Ensoniq 5503）— NoiseTracker GS 模块';
+
+  @override
+  String get engineDescRonKlaren => 'Amiga — Ron Klaren 模块（.rk）';
+
+  @override
+  String get engineDescSamCop => 'SAM Coupé — 驱动 SAA1099 的 Z80 程序 (.cop)';
+
+  @override
   String get engineDescPxtone => 'Pixel 的 tracker — .ptcop/.pttune';
 
   @override
@@ -1299,6 +1308,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get voicesTitle => '声部';
+
+  @override
+  String get voicesSpeed => '速度';
+
+  @override
+  String get voicesSpeedNormal => '正常速度';
+
+  @override
+  String get voicesSpeedNative => '引擎节奏 — 音高不变';
+
+  @override
+  String get voicesSpeedResampled => '重采样 — 音高也会改变';
 
   @override
   String get voicesNone => '这首歌曲没有声部。';
@@ -2390,6 +2411,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get libraryOnAnotherDevice => '在另一台设备上';
+
+  @override
+  String get libraryHideElsewhere => '隐藏不在此设备上的项目';
 
   @override
   String get localLibraryEmpty => '还没有本地导入。请在主页使用“导入文件”或“导入文件夹”。';
@@ -3915,49 +3939,45 @@ class AppLocalizationsZh extends AppLocalizations {
   String get releaseNotesTitle => '新功能';
 
   @override
-  String get releaseNotesV8Windows =>
-      'Rewamp 现已支持 Windows，包含全部引擎和可视化效果，projectM 也不例外。';
+  String get releaseNotesV9Speed =>
+      '播放速度可在 0.2× 至 3× 之间调节（“声部”面板）。大多数引擎改变速度而保持音高；其余引擎进行重采样。';
 
   @override
-  String get releaseNotesV8Linux =>
-      'Linux：可视化效果现在也能在 X11 下运行（Steam Deck 游戏模式），“窗口置顶”在该环境下回归，关闭窗口也不再导致应用崩溃。';
+  String get releaseNotesV9Windows =>
+      'Windows：媒体键和系统媒体控件（音量弹窗、任务栏）可以控制播放，全屏可视化效果现在会铺满整个屏幕。';
 
   @override
-  String get releaseNotesV8Formats =>
-      '现已支持播放 Game Boy .gbr 和 DefleMask .dmf 文件。';
+  String get releaseNotesV9Formats =>
+      '新增播放器：NoiseTracker GS（Apple IIGS）、Ron Klaren（Amiga）以及 SAM Coupé 的 .cop 程序。';
 
   @override
-  String get releaseNotesV8Smooth => '播放器和可视化效果更流畅：播放位置每次更新时不再重绘整个屏幕。';
+  String get releaseNotesV9Amiga =>
+      'Amiga 与 Atari ST：SidMon 1、Sonic Arranger、Paul Robotham、Quartet、SoundFactory 以及部分 Maximum Effect 模块现在可以播放。';
 
   @override
-  String get releaseNotesV8Scrolling => '过长的标题现在会朝一个方向循环滚动，而不再来回滚动。';
+  String get releaseNotesV9MoonBlaster =>
+      'MSX MoonBlaster：曲目会加载其采样包，不再播放噪音；编辑模式的文件也能正确播放。';
 
   @override
-  String get releaseNotesV8MouseDrag => '电脑：横向列表可用鼠标点击拖动来滚动。';
+  String get releaseNotesV9HideElsewhere =>
+      '资料库：“隐藏不在此设备上的项目”会隐藏文件位于其他设备上的本地条目。';
 
   @override
-  String get releaseNotesV8Presets => 'projectM：预设包安装速度最高提升 9 倍，大型预设文件夹也不再被截断。';
+  String get releaseNotesV9ArtworkFullscreen => '在播放器中长按封面即可全屏查看。';
 
   @override
-  String get releaseNotesV8Pause => '已修复：暂停时可能会跳到下一首。';
+  String get releaseNotesV9Viz =>
+      '可视化：默认使用按声部示波器（流式格式使用线形频谱），可直接在示波器上切换网格和声部名称，立体声示波器也更稳定。';
 
   @override
-  String get releaseNotesV8Psf =>
-      '以单个压缩包提供的 PSF 专辑（PlayStation、Nintendo DS 等）现在会展开为各个曲目，加入播放队列时也是如此。';
+  String get releaseNotesV9PsfTrack => '已修复：点击某些 PSF 专辑中的曲目可能会播放另一首。';
 
   @override
-  String get releaseNotesV8ArtistTracks => '艺术家页面：曲目列表重新显示曲目，而不是整张专辑的压缩包。';
+  String get releaseNotesV9Playlists => '包含多个播放列表的文件夹现在会合并为一个专辑，包含所有曲目且不重复。';
 
   @override
-  String get releaseNotesV8VizFixes =>
-      '可视化：Nintendo 64 的各声部能正确显示和静音，钢琴视图会随每首曲目重新取景，封面背景也不再消失。';
-
-  @override
-  String get releaseNotesV8ProjectMFixes =>
-      'projectM：预设现在按实际帧率运行（部分预设之前反应迟缓），两个从未显示的预设现在也能出现了。';
-
-  @override
-  String get releaseNotesV8Covers => '封面加载快得多：专辑网格一次性填满，不再每隔一秒半才出现一张封面。';
+  String get releaseNotesV9AmigaInfo =>
+      '没有已知时长或作者的 Amiga 曲目会在一周后重新向服务器查询，而不是永不再查询。';
 
   @override
   String get releaseNotesDataReset => '本次测试版已重置本地数据。媒体库和播放列表将从账号重建；下载需要重新进行。';

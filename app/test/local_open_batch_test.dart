@@ -93,7 +93,7 @@ void main() {
       for (final n in ['a.nsf', 'b.nsf', 'c.nsf']) {
         File(p.join(dir.path, n)).writeAsBytesSync(const [0]);
       }
-      // Deux playlists: la plus LONGUE gagne, quel que soit le fichier.
+      // Deux playlists: FUSIONNÉES (RewampDb.mergeM3uTexts), lues une fois.
       File(p.join(dir.path, 'short.m3u'))
           .writeAsStringSync('a.nsf::NSF,1,Un,0:30,,\n');
       File(p.join(dir.path, 'long.m3u')).writeAsStringSync(
@@ -113,8 +113,10 @@ void main() {
             reason: n);
       }
       expect(cache.m3usByDir.keys, [dir.path]);
-      expect(cache.entryCount.length, 2);
-      expect(cache.subs.keys.map(p.basename), ['long.m3u']);
+      // Une seule playlist (la fusion) parsée pour les trois fichiers.
+      expect(cache.subs.length, 1);
+      expect(cache.subs.values.single.map((s) => p.basename(s.filePath)),
+          ['a.nsf', 'b.nsf', 'c.nsf']);
     });
 
     test('pas de M3U: null avec et sans mémoire', () async {

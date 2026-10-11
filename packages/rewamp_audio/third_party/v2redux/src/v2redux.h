@@ -111,6 +111,10 @@ public:
   // desyncs. Persists across play()/seek; takes effect on the next render().
   void setChannelMask(uint32_t mask);
 
+  // rewamp: native playback speed (0.2..3) — sequencer events come 1/speed
+  // as far apart, the synth keeps its pitch. play(ms) stays in 1x song time.
+  void setSpeed(double speed);
+
   // Active voice count per channel into dest[0..15]; returns the total across
   // all channels. dest must hold 16 ints. Display-only.
   int getChannelPoly(int *dest16) const;

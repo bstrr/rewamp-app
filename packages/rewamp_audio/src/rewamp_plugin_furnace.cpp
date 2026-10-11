@@ -33,6 +33,10 @@ struct RewampDecoder {
     int16_t*       pcm;         // scratch int16 stereo buffer
     int            pcmFrames;
     int64_t        lastMuteMask; // applied generic_mute_mask snapshot
+    // Vitesse native (virtual tempo) et durée à 1×, figée à l'ouverture:
+    // Furnace recalcule ses horodatages au tempo COURANT.
+    double         speed;
+    double         durationSecs1x;
     // Pattern view (cached at open — constant per subsong).
     int            patOrders;   // getOrderCount()
     int            patRows;     // subsong patLen (same for every order)
@@ -290,6 +294,8 @@ static RewampDecoder* furnace_open(const char* path, RewampAudioFormat* outForma
     if (!dec) { delete player; return NULL; }
     dec->player     = player;
     dec->rate       = FURNACE_RATE;
+    dec->speed      = 1.0;
+    dec->durationSecs1x = -1.0;   // relevée au premier length(), à 1×
     dec->subsong    = subsong;
     strncpy(dec->path, clean, sizeof(dec->path) - 1);
     dec->path[sizeof(dec->path) - 1] = '\0';
@@ -447,7 +453,7 @@ static void furnace_seek(RewampDecoder* dec, uint64_t frameIndex) {
      * morceau était terminé — un seek en cours de lecture ne doit rien
      * changer à l'état du moteur. */
     const bool wasEnded = dec->player->isEndOfSong();
-    dec->player->seek((double)frameIndex / dec->rate);
+    dec->player->seek((double)frameIndex / dec->rate / (dec->speed > 0.0 ? dec->speed : 1.0));
     if (wasEnded) dec->player->setPlaying(true);
 }
 
@@ -458,7 +464,8 @@ static uint64_t furnace_length(RewampDecoder* dec) {
     // FamiTracker à une dizaine de morceaux annonçait donc 105:10 pour la
     // piste en cours. Les deux noms se ressemblent et rendent un double de
     // secondes; seul celui-ci décrit ce qu'on joue.
-    double secs = dec->player->getDuration();
+    if (dec->durationSecs1x < 0.0) dec->durationSecs1x = dec->player->getDuration();
+    double secs = dec->durationSecs1x;
     if (secs <= 0) return 0;
     return (uint64_t)(secs * dec->rate);
 }
@@ -551,6 +558,18 @@ static void furnace_pattern_cursor(RewampDecoder* dec, int* order, int* row) {
     if (row)   *row   = (dec && dec->player) ? dec->player->getCurrentRow()   : -1;
 }
 
+/* Vitesse NATIVE: le « virtual tempo » du sous-morceau (FurnacePlayer) — les
+ * lignes défilent plus vite, la hauteur ne bouge pas. La durée est figée à 1×
+ * (furnace_length), le seek converti (FurnacePlayer::seek compte en secondes
+ * de LECTURE). */
+static int furnace_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->player || speed < 0.2 || speed > 3.0) return 0;
+    if (dec->durationSecs1x < 0.0) dec->durationSecs1x = dec->player->getDuration();
+    dec->player->setPlaybackSpeed((float)speed);
+    dec->speed = speed;
+    return 1;
+}
+
 static const RewampPluginVTable kFurnaceVTable = {
     "furnace",
     furnace_probe,
@@ -568,6 +587,9 @@ static const RewampPluginVTable kFurnaceVTable = {
     furnace_pattern_num_rows,
     furnace_pattern_get,
     furnace_pattern_cursor,
+    NULL,                    /* probe_path */
+    0,                       /* noPrefixProbe */
+    furnace_set_speed,       /* vitesse native (virtual tempo) */
 };
 
 extern "C" const RewampPluginVTable* rewamp_furnace_plugin(void) { return &kFurnaceVTable; }

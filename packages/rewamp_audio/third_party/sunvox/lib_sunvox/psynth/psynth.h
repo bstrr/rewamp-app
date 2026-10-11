@@ -164,7 +164,12 @@ Get int frequency (in Hz) from the PITCH64 (one semitone = 64)
 #define PSYNTH_GET_DELTA64_HQ( SMPRATE, FREQ, D ) { D = ((uint64_t)(FREQ)<<16) / (unsigned)(SMPRATE); }
 
 //One tick size (frame = 256):
-#define PSYNTH_TICK_SIZE( SFREQ, BPM ) ( ( ( ( (uint64_t)(SFREQ) * (uint64_t)60 ) << 8 ) / (BPM) ) / 24 )
+/* rewamp: native playback speed — a tick lasts 1/speed as long, the
+ * generators keep their pitch. 1.0 = the upstream size, bit for bit. */
+extern double g_rewamp_sv_speed;
+#define PSYNTH_TICK_SIZE_1X( SFREQ, BPM ) ( ( ( ( (uint64_t)(SFREQ) * (uint64_t)60 ) << 8 ) / (BPM) ) / 24 )
+#define PSYNTH_TICK_SIZE( SFREQ, BPM ) ( g_rewamp_sv_speed == 1.0 ? PSYNTH_TICK_SIZE_1X( SFREQ, BPM ) \
+    : (uint64_t)( (double)PSYNTH_TICK_SIZE_1X( SFREQ, BPM ) / g_rewamp_sv_speed ) )
 
 //64bit fixed point math (must be replaced with standard C/C++ int64?)
 #define PSYNTH_FP64_PREC 16 //Fixed point precision: 32.X

@@ -1211,12 +1211,24 @@ static void adjust_array_sizes (void)
 #endif
 }
 
+/* rewamp: native playback speed (set by the host, adopted by cia.c and by
+ * the hsync handler below). At speed != 1 the VERTB interrupt and the CIA-A
+ * TOD tick no longer follow the beam: a virtual frame of maxvpos/speed lines
+ * raises them, so a VBlank-timed replay runs `speed` times faster while
+ * Paula keeps its clock (the pitch does not move). The beam, the copper and
+ * everything else keep the real frame. 1.0 = upstream, bit for bit. */
+volatile double uade_rewamp_speed = 1.0;
+static double rewamp_vb_lines = 0.0;
+
 static void vsync_handler (void)
 {
     if (currprefs.m68k_speed == -1)
 	rpt_did_reset = 0;
 
-    INTREQ (0x8020);
+    if (uade_rewamp_speed == 1.0) {
+	INTREQ (0x8020);
+	rewamp_vb_lines = 0.0;
+    }
     if (bplcon0 & 4)
 	lof ^= 0x8000;
 
@@ -1260,7 +1272,8 @@ static void vsync_handler (void)
 	ievent_alive--;
     if (timehack_alive > 0)
 	timehack_alive--;
-    CIA_vsync_handler();
+    if (uade_rewamp_speed == 1.0)
+	CIA_vsync_handler();
 }
 
 static void hsync_handler (void)
@@ -1315,6 +1328,18 @@ static void hsync_handler (void)
 	}
     }
   
+    if (uade_rewamp_speed != 1.0) {
+	/* virtual frame (see uade_rewamp_speed) */
+	rewamp_vb_lines += uade_rewamp_speed;
+	if (rewamp_vb_lines >= (double)(maxvpos + (lof != 0))) {
+	    rewamp_vb_lines -= (double)(maxvpos + (lof != 0));
+	    INTREQ (0x8020);
+	    CIA_vsync_handler();
+	}
+    } else {
+	rewamp_vb_lines += 1.0;
+    }
+
     if (++vpos == (maxvpos + (lof != 0))) {
 	vpos = 0;
 	vsync_handler();

@@ -176,6 +176,12 @@ int rewamp_channel_buf(int ch, int8_t* out, int outLen);
  * each frame to minimise L1 distance against the previous frame's center.
  * Falls back to raw copy when insufficient data or on the first call. */
 REWAMP_EXPORT int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen);
+/* Alignement par corrélation partagé (voies + stéréo): décalage où
+ * raw[d..d+outLen) colle le mieux au gabarit `tmpl` (TRIGGER_TEMPLATE_SIZE =
+ * 512 octets, mis à jour). Voir rewamp_channel_data.c. */
+#define REWAMP_TRIGGER_TEMPLATE_SIZE 512
+#define REWAMP_TRIGGER_SEARCH_LEN    1700
+int rewamp_trigger_align_i8(const int8_t* raw, int got, int outLen, int8_t* tmpl);
 
 /* Monotonically increasing write pointer for channel `ch` (sample units).
  * If the value is unchanged between two calls, the channel wrote no new data

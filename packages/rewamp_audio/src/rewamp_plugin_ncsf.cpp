@@ -155,6 +155,8 @@ struct RewampDecoder {
     uint64_t              fadeFrames = 0;  /* rampe finale (tag `fade`) */
     int                   finished = 0;
     char                  path[4096] = {0};
+    double                speed = 1.0;     /* vitesse native */
+    double                posFrac = 0.0;
 };
 
 /* Build (or rebuild, for a backward seek) the player from the already-loaded
@@ -281,9 +283,12 @@ static uint64_t ncsf_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
     if (!dec || !dec->player || dec->finished || frameCount == 0) return 0;
     const uint64_t fadeBase = dec->framePos;
 
+    const double sp = dec->speed > 0.0 ? dec->speed : 1.0;
     if (dec->totalFrames > 0) {
         if (dec->framePos >= dec->totalFrames) { dec->finished = 1; return 0; }
+        /* remain is song time; the output covers sp × as much of it */
         uint64_t remain = dec->totalFrames - dec->framePos;
+        if (sp != 1.0) remain = (uint64_t)((double)remain / sp) + 1;
         if (frameCount > remain) frameCount = remain;
     }
 
@@ -302,9 +307,13 @@ static uint64_t ncsf_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
     } catch (std::exception &) {
         dec->finished = 1;
     }
-    rewamp_psf_fade_apply(out, written, 2, fadeBase,
-                          dec->totalFrames, dec->fadeFrames);
-    dec->framePos += written;
+    rewamp_psf_fade_apply_speed(out, written, 2, fadeBase,
+                                dec->totalFrames, dec->fadeFrames, sp);
+    /* framePos is SONG time */
+    dec->posFrac += (double)written * sp;
+    const uint64_t whole = (uint64_t)dec->posFrac;
+    dec->posFrac -= (double)whole;
+    dec->framePos += whole;
     return written;
 }
 
@@ -321,7 +330,10 @@ static void ncsf_seek(RewampDecoder *dec, uint64_t frameIndex) {
     if (frameIndex < dec->framePos) {
         if (ncsf_build_player(dec) != 0) { dec->finished = 1; return; }
     }
-    if (frameIndex <= dec->framePos) return;
+    dec->posFrac = 0.0;
+    /* the fast-forward is in song time: 1× */
+    dec->player->rewampSpeed = 1.0;
+    if (frameIndex <= dec->framePos) { dec->player->rewampSpeed = dec->speed; return; }
 
     g_is_seeking = 1;
     std::vector<uint8_t> &buf = dec->state->outputBuffer;
@@ -337,7 +349,18 @@ static void ncsf_seek(RewampDecoder *dec, uint64_t frameIndex) {
     } catch (std::exception &) {
         dec->finished = 1;
     }
+    dec->player->rewampSpeed = dec->speed;
     g_is_seeking = 0;
+}
+
+/* Vitesse NATIVE: le compteur de tempo SSEQ avance vitesse × plus vite
+ * (Player::rewampSpeed); le tick à 192 Hz — enveloppes, LFO — garde son
+ * rythme, donc hauteur et forme des notes ne bougent pas. */
+static int ncsf_set_speed(RewampDecoder *dec, double speed) {
+    if (!dec || !dec->player || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    dec->player->rewampSpeed = speed;
+    return 1;
 }
 
 /* ── length / close ─────────────────────────────────────────────────────────── */
@@ -380,6 +403,13 @@ static const RewampPluginVTable kNcsfVTable = {
     ncsf_length,
     ncsf_close,
     ncsf_configure_loop_fn,
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    ncsf_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_ncsf_plugin(void) {

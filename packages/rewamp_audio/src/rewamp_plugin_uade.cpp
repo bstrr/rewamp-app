@@ -20,6 +20,7 @@ extern "C" {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vector>
 #include <strings.h>
 #include <signal.h>
 
@@ -29,7 +30,13 @@ struct RewampDecoder {
     int16_t*  pcm;        // scratch interleaved int16 stereo
     uint64_t  pcmFrames;
     int       ended;
+    double    speed;      // native playback speed asked for (0 = 1×)
+    int       seekPending;// the speed waits at 1× until UADE's seek completes
 };
+
+/* uadecore/custom.c: native playback speed — CIA E clock and VBlank × speed,
+ * Paula at its clock (the pitch does not move); libuade counts song time. */
+extern "C" volatile double uade_rewamp_speed;
 
 /* Settings → Moteurs → UADE (Modizer's UADE family; uade_effect_run applies
  * these inside libuade's own read pipeline). Defaults: post-FX ON, panning ON
@@ -188,6 +195,78 @@ static unsigned char* uade_bpsm_v1_to_v2(const char* path, size_t* outSize) {
     return buf;
 }
 
+/* Maximum Effect (« MAX.* », compagnon « SMP.* ») — des mots longs dont les
+ * trois octets HAUTS sont remplis d'un octet de BOURRAGE au lieu de zéros.
+ *
+ * Le format s'ouvre sur deux constantes, 15 et 20 (`0000000f 00000014`), puis
+ * les offsets des quatre pistes. Une partie des rips modland porte, dans
+ * certains de ces mots longs, `2d2d2d` (« --- ») ou `d4d4d4` à la place de
+ * `000000`: le replay 68k refuse alors le module (« module check failed »),
+ * `uade123` amont compris, et l'option qui ignore ce contrôle ne rend que du
+ * silence — les offsets pointent hors du fichier. Mesuré sur modland: les cinq
+ * « AlloAllo level* » (Old Tramp, `2d`) et « DinosaurDetective intro /
+ * complete » (Jonathan Scarcliffe, `d4`); les quinze autres fichiers des deux
+ * dossiers sont propres. Le bourrage ne se limite pas à l'en-tête: « intro »
+ * l'a aussi sur le mot long qui précède chaque piste (`d4d4d424`).
+ *
+ * Réparation: l'octet de bourrage se lit sur l'une des deux constantes, et
+ * tout mot long ALIGNÉ dont les trois octets hauts le valent est remis à zéro.
+ * Vérifié par `uade123` sur les sept fichiers réparés: tous jouent (RMS
+ * 1944 à 4264, du même ordre que les fichiers propres). Le FICHIER n'est pas
+ * modifié: son md5 sert de clé à la base de durées (songdb). */
+static bool uade_is_max_name(const char* path) {
+    const char* b = strrchr(path, '/');
+    b = b ? b + 1 : path;
+#ifdef _WIN32
+    const char* bs = strrchr(b, '\\');
+    if (bs) b = bs + 1;
+#endif
+    const size_t n = strlen(b);
+    return strncasecmp(b, "max.", 4) == 0 ||
+           (n > 4 && strcasecmp(b + n - 4, ".max") == 0);
+}
+
+/* L'octet de bourrage, ou 0 quand l'en-tête est propre (le cas courant). */
+static unsigned char uade_max_filler(const unsigned char* h, size_t n) {
+    if (h == NULL || n < 8) return 0;
+    const unsigned char lows[2] = {0x0f, 0x14};
+    for (int i = 0; i < 2; i++) {
+        const unsigned char* w = h + 4 * i;
+        if (w[3] == lows[i] && w[0] != 0 && w[0] == w[1] && w[1] == w[2])
+            return w[0];
+    }
+    return 0;
+}
+
+/* Le fichier entier en mémoire, bourrage remis à zéro — NULL si ce n'est pas
+ * un Maximum Effect bourré (on ne lit alors que l'en-tête). L'appelant libère. */
+static unsigned char* uade_max_unfill(const char* path, size_t* outSize) {
+    if (!uade_is_max_name(path)) return NULL;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    unsigned char head[8];
+    size_t got = fread(head, 1, sizeof(head), f);
+    const unsigned char fill = uade_max_filler(head, got);
+    if (fill == 0) { fclose(f); return NULL; }
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
+    long size = ftell(f);
+    /* Une partition Maximum Effect pèse quelques kilo-octets. */
+    if (size < 24 || size > (long)(1024 * 1024)) { fclose(f); return NULL; }
+    rewind(f);
+    unsigned char* buf = (unsigned char*)malloc((size_t)size);
+    if (!buf) { fclose(f); return NULL; }
+    if (fread(buf, 1, (size_t)size, f) != (size_t)size) {
+        free(buf); fclose(f); return NULL;
+    }
+    fclose(f);
+    for (long o = 0; o + 3 < size; o += 4) {
+        if (buf[o] == fill && buf[o + 1] == fill && buf[o + 2] == fill)
+            buf[o] = buf[o + 1] = buf[o + 2] = 0;
+    }
+    *outSize = (size_t)size;
+    return buf;
+}
+
 static int uade_probe(const char* ext, const uint8_t* hdr, size_t n) {
     /* Règle NÉGATIVE, avant tout le reste: `.sng` n'est pas UNE chose. C'est
      * l'extension d'un module ZoundMonitor AMIGA (`eagleplayer.conf`,
@@ -203,6 +282,31 @@ static int uade_probe(const char* ext, const uint8_t* hdr, size_t n) {
     if (ext && strcasecmp(ext, "sng") == 0 && hdr && n >= 3 &&
         hdr[0] == 'G' && hdr[1] == 'T' && hdr[2] == 'S') {
         return 0;
+    }
+
+    /* `.sqt` n'est pas UNE chose non plus: SQ-Tracker sur ZX Spectrum (zxtune,
+     * 55 sur la seule extension) MAIS aussi Quartet PSG sur Atari ST
+     * (`eagleplayer.conf`: `Quartet_PSG prefixes=sqt`), que seul UADE joue.
+     * Le second est du CODE 68000 qui s'ouvre sur une table de sauts —
+     * `BRA.W` (`60 00 dddd`) répétés — ce qu'un module ZX, qui commence par
+     * des pointeurs little-endian, n'a aucune raison d'avoir deux fois de
+     * suite. Mesuré sur « time machine.sqt »: `60 00 02 64 60 00 03 0c …`,
+     * joué par uade123 3.05 (replay Quartet_PSG, RMS 6398). 70 > 55. */
+    if (ext && strcasecmp(ext, "sqt") == 0 && hdr && n >= 8 &&
+        hdr[0] == 0x60 && hdr[1] == 0x00 && hdr[4] == 0x60 && hdr[5] == 0x00) {
+        return 70;
+    }
+
+    /* `.psf` aussi est double: le Portable Sound Format de la PlayStation
+     * (highlyexp, 60 sur la seule extension, 100 avec sa magie « PSF » +
+     * version) — et SoundFactory sur Amiga (`SoundFactory prefixes=psf`),
+     * que seul UADE joue. Mesuré sur « axelf.psf » (modland): `00 01 3d 67…`,
+     * joué par uade123 3.05 (replay SoundFactory, RMS 5235). Tout ce qui
+     * commence par « PSF » reste ailleurs — le PSF de Pivotal que vgmstream
+     * lit aussi porte cette magie. 70 > 60. */
+    if (ext && strcasecmp(ext, "psf") == 0 && hdr && n >= 4 &&
+        !(hdr[0] == 'P' && hdr[1] == 'S' && hdr[2] == 'F')) {
+        return 70;
     }
 
     /* BP SoundMon V1: `uade_filemagic` ne connaît pas « BPSM » (ni chez nous ni
@@ -294,6 +398,64 @@ static bool uade_companion_is_audiosculpture(const char* path,
 }
 
 
+/* Paul Robotham (« space 1889.dat » + « space 1889.ssd », ou la forme
+ * préfixe « dat.NOM » + « ssd.NOM ») — un module dont l'identité tient au
+ * VOISIN: la partition `.dat` n'a pas de magie que `uade_filemagic` connaisse,
+ * et `.dat` est d'abord une extension SID (score 60 sur la seule extension).
+ * Sans cette règle le fichier partait chez libsidplayfp, qui le refusait. Le
+ * replay `PaulRobotham` d'UADE (`prefixes=dat`) le joue — mesuré avec
+ * uade123 3.05: RMS 7378; sans le `.ssd`, « score died ». Un vrai `.dat` SID
+ * garde sa place: sa magie PSID/RSID lui vaut 100 chez SID. */
+static bool uade_file_exists(const char* p) {
+    FILE* f = fopen(p, "rb");
+    if (!f) return false;
+    fclose(f);
+    return true;
+}
+
+static bool uade_has_robotham_companion(const char* path) {
+    if (!path || !path[0]) return false;
+    const char* slash = strrchr(path, '/');
+#ifdef _WIN32
+    const char* bs = strrchr(path, '\\');
+    if (!slash || (bs && bs > slash)) slash = bs;
+#endif
+    const char* base = slash ? slash + 1 : path;
+    const size_t dirLen = (size_t)(base - path);
+    const size_t n = strlen(base);
+    char cand[4200];
+    // Forme suffixe: « NOM.dat » → « NOM.ssd ».
+    if (n > 4 && strcasecmp(base + n - 4, ".dat") == 0) {
+        static const char* kExt[] = { ".ssd", ".SSD" };
+        for (int i = 0; i < 2; i++) {
+            snprintf(cand, sizeof(cand), "%.*s%s", (int)(dirLen + n - 4), path, kExt[i]);
+            if (uade_file_exists(cand)) return true;
+        }
+    }
+    // Le kit PAR DÉFAUT du replay: faute de « NOM.SSD », le player demande
+    // « mdtest.ssd » (vu à uade123 -v: « Amiga requests file: mdtest.ssd »).
+    // C'est ce que font les « Ashes of Empire » -auto/-enemy/-land, dont seul
+    // -finale a son propre kit.
+    const bool isDat = (n > 4 && strcasecmp(base + n - 4, ".dat") == 0) ||
+                       (n > 4 && strncasecmp(base, "dat.", 4) == 0);
+    if (isDat) {
+        static const char* kDef[] = { "mdtest.ssd", "MDTEST.SSD" };
+        for (int i = 0; i < 2; i++) {
+            snprintf(cand, sizeof(cand), "%.*s%s", (int)dirLen, path, kDef[i]);
+            if (uade_file_exists(cand)) return true;
+        }
+    }
+    // Forme préfixe: « dat.NOM » → « ssd.NOM ».
+    if (n > 4 && strncasecmp(base, "dat.", 4) == 0) {
+        static const char* kPre[] = { "ssd.", "SSD." };
+        for (int i = 0; i < 2; i++) {
+            snprintf(cand, sizeof(cand), "%.*s%s%s", (int)dirLen, path, kPre[i], base + 4);
+            if (uade_file_exists(cand)) return true;
+        }
+    }
+    return false;
+}
+
 /* Variante avec le CHEMIN et la TAILLE RÉELLE — voir `probe_path` dans
  * rewamp_plugin.h.
  *
@@ -327,6 +489,31 @@ static int uade_probe_path(const char* ext, const uint8_t* hdr, size_t n,
             uade_companion_is_audiosculpture(path, NULL, 0))
             return 110;
     }
+    /* Au-dessus des 60 que SID donne à la seule extension `.dat`, sous les
+     * 100 d'un vrai SID (magie PSID/RSID). */
+    if (uade_has_robotham_companion(path)) return 70;
+    /* SidMon 1: modland le nomme `NOM.sid`, l'extension du C64 — libsidplayfp
+     * en prend 60 sur le seul nom, puis échoue à l'ouvrir faute de magie
+     * PSID/RSID. `sid1test` d'amifilemagic suit un `LEA` jusqu'à la chaîne
+     * « SID-MON BY R.v.VLIET », qui tombe souvent APRÈS les 2 Ko d'en-tête de
+     * la sonde: mesuré sur les 61 fichiers de modland « SidMon 1 », 37 seulement
+     * reconnus sur l'en-tête, 61 sur le fichier entier (« synthetic age.sid »
+     * parmi les manqués). On relit donc le fichier — seulement pour un `.sid`
+     * sans magie C64, donc jamais pour un vrai SID. 70 > 60. */
+    if (ext && strcasecmp(ext, "sid") == 0 && path && path[0] && hdr && n >= 4 &&
+        memcmp(hdr, "PSID", 4) != 0 && memcmp(hdr, "RSID", 4) != 0 &&
+        fileSize > 0 && fileSize <= 4u * 1024 * 1024) {
+        FILE* f = fopen(path, "rb");
+        if (f) {
+            std::vector<unsigned char> buf((size_t)fileSize);
+            const size_t got = fread(buf.data(), 1, buf.size(), f);
+            fclose(f);
+            char pre[64] = {0};
+            if (got == buf.size())
+                uade_filemagic(buf.data(), got, pre, got, path, 0);
+            if (strcasecmp(pre, "SID1") == 0) return 70;
+        }
+    }
     return uade_probe(ext, hdr, n);
 }
 
@@ -336,6 +523,7 @@ extern "C" int g_force_loop_mode;
 
 static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) {
     if (!path) return NULL;
+    uade_rewamp_speed = 1.0;   // the producer pushes the speed after open()
 
     // A dying uadecore write can raise SIGPIPE; ignore it process-wide (the
     // in-process build talks over a socketpair to the uadecore thread).
@@ -408,15 +596,21 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
         return s;
     };
 
-    /* BP SoundMon V1 → V.2 (voir [uade_bpsm_v1_to_v2]). NULL pour tout le reste,
-     * qui continue de passer par le CHEMIN: `uade_play_from_buffer` ne sait pas
-     * charger les compagnons d'un format multi-fichiers. */
-    size_t bpsmSize = 0;
-    unsigned char* bpsm = uade_bpsm_v1_to_v2(clean, &bpsmSize);
+    /* Modules RÉPARÉS en mémoire avant UADE: BP SoundMon V1 → V.2 (voir
+     * [uade_bpsm_v1_to_v2]) et Maximum Effect bourré ([uade_max_unfill]).
+     * NULL pour tout le reste, qui passe par le CHEMIN comme toujours.
+     *
+     * Les compagnons suivent dans les deux cas: `uade_play_from_buffer` garde
+     * le NOM du module (`uade_file(fname, …)`), d'où uadestate.c tire
+     * `modulefname` puis le dossier où le player cherche son `SMP.*` —
+     * exactement comme `uade_play` (même `uade_play_internal`). */
+    size_t patchedSize = 0;
+    unsigned char* patched = uade_bpsm_v1_to_v2(clean, &patchedSize);
+    if (!patched) patched = uade_max_unfill(clean, &patchedSize);
     auto playSong = [&](struct uade_state* s) -> int {
         const int sub = subsong > 0 ? subsong : -1;
-        return bpsm ? uade_play_from_buffer(clean, bpsm, bpsmSize, sub, s)
-                    : uade_play(clean, sub, s);
+        return patched ? uade_play_from_buffer(clean, patched, patchedSize, sub, s)
+                       : uade_play(clean, sub, s);
     };
 
     // Per-voice oscilloscope rings: Amiga Paula has 4 hardware voices.
@@ -441,7 +635,7 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
     rewamp_channel_data_set_ring_circular(1);
 
     struct uade_state* st = makeState(0);
-    if (!st) { free(bpsm); return NULL; }
+    if (!st) { free(patched); return NULL; }
 
     // subsong=0 means "default subsong" by rewamp convention → pass -1 to UADE.
     int playret = playSong(st);
@@ -475,7 +669,7 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
             if (got > 0)
                 uade_filemagic(hdr, got, pre, got, clean, 0);
         }
-        if (bpsm || (pre[0] != '\0' && strcmp(pre, "reject") != 0 &&
+        if (patched || (pre[0] != '\0' && strcmp(pre, "reject") != 0 &&
                      strcmp(pre, "packed") != 0)) {
             st = makeState(1);
             if (st) {
@@ -486,11 +680,11 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
                 }
             }
         }
-        if (!st) { free(bpsm); return NULL; }
+        if (!st) { free(patched); return NULL; }
     }
     /* UADE a copié ce qu'il lui fallait (« buf can be freed after call »). */
-    free(bpsm);
-    bpsm = NULL;
+    free(patched);
+    patched = NULL;
 
     int rate = uade_get_sampling_rate(st);
     if (rate <= 0) rate = 44100;
@@ -555,6 +749,12 @@ static uint64_t uade_read_frames(RewampDecoder* dec, float* out, uint64_t frameC
 
     size_t bytes = (size_t)frameCount * UADE_BYTES_PER_FRAME;
     ssize_t n = uade_read(dec->pcm, bytes, dec->st);
+    /* A seek skips at 1× (its byte arithmetic is 1×): the speed comes back
+     * once libuade has landed. */
+    if (dec->seekPending && !uade_is_seeking(dec->st)) {
+        dec->seekPending = 0;
+        uade_rewamp_speed = dec->speed > 0.0 ? dec->speed : 1.0;
+    }
     if (n <= 0) { dec->ended = 1; return 0; }   // 0 = song end, -1 = error
 
     const int samples = (int)(n / (ssize_t)sizeof(int16_t));
@@ -566,8 +766,19 @@ static uint64_t uade_read_frames(RewampDecoder* dec, float* out, uint64_t frameC
 static void uade_seek_frames(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->st) return;
     double seconds = (double)frameIndex / (double)dec->rate;
+    /* Always: a speed set right after this call must also wait. */
+    uade_rewamp_speed = 1.0;
+    dec->seekPending = 1;
     if (uade_seek(UADE_SEEK_SONG_RELATIVE, seconds, 0, dec->st) == 0)
         dec->ended = 0;
+}
+
+/* Native speed: see uade_rewamp_speed. Refused while a seek is landing. */
+static int uade_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->st || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    if (!dec->seekPending) uade_rewamp_speed = speed;
+    return 1;
 }
 
 static uint64_t uade_length_frames(RewampDecoder* dec) {
@@ -580,6 +791,7 @@ static uint64_t uade_length_frames(RewampDecoder* dec) {
 static void uade_close(RewampDecoder* dec) {
     if (!dec) return;
     if (dec->st) uade_cleanup_state(dec->st);   // implies uade_stop()
+    uade_rewamp_speed = 1.0;
     free(dec->pcm);
     free(dec);
 }
@@ -612,6 +824,8 @@ static const RewampPluginVTable kUadeVTable = {
     NULL,                /* pattern_get       */
     NULL,                /* pattern_cursor    */
     uade_probe_path,     /* Audio Sculpture: identité portée par un VOISIN */
+    0,                   /* noPrefixProbe */
+    uade_set_speed,      /* vitesse native (CIA + VBlank) */
 };
 
 extern "C" const RewampPluginVTable* rewamp_uade_plugin(void) { return &kUadeVTable; }

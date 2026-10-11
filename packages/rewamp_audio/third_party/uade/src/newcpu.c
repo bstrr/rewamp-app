@@ -1268,6 +1268,14 @@ static int uadecore_pc_is_mapped(void)
 	return 1;
 }
 
+/* rewamp: native playback speed (custom.c). Above 1x the replay is called
+ * `speed` times per frame, and a heavy player (synths: SidMon 2, SoundMon,
+ * Sonic Arranger...) no longer fits in the frame on a real-clocked 68000 -
+ * interrupts merge and the tempo lags. The CPU is therefore made `speed`
+ * times faster too; Paula counts chipset cycles, so the pitch stays. */
+extern volatile double uade_rewamp_speed;
+static double rewamp_cpu_frac = 0.0;
+
 void m68k_run_1 (void)
 {
   int cycles;
@@ -1301,6 +1309,11 @@ void m68k_run_1 (void)
     /*n_insns++;*/
     cycles &= cycles_mask;
     cycles |= cycles_val;
+    if (uade_rewamp_speed > 1.0) {
+      rewamp_cpu_frac += (double)cycles / uade_rewamp_speed;
+      cycles = (int)rewamp_cpu_frac;
+      rewamp_cpu_frac -= (double)cycles;
+    }
     do_cycles (cycles);
 
     if (regs.spcflags) {

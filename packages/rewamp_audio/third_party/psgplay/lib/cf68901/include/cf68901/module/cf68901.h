@@ -272,6 +272,22 @@ struct cf68901_module {
 
 	struct cf68901_clk clk;
 
+	/*
+	 * rewamp: native playback speed. ONE timer (the one the SNDH replay
+	 * runs on) counts on a virtual clock that runs `speed` times faster;
+	 * the others keep the real one, since they also make SOUND (SID voices,
+	 * digidrums). base_virt is the virtual time at real time base_real; a
+	 * requested speed is adopted at the next MFP access, rebased there.
+	 * timer = 0 or speed <= 0: inactive, upstream behaviour.
+	 */
+	struct {
+		int timer;		/* 'A'..'D', 0 = none */
+		double speed;
+		double req;
+		uint64_t base_real;
+		uint64_t base_virt;
+	} rewamp;
+
 	struct cf68901_state {
 		struct cf68901_regs regs;
 
@@ -294,6 +310,9 @@ struct cf68901_module {
 
 struct cf68901_module cf68901_init(uint32_t clk_frequency,
 	uint32_t xtal1_frequency);
+
+/* rewamp: see cf68901_module.rewamp. */
+void cf68901_rewamp_speed(struct cf68901_module *module, int timer, double speed);
 
 static inline struct cf68901_clk cf68901_clk_cycle(uint64_t c)
 {

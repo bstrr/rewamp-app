@@ -47,6 +47,11 @@ protected:
   void run_from (UINT32 address);
 
 public:
+  // REWAMP: vitesse de lecture. La routine PLAY est appelee `speed` fois plus
+  // souvent; CPU et APU gardent leur horloge => tempo change, hauteur non.
+  double rewamp_play_speed;
+  double rewamp_play_rate;
+  void SetPlaySpeed(double speed);
   double nes_basecycles;
   NES_CPU (double clock = DEFAULT_CLOCK);
   ~NES_CPU ();

@@ -97,6 +97,13 @@ struct RewampDecoder {
     int             numVoices;   // 4, 8, or 12 (chans/chip = 4) depending on 1/2/3-SID
     int16_t         ibuf[SID_IBUF_SAMPLES]; // stereo int16 scratch (with slack)
     uint64_t        framePos;    // current playback position in decoded frames
+    // Vitesse native (patch Modizer de reSIDfp/sidlite, globales mdz_ratio_*):
+    // le CPU du C64 et ses minuteries tournent `speed` fois plus vite, la puce
+    // SID n'est cadencée qu'une fois tous les `speed` cycles — ses oscillateurs
+    // gardent leur rythme réel, donc la HAUTEUR ne bouge pas. songPos = temps
+    // du MORCEAU (trames de SID_RENDER_RATE), framePos restant en SORTIE.
+    double          speed;
+    double          songPos;
     int64_t         lastMuteMask; // applied generic_mute_mask snapshot
     // Per-voice release-hold, in render frames: a SID voice stays AUDIBLE after
     // its gate drops (the ADSR release tail), so keying the visualizer note on
@@ -105,6 +112,23 @@ struct RewampDecoder {
     // showing the pitch for the release duration (from the SR register) instead.
     int             noteHold[12]; // <= max voices (3 per chip * up to ~4 chips)
 };
+
+/* Pose les globales du patch Modizer (consommées par SID::clock de reSIDfp
+ * et de sidlite): incrément de cadencement SID par cycle CPU = 1/vitesse. Un
+ * seul décodeur SID vit à la fois (moteur singleton). */
+static void sid_apply_ratio(double speed) {
+    mdz_ratio_fp_cnt = 0;
+    if (fabs(speed - 1.0) < 1e-6) {
+        mdz_ratio_fp_inc = 0;
+        mdz_ratio_fp_inv_inc = 0;
+        mdz_pbratio = 1.0;
+    } else {
+        mdz_ratio_fp_inc     = (int64_t)llround(65536.0 / speed);
+        mdz_ratio_fp_inv_inc = (int64_t)llround(65536.0 * speed);
+        mdz_pbratio = speed;
+    }
+}
+
 
 // SID envelope release rate (SR register low nibble) → approximate tail length
 // in ms (the standard 6581/8580 release periods). Used to hold the visualizer
@@ -150,6 +174,8 @@ static RewampDecoder* sid_open(const char* path, RewampAudioFormat* outFormat) {
 
     RewampDecoder* dec = (RewampDecoder*)calloc(1, sizeof(RewampDecoder));
     if (!dec) return NULL;
+    dec->speed = 1.0;
+    sid_apply_ratio(1.0);   // le patch repart désarmé: la source posera la vitesse
 
     dec->engine  = new sidplayfp;
     /* Emulation choice (Settings → Moteurs → SID): 0 = ReSIDfp (accurate,
@@ -391,7 +417,11 @@ static uint64_t sid_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         if (want > SID_FRAMES_PER_CALL) want = SID_FRAMES_PER_CALL;
 
         // play(cycles) emulates cycles and returns number of produced samples.
-        unsigned int cycles = (unsigned int)(want * SID_CYCLES_PER_SAMPLE);
+        // Sous vitesse, la SID n'est cadencée qu'une fois tous les `speed`
+        // cycles CPU: il faut `speed` fois plus de cycles pour le même nombre
+        // d'échantillons (sinon, à 0,5×, play() en produirait le double).
+        unsigned int cycles = (unsigned int)(want * SID_CYCLES_PER_SAMPLE * dec->speed);
+        if (cycles == 0) cycles = 1;
         int produced = dec->engine->play(cycles);
         if (produced <= 0) break;
 
@@ -453,6 +483,7 @@ static uint64_t sid_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         rendered += (uint64_t)frames;
     }
     dec->framePos += rendered;
+    dec->songPos  += (double)rendered * dec->speed;
     return rendered;
 }
 
@@ -467,10 +498,11 @@ static void sid_seek(RewampDecoder* dec, uint64_t frameIndex) {
 
     memset(dec->noteHold, 0, sizeof(dec->noteHold)); // no stale release tails across a seek
 
-    uint64_t startFrame = 0;
-
-    if (frameIndex >= dec->framePos) {
-        startFrame = dec->framePos;
+    // frameIndex est en temps du MORCEAU; l'avance rapide se fait en
+    // échantillons de SORTIE à la vitesse en vigueur (÷ vitesse).
+    const double sp = dec->speed > 0.0 ? dec->speed : 1.0;
+    if ((double)frameIndex >= dec->songPos) {
+        // en avant: rien à recharger
     } else {
         // Backward seek: reload from start.
         const SidTuneInfo* ti = dec->tune->getInfo();
@@ -483,10 +515,15 @@ static void sid_seek(RewampDecoder* dec, uint64_t frameIndex) {
         // runs with everything audible.
         sid_sync_mute(dec, true);
         dec->framePos = 0;
-        startFrame = 0;
+        dec->songPos  = 0.0;
+        sid_apply_ratio(sp);      // le rechargement repart avec la même vitesse
     }
 
-    if (frameIndex == dec->framePos) return;
+    const uint64_t outTarget =
+        dec->framePos + (uint64_t)llround(((double)frameIndex - dec->songPos) / sp);
+    if (outTarget <= dec->framePos) { dec->songPos = (double)frameIndex; return; }
+    const uint64_t startFrame = dec->framePos;
+    const uint64_t endFrame   = outTarget;
 
     mSIDSeekInProgress = 1;
     g_is_seeking       = 1;
@@ -494,18 +531,19 @@ static void sid_seek(RewampDecoder* dec, uint64_t frameIndex) {
     const double kRate = (double)SID_RENDER_RATE;
 
     const uint64_t kBatch = (uint64_t)SID_FRAMES_PER_CALL * 64;
-    uint64_t remaining = frameIndex - startFrame;
+    uint64_t remaining = endFrame - startFrame;
     while (remaining > 0 && !g_seek_cancel) {
         uint64_t want = remaining > kBatch ? kBatch : remaining;
-        unsigned int cycles = (unsigned int)(want * SID_CYCLES_PER_SAMPLE);
+        unsigned int cycles = (unsigned int)(want * SID_CYCLES_PER_SAMPLE * sp);
         int produced = dec->engine->play(cycles);
         if (produced <= 0) break;
         uint64_t f    = (uint64_t)produced;
         uint64_t step = (f > remaining) ? remaining : f;
         remaining     -= step;
         dec->framePos += step;
+        dec->songPos  += (double)step * sp;
         // Update progress for Dart to poll.
-        g_seek_progress_s = (double)dec->framePos / kRate;
+        g_seek_progress_s = dec->songPos / kRate;
     }
 
     mSIDSeekInProgress = 0;
@@ -519,8 +557,18 @@ static uint64_t sid_length(RewampDecoder* dec) {
     return 0;
 }
 
+/* Vitesse NATIVE (patch Modizer, voir RewampDecoder.speed): tempo plus
+ * rapide, hauteur conservée. */
+static int sid_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->engine || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    sid_apply_ratio(speed);
+    return 1;
+}
+
 static void sid_close(RewampDecoder* dec) {
     if (!dec) return;
+    sid_apply_ratio(1.0);   // ne pas laisser le patch armé pour le suivant
     if (dec->tune)    { delete dec->tune;    dec->tune    = NULL; }
     if (dec->builder) { delete dec->builder; dec->builder = NULL; }
     if (dec->engine)  { delete dec->engine;  dec->engine  = NULL; }
@@ -552,6 +600,10 @@ static const RewampPluginVTable g_sid_vtable = {
     0,                  /* supportsNativeFadeout */
     "sid",              /* engine_id */
     sid_param_changed,  /* live settings (curves) */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,               /* probe_path */
+    0,                  /* noPrefixProbe */
+    sid_set_speed,      /* vitesse native (patch Modizer) */
 };
 
 extern "C" const RewampPluginVTable* rewamp_sid_plugin(void) {

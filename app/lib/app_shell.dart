@@ -809,6 +809,9 @@ class _AppShellState extends State<AppShell>
     // Fondu croisé (0 = gapless pur). Le natif coupe de lui-même les fondus
     // par défaut des moteurs quand c'est actif — transparent.
     audio.setCrossfadeSeconds(s.crossfadeSeconds);
+    // Vitesse de lecture (feuille des voix). Le natif l'applique au pas
+    // suivant du producteur, et aux pistes suivantes.
+    audio.setPlaybackSpeed(s.playbackSpeed);
     // Plafond de cadence des visualiseurs (0 = celle de l'écran). Poussé ICI
     // et pas dans chaque widget: la règle est unique et vit dans le natif, qui
     // la sert aux DEUX chemins de rendu (ticker Dart, boucle SurfaceView).
@@ -2674,12 +2677,25 @@ class _AppShellState extends State<AppShell>
           var spliced = false;
           try {
             final path = await RewampDb.downloadToLibrary(result);
-            final info = await UadeInfoService.instance.forPath(path);
+            // Ron Klaren joué par le moteur natif: la liste vient de la sonde
+            // (UadeInfoService.isRonKlarenAt), pas de la songdb de CustomMade.
+            final rk = UadeInfoService.isRonKlarenAt(path);
+            final info =
+                rk ? null : await UadeInfoService.instance.forPath(path);
             // playableSubsongs, not subsongs: the songdb marks some slots
             // NOSOUND (empty slot in the module), and queueing them gives a
             // silent, zero-length track.
-            final playable = info?.playableSubsongs ?? const [];
-            if (info != null && playable.length > 1 &&
+            final playable = rk
+                ? [
+                    for (final x in _controller.audio.probeSubsongs(path))
+                      UadeSubsong(
+                          idx: x.subsongIdx,
+                          lengthMs: (x.durationMs ?? 0) > 0
+                              ? x.durationMs
+                              : null),
+                  ]
+                : (info?.playableSubsongs ?? const <UadeSubsong>[]);
+            if ((rk || info != null) && playable.length > 1 &&
                 i < _queue.length && identical(_queue[i], item)) {
               final rows = [
                 // Le numéro est la POSITION dans la liste jouable, jamais
@@ -3265,15 +3281,31 @@ class _AppShellState extends State<AppShell>
     if (isUade) {
       try {
         final path = await RewampDb.downloadToLibrary(s);
-        final info = await UadeInfoService.instance.forPath(path);
-        final playable = info?.playableSubsongs ?? const [];
-        if (info != null && playable.length > 1) {
-          idxs = playable.map((e) => e.idx).toList();
-          count = idxs.length;
-          lensMs = {
-            for (final e in playable)
-              if ((e.lengthMs ?? 0) > 0) e.idx: e.lengthMs!,
-          };
+        // Ron Klaren joué par le moteur natif (portage NostalgicPlayer): la
+        // liste et les durées viennent de la SONDE, et son compte fait foi
+        // même à 1 — celui du catalogue a été mesuré par le player CustomMade
+        // d'UADE. Voir UadeInfoService.isRonKlarenAt.
+        if (UadeInfoService.isRonKlarenAt(path)) {
+          final subs = _controller.audio.probeSubsongs(path);
+          if (subs.isNotEmpty) {
+            idxs  = [for (final x in subs) x.subsongIdx];
+            count = idxs.length;
+            lensMs = {
+              for (final x in subs)
+                if ((x.durationMs ?? 0) > 0) x.subsongIdx: x.durationMs!,
+            };
+          }
+        } else {
+          final info = await UadeInfoService.instance.forPath(path);
+          final playable = info?.playableSubsongs ?? const [];
+          if (info != null && playable.length > 1) {
+            idxs = playable.map((e) => e.idx).toList();
+            count = idxs.length;
+            lensMs = {
+              for (final e in playable)
+                if ((e.lengthMs ?? 0) > 0) e.idx: e.lengthMs!,
+            };
+          }
         }
       } catch (_) {}
     }
@@ -3285,9 +3317,7 @@ class _AppShellState extends State<AppShell>
     // alors que le même fichier importé localement jouait ses 43 morceaux.
     //
     // ⚠️ La liste est CREUSE: on garde les index RENDUS, jamais 0..count-1.
-    final nativeCounted =
-        RewampDb.kNativeCountedContainerFormats.contains(
-            s.formatExt.toLowerCase());
+    final nativeCounted = RewampDb.isNativeCounted(s);
     if (nativeCounted && !eager) return [s];   // même report que UADE
     if (nativeCounted) {
       try {

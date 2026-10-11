@@ -28,6 +28,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <string.h>
+#include <strings.h>
 #include <bencodetools/bencode.h>
 
 #define ASSERT_RECEIVE_STATE(state) do { assert((state)->ipc.state == UADE_R_STATE); } while (0)
@@ -360,8 +361,45 @@ struct uade_file *uade_load_amiga_file(const char *name, const char *playerdir,
 			uade_warning("Can not get moduledir for %s\n", state->song.info.modulefname);
 	}
 
-	if (uade_find_amiga_file(fname, sizeof fname, name, playerdir, moddir))
+	if (uade_find_amiga_file(fname, sizeof fname, name, playerdir, moddir)) {
+		/* rewamp: Quartet ST (« NOM.4v » / « qts.NOM »). Le player demande
+		   « SMP.NOM », puis se rabat sur un « SMP.set » GÉNÉRIQUE — c'est ce
+		   qui marche quand le dossier en porte un (« tune1.4v » + « SMP.set »).
+		   Mais modland nomme aussi la banque d'après le MORCEAU: « Acid1.4v »
+		   + « Acid1.set », que le player ne demande jamais. Faute de
+		   « SMP.set », on sert donc « <nom du module>.set ».
+
+		   Ici et pas dans ossupport.c: c'est cet appelant qui connaît le
+		   MODULE (modulefname); uade_find_amiga_file ne voit que son dossier.
+		   Le nom du module est celui sans sa dernière extension (« Acid1 »),
+		   ou sans son préfixe pour la forme « qts.NOM ». */
+		const char *rb = strrchr(name, '/');
+		rb = rb ? rb + 1 : name;
+		if (moddir && strcasecmp(rb, "SMP.set") == 0) {
+			const char *mb = strrchr(state->song.info.modulefname, '/');
+			mb = mb ? mb + 1 : state->song.info.modulefname;
+			char stem[PATH_MAX];
+			strlcpy(stem, mb, sizeof stem);
+			if (strncasecmp(stem, "qts.", 4) == 0 ||
+			    strncasecmp(stem, "4v.", 3) == 0) {
+				const char *d = strchr(stem, '.');
+				memmove(stem, d + 1, strlen(d + 1) + 1);
+			} else {
+				char *dot = strrchr(stem, '.');
+				if (dot && dot > stem)
+					*dot = 0;
+			}
+			static const char *kSet[] = { ".set", ".SET" };
+			for (int i = 0; i < 2; i++) {
+				char cand[PATH_MAX];
+				int w = snprintf(cand, sizeof cand, "%s/%s%s", moddir, stem, kSet[i]);
+				if (w > 0 && (size_t)w < sizeof cand &&
+				    !uade_find_amiga_file(fname, sizeof fname, cand, playerdir, moddir))
+					return uade_file_load(fname);
+			}
+		}
 		return NULL;
+	}
 
 	return uade_file_load(fname);
 }
@@ -907,17 +945,38 @@ static int test_timeouts(struct uade_event *event, struct uade_state *state)
 	return 0;
 }
 
+/* rewamp: native playback speed (uadecore/custom.c). songbytes and
+ * subsongbytes count SONG time: the data rendered at speed s covers s times
+ * as much of the song, in whole frames, the remainder carried. Seeks, which
+ * compare these counters with a 1x target, run with the speed at 1 (the
+ * plugin sees to it), so their byte arithmetic stays exact. */
+extern volatile double uade_rewamp_speed;
+static double rewamp_frames_frac = 0.0;
+
 static int handle_data(struct uade_event *event, struct uade_state *state)
 {
 	int isend = (state->song.state == UADE_STATE_SONG_END_PENDING);
 	int nframes;
+	int64_t songadd;
 
 	/* The last batch of sound data is only partial */
 	if (isend)
 		event->data.size = state->song.endevent.songend.tailbytes;
 
-	state->song.info.subsongbytes += event->data.size;
-	state->song.info.songbytes += event->data.size;
+	songadd = event->data.size;
+	/* never scaled while seeking: the skip arithmetic below is 1x, and
+	 * a skip larger than the buffer is an assert */
+	if (uade_rewamp_speed != 1.0 && !state->song.seekmode) {
+		double fr = (double)(event->data.size / UADE_BYTES_PER_FRAME)
+			    * uade_rewamp_speed + rewamp_frames_frac;
+		int64_t whole = (int64_t)fr;
+		rewamp_frames_frac = fr - (double)whole;
+		songadd = whole * UADE_BYTES_PER_FRAME;
+	} else {
+		rewamp_frames_frac = 0.0;
+	}
+	state->song.info.subsongbytes += songadd;
+	state->song.info.songbytes += songadd;
 
 	if (!isend && test_timeouts(event, state))
 		return 0;

@@ -104,6 +104,20 @@ class UadeInfo {
     return subsongs[i].lengthMs;
   }
 
+  /// La même fiche SANS liste de sous-chansons: auteurs, album, année restent,
+  /// mais rien qui décide de la FILE ni d'une durée. Pour un module que joue
+  /// un autre moteur qu'UADE (Ron Klaren, voir [UadeInfoService.isRonKlarenAt]),
+  /// dont la songdb a été calculée par un autre player.
+  UadeInfo withoutSubsongs() => UadeInfo(
+        minSubsong:   minSubsong,
+        subsongCount: 0,
+        format:       format,
+        channels:     channels,
+        authors:      authors,
+        album:        album,
+        year:         year,
+      );
+
   factory UadeInfo.fromJson(Map<String, dynamic> j) {
     final subs = <UadeSubsong>[];
     final rawSubs = j['subsongs'];
@@ -137,6 +151,26 @@ class UadeInfo {
   }
 }
 
+/// Combien de temps une réponse VIDE de la songdb (« pas dans la base »:
+/// aucun sous-chant, `subsong_count` 0) reste valable en cache. Une réponse
+/// PLEINE ne périme pas. Sans cette borne, un vide était gardé pour TOUJOURS:
+/// complétée côté serveur (« eezy going »), la songdb n'était jamais
+/// redemandée et le fichier restait sans durée ni auteur sur cet appareil.
+const Duration kUadeEmptyCacheTtl = Duration(days: 7);
+
+/// Une entrée de `uade_cache` est-elle encore bonne à servir? Pure: testée.
+bool uadeCacheEntryUsable({
+  required int subsongCount,
+  required int storedSubsongs,
+  required int fetchedAtSec,
+  required int nowSec,
+  Duration emptyTtl = kUadeEmptyCacheTtl,
+}) {
+  final empty = subsongCount <= 0 && storedSubsongs == 0;
+  if (!empty) return true;
+  return nowSec - fetchedAtSec < emptyTtl.inSeconds;
+}
+
 /// Resolves UADE metadata for a file: md5 → local cache → server RPC → cache.
 class UadeInfoService {
   UadeInfoService._();
@@ -166,6 +200,49 @@ class UadeInfoService {
     return _kUadeExts.contains(name.substring(dot + 1).toLowerCase());
   }
 
+  /// Un module Ron Klaren que joue le moteur NATIF (portage de NostalgicPlayer,
+  /// `rewamp_plugin_ronklaren.cpp`) et non UADE: nom `NOM.rk` ou `RK.NOM`, hunk
+  /// exécutable Amiga `00 00 03 F3` et « RON_KLAREN_SOUNDMODULE! » à l'octet
+  /// 40. Même règle que `rk_probe` côté natif (le portillon Dart doit suivre le
+  /// natif).
+  ///
+  /// Pourquoi ça compte: la songdb d'UADE a été mesurée par le player
+  /// CustomMade, qui ne comprend qu'une des deux formes de la routine. Pour
+  /// « electricity.rk » elle tient UNE sous-chanson de 0 ms en ERREUR (`e`) —
+  /// donc écartée comme cassée — et ses durées diffèrent d'environ 1 % de
+  /// celles du lecteur qui joue vraiment. Les sous-chansons et les durées
+  /// viennent donc de la sonde native; la songdb ne garde que les auteurs,
+  /// l'album et l'année ([UadeInfo.withoutSubsongs]).
+  static bool isRonKlarenAt(String path) {
+    final cached = _rkByPath[path];
+    if (cached != null) return cached;
+    final name = p.basename(path).toLowerCase();
+    var result = false;
+    if (name.endsWith('.rk') || name.startsWith('rk.')) {
+      RandomAccessFile? f;
+      try {
+        f = File(path).openSync();
+        final h = f.readSync(63);
+        if (h.length == 63 &&
+            h[0] == 0 && h[1] == 0 && h[2] == 0x03 && h[3] == 0xf3) {
+          result = String.fromCharCodes(h.sublist(40, 63)) ==
+              'RON_KLAREN_SOUNDMODULE!';
+        }
+      } catch (_) {
+        result = false;
+      } finally {
+        try {
+          f?.closeSync();
+        } catch (_) {}
+      }
+    }
+    // Un fichier absent ne se mémorise pas: il peut arriver (téléchargement).
+    if (File(path).existsSync()) _rkByPath[path] = result;
+    return result;
+  }
+
+  static final Map<String, bool> _rkByPath = {};
+
   /// Un `.mod` que UADE joue: il porte un COMPAGNON de synthèse.
   ///
   /// Startrekker AM et Audio Sculpture sont des modules 31 instruments
@@ -193,7 +270,102 @@ class UadeInfoService {
   /// À n'utiliser que là où le fichier est déjà sur le disque — ailleurs, le
   /// test de nom reste le seul possible.
   static bool isUadeFileAt(String path) =>
-      isUadePath(path) || hasAmigaSynthCompanion(path);
+      isUadePath(path) ||
+      hasAmigaSynthCompanion(path) ||
+      hasRobothamCompanion(path) ||
+      isQuartetPsgAt(path) ||
+      isSoundFactoryAt(path) ||
+      isSidMon1At(path);
+
+  /// `.sid` = SID C64 (magie `PSID`/`RSID`, libsidplayfp) OU SidMon 1 Amiga,
+  /// que modland nomme `NOM.sid` (dossier « SidMon 1 », 61 fichiers). Sans la
+  /// magie, libsidplayfp échoue à l'ouvrir: c'est UADE qui joue, reconnu sur le
+  /// fichier entier par `uade_probe_path`. Même partage côté natif.
+  static bool isSidMon1At(String path) {
+    if (!path.toLowerCase().endsWith('.sid')) return false;
+    RandomAccessFile? f;
+    try {
+      f = File(path).openSync();
+      final h = f.readSync(4);
+      if (h.length < 4) return false;
+      final magic = String.fromCharCodes(h);
+      return magic != 'PSID' && magic != 'RSID';
+    } catch (_) {
+      return false;
+    } finally {
+      try {
+        f?.closeSync();
+      } catch (_) {}
+    }
+  }
+
+  /// `.psf` = Portable Sound Format PlayStation (magie « PSF ») OU SoundFactory
+  /// Amiga (UADE). Même règle que `uade_probe` côté natif.
+  static bool isSoundFactoryAt(String path) {
+    if (!path.toLowerCase().endsWith('.psf')) return false;
+    RandomAccessFile? f;
+    try {
+      f = File(path).openSync();
+      final h = f.readSync(4);
+      return h.length == 4 && !(h[0] == 0x50 && h[1] == 0x53 && h[2] == 0x46);
+    } catch (_) {
+      return false;
+    } finally {
+      try {
+        f?.closeSync();
+      } catch (_) {}
+    }
+  }
+
+  /// `.sqt` = SQ-Tracker (ZX, zxtune) OU Quartet PSG (Atari ST, UADE). Le
+  /// second est du code 68000 ouvert par deux `BRA.W` (`60 00 dddd 60 00`).
+  /// Même règle que `uade_probe` côté natif.
+  static bool isQuartetPsgAt(String path) {
+    if (!path.toLowerCase().endsWith('.sqt')) return false;
+    RandomAccessFile? f;
+    try {
+      f = File(path).openSync();
+      final h = f.readSync(8);
+      return h.length >= 6 &&
+          h[0] == 0x60 && h[1] == 0 && h[4] == 0x60 && h[5] == 0;
+    } catch (_) {
+      return false;
+    } finally {
+      try {
+        f?.closeSync();
+      } catch (_) {}
+    }
+  }
+
+  /// Paul Robotham: « NOM.dat » + « NOM.ssd » (ou « dat.NOM » + « ssd.NOM »).
+  /// `.dat` est d'abord une extension SID — seul le VOISIN dit que c'est de
+  /// l'Amiga. Même règle que `uade_has_robotham_companion` côté natif (le
+  /// portillon Dart doit suivre le natif).
+  static bool hasRobothamCompanion(String path) {
+    if (path.isEmpty) return false;
+    final dir = p.dirname(path);
+    final base = p.basename(path);
+    final lower = base.toLowerCase();
+    final cands = <String>[
+      if (lower.endsWith('.dat') && base.length > 4) ...[
+        '${base.substring(0, base.length - 4)}.ssd',
+        '${base.substring(0, base.length - 4)}.SSD',
+      ],
+      if (lower.startsWith('dat.') && base.length > 4) ...[
+        'ssd.${base.substring(4)}',
+        'SSD.${base.substring(4)}',
+      ],
+      // Le kit PAR DÉFAUT du replay (« Ashes of Empire » -auto/-enemy/-land).
+      if (lower.endsWith('.dat') || lower.startsWith('dat.')) ...[
+        'mdtest.ssd',
+        'MDTEST.SSD',
+      ],
+    ];
+    for (final c in cands) {
+      if (File(p.join(dir, c)).existsSync()) return true;
+    }
+    return false;
+  }
 
   /// Display name of an Amiga file, prefix convention included.
   ///
@@ -237,7 +409,8 @@ class UadeInfoService {
     final md5hex = await _md5(path);
     if (md5hex == null) return null;
     _md5ByPath[path] = md5hex;
-    return forMd5(md5hex);
+    final info = await forMd5(md5hex);
+    return isRonKlarenAt(path) ? info?.withoutSubsongs() : info;
   }
 
   /// What [forPath] already resolved for this file, WITHOUT touching the disk
@@ -251,7 +424,8 @@ class UadeInfoService {
   /// per-subsong duration through [forPath].
   UadeInfo? cachedForPath(String path) {
     final md5hex = _md5ByPath[path];
-    return md5hex == null ? null : _mem[md5hex];
+    final info = md5hex == null ? null : _mem[md5hex];
+    return info != null && isRonKlarenAt(path) ? info.withoutSubsongs() : info;
   }
 
   Future<UadeInfo?> forMd5(String md5hex) async {

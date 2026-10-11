@@ -31,6 +31,8 @@ struct RewampDecoder {
     int      subsongId;    /* 1-based, matches SNDH's own convention */
     uint64_t framePos;
     uint64_t totalFrames;  /* one loop's length; 0 = unknown */
+    double   speed;        /* native playback speed, 0 = 1× */
+    double   posFrac;
 };
 
 static int sndh_probe(const char* ext, const uint8_t* header, size_t headerSize) {
@@ -144,7 +146,11 @@ static uint64_t sndh_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         for (int i = 0; i < want; i++)
             out[written + (uint64_t)i] = buf[i] * scale;
         written += (uint64_t)want;
-        dec->framePos += (uint64_t)want;
+        /* framePos est en temps du MORCEAU: vitesse × le rendu. */
+        dec->posFrac += (double)want * (dec->speed > 0.0 ? dec->speed : 1.0);
+        const uint64_t whole = (uint64_t)dec->posFrac;
+        dec->posFrac -= (double)whole;
+        dec->framePos += whole;
         if (loops > 0) break;   /* one full loop rendered → report EOF next call */
     }
     return written;
@@ -162,6 +168,7 @@ static void sndh_seek(RewampDecoder* dec, uint64_t frameIndex) {
     }
     if (dec->framePos == frameIndex) return;
     g_is_seeking = 1;
+    dec->sndh.RewampSetSpeed(1.0);   /* the fast-forward is in song time */
     int16_t tmp[512];
     while (dec->framePos < frameIndex && !g_seek_cancel) {
         uint64_t room = frameIndex - dec->framePos;
@@ -170,7 +177,17 @@ static void sndh_seek(RewampDecoder* dec, uint64_t frameIndex) {
         dec->framePos += (uint64_t)want;
         g_seek_progress_s = (double)dec->framePos / (double)SNDH_RATE;
     }
+    dec->sndh.RewampSetSpeed(dec->speed);
+    dec->posFrac = 0.0;
     g_is_seeking = 0;
+}
+
+/* Vitesse NATIVE: le tick du pilote SNDH (SndhFile::RewampSetSpeed). */
+static int sndh_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    dec->sndh.RewampSetSpeed(speed);
+    return 1;
 }
 
 static uint64_t sndh_length(RewampDecoder* dec) {
@@ -189,6 +206,14 @@ static const RewampPluginVTable kSndhVTable = {
     sndh_seek,
     sndh_length,
     sndh_close,
+    NULL,             /* configure_loop */
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    sndh_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_sndh_plugin(void) { return &kSndhVTable; }

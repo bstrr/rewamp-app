@@ -15,6 +15,7 @@
 #include "rewamp_channel_data.h"
 #include "ModizerVoicesData.h"   /* vgmVRC7, vgm2610b, m_voice_ChipID, ... */
 
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,6 +145,7 @@ struct VgmDecoder {
     int16_t*     renderBuf;       /* scratch buffer for int16 stereo render */
     uint32_t     renderBufFrames; /* size of renderBuf in stereo frames */
     bool         ended;
+    double       speed = 1.0;   // vitesse native (SetPlaybackSpeed)
     uint32_t     sampleRate;
     std::vector<VgmChipSlot> chips;
     int64_t      lastMuteMask;    /* applied generic_mute_mask snapshot */
@@ -733,7 +735,22 @@ static uint64_t vgm_read(RewampDecoder* rdec, float* out, uint64_t frameCount) {
 static void vgm_seek(RewampDecoder* rdec, uint64_t frameIndex) {
     VgmDecoder* dec = (VgmDecoder*)rdec;
     dec->ended = false;
-    dec->player.Seek(PLAYPOS_SAMPLE, (uint32_t)frameIndex);
+    // PLAYPOS_SAMPLE compte en échantillons de LECTURE, au tempo courant; la
+    // cible est en temps du MORCEAU ⇒ ÷ vitesse.
+    const double pb = (double)frameIndex / (dec->speed > 0.0 ? dec->speed : 1.0);
+    dec->player.Seek(PLAYPOS_SAMPLE, (uint32_t)llround(pb));
+}
+
+/* Vitesse NATIVE: SetPlaybackSpeed des lecteurs libvgm (VGM, S98, DRO, GYM) —
+ * le minutage des commandes accélère, la hauteur des puces ne bouge pas.
+ * GetTotalTime rend un temps de FICHIER (indépendant de la vitesse) et la fin
+ * vient de PLAYSTATE_FIN: seul le seek se convertit. */
+static int vgm_set_speed(RewampDecoder* rdec, double speed) {
+    VgmDecoder* dec = (VgmDecoder*)rdec;
+    if (dec == NULL || speed < 0.2 || speed > 3.0) return 0;
+    dec->player.SetPlaybackSpeed(speed);
+    dec->speed = speed;
+    return 1;
 }
 
 /* ── Length ─────────────────────────────────────────────────────────────── */
@@ -789,6 +806,12 @@ static const RewampPluginVTable kVgmPlugin = {
     /* close                  */ vgm_close,
     /* configure_loop         */ vgm_configure_loop,
     /* supportsNativeFadeout  */ 1,
+    /* engine_id              */ nullptr,
+    /* param_changed          */ nullptr,
+    /* pattern view           */ nullptr, nullptr, nullptr, nullptr, nullptr,
+    /* probe_path             */ nullptr,
+    /* noPrefixProbe          */ 0,
+    /* set_speed              */ vgm_set_speed,
 };
 
 extern "C" const RewampPluginVTable* rewamp_vgm_plugin(void) {

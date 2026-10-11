@@ -36,6 +36,7 @@ struct DCSOUND_STATE {
 
   uint32 sound_samples_remaining;
   uint32 cycles_ahead_of_sound;
+  uint32 rw_cycles_ahead_of_timers; /* rewamp: native speed, see sync_sound */
   sint32 cycles_executed;
 
 //  uint64 timetotal[3];
@@ -193,8 +194,21 @@ static void EMU_CALL dcsound_yam_sw(void *state, uint32 a, uint32 d, uint32 mask
 // Sync Yamaha emulation with dcsound
 //
 static void sync_sound(struct DCSOUND_STATE *state) {
-  if(state->cycles_ahead_of_sound >= CYCLES_PER_SAMPLE) {
-    uint32 samples = (state->cycles_ahead_of_sound) / CYCLES_PER_SAMPLE;
+  /* rewamp: at native speed s an OUTPUT sample costs CYCLES_PER_SAMPLE x s
+  ** CPU cycles (the yam timers count s timer samples for it) */
+  const double rw_cps = CYCLES_PER_SAMPLE * yam_rewamp_speed(YAMSTATE);
+  if(rw_cps != CYCLES_PER_SAMPLE) {
+    /* the timers keep CYCLES_PER_SAMPLE CPU cycles per timer sample */
+    uint32 t = state->rw_cycles_ahead_of_timers / CYCLES_PER_SAMPLE;
+    if(t) {
+      yam_rewamp_advance_timers(YAMSTATE, t);
+      state->rw_cycles_ahead_of_timers -= t * CYCLES_PER_SAMPLE;
+    }
+  }
+  if(state->cycles_ahead_of_sound >= (uint32)rw_cps) {
+    uint32 samples = (rw_cps == CYCLES_PER_SAMPLE)
+      ? (state->cycles_ahead_of_sound) / CYCLES_PER_SAMPLE
+      : (uint32)((double)(state->cycles_ahead_of_sound) / rw_cps);
     //
     // Avoid overflowing the number of samples remaining
     //
@@ -205,10 +219,14 @@ static void sync_sound(struct DCSOUND_STATE *state) {
       timeswitch(state, TIMEYAM);
       yam_advance(YAMSTATE, samples);
       timeswitch(state, TIMEDCSOUND);
-      state->cycles_ahead_of_sound -= CYCLES_PER_SAMPLE * samples;
+      state->cycles_ahead_of_sound -= (rw_cps == CYCLES_PER_SAMPLE)
+        ? CYCLES_PER_SAMPLE * samples
+        : (uint32)((double)samples * rw_cps);
       state->sound_samples_remaining -= samples;
     }
   }
+  if(rw_cps == CYCLES_PER_SAMPLE)
+    state->rw_cycles_ahead_of_timers = state->cycles_ahead_of_sound;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -223,6 +241,7 @@ static void EMU_CALL dcsound_advance(void *state, uint32 elapse) {
   //
   DCSOUNDSTATE->cycles_executed += elapse;
   DCSOUNDSTATE->cycles_ahead_of_sound += elapse;
+  DCSOUNDSTATE->rw_cycles_ahead_of_timers += elapse;
   //
   // Synchronize the sound part
   //
@@ -248,8 +267,10 @@ static uint32 cycles_until_next_interrupt(
   timeswitch(state, TIMEDCSOUND);
   if(yamsamples > 0x10000) { yamsamples = 0x10000; }
   yamcycles = yamsamples * CYCLES_PER_SAMPLE;
-  if(yamcycles <= state->cycles_ahead_of_sound) return 1;
-  return yamcycles - state->cycles_ahead_of_sound;
+  { const uint32 ahead = (yam_rewamp_speed(YAMSTATE) == 1.0)
+      ? state->cycles_ahead_of_sound : state->rw_cycles_ahead_of_timers;
+    if(yamcycles <= ahead) return 1;
+    return yamcycles - ahead; }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -370,7 +391,8 @@ sint32 EMU_CALL dcsound_execute(
   //
   // Cap cycles depending on how many samples we have left to generate
   //
-  { sint32 cap = CYCLES_PER_SAMPLE * DCSOUNDSTATE->sound_samples_remaining;
+  { sint32 cap = (sint32)((double)CYCLES_PER_SAMPLE * yam_rewamp_speed(YAMSTATE)
+                          * DCSOUNDSTATE->sound_samples_remaining);
     cap -= DCSOUNDSTATE->cycles_ahead_of_sound;
     if(cap < 0) cap = 0;
     if(cycles > cap) cycles = cap;

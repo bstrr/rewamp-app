@@ -52,10 +52,14 @@ for n in $names; do
   bad=1
 done
 
-so=$(ls "$root"/app/build/rewamp_audio/intermediates/library_jni/*/*/jni/arm64-v8a/librewamp_audio.so 2>/dev/null | head -1)
+# Le plus RÉCENT des .so (debug et release peuvent coexister, d'âges différents).
+so=$(ls -t "$root"/app/build/rewamp_audio/intermediates/library_jni/*/*/jni/arm64-v8a/librewamp_audio.so 2>/dev/null | head -1)
 if [ -n "$so" ]; then
   # rewamp_gl_android_set_window is C++-internal (JNI side), never looked up by Dart.
-  sym=$(nm -D --defined-only "$so" 2>/dev/null | grep " T _Z" | grep -i rewamp \
+  # Only FREE functions named rewamp_* (`_Z<len>rewamp_…`): a C++ METHOD that
+  # merely contains "Rewamp" (zxtune's Module::RewampTrackModelAt) is internal
+  # C++ by design and never looked up by Dart — matching it was a false alarm.
+  sym=$(nm -D --defined-only "$so" 2>/dev/null | grep -E " T _Z[0-9]+rewamp_" \
         | grep -v rewamp_gl_android_set_window || true)
   if [ -n "$sym" ]; then
     echo "MANGLED IN BINARY ($so):"

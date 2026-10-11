@@ -176,7 +176,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     final saved = UserSettings.instance.vizEffect;
     _active = VizEffect.values.firstWhere(
       (e) => e.name == saved,
-      orElse: () => VizEffect.stereo,
+      orElse: () => VizEffect.voices,
     );
     // Asymmetric on purpose: appearing is a RESPONSE to a tap and must feel
     // instant, while fading out is ambient and can take its time. One shared
@@ -632,11 +632,13 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
   VizEffect get _effective {
     if (_availableFor(_active)) return _active;
     // Patterns degrade to the notation when only the grid is unusable; when
-    // there is no per-voice data at all, the stereo waveform is the only
-    // meaningful fallback.
+    // there is no per-voice data at all (mp3/ogg/vgmstream…), the spectrum —
+    // line mode by default — then the stereo waveform where the spectrum is
+    // not rendered (no GL).
     if (_active == VizEffect.patterns && _voiceDataAvailable) {
       return VizEffect.notes;
     }
+    if (_availableFor(VizEffect.spectrum)) return VizEffect.spectrum;
     return VizEffect.stereo;
   }
 
@@ -1237,40 +1239,48 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     );
   }
 
-  /// Oscilloscope par voies: ce que le LIBELLÉ d'une voie dit — son nom de
-  /// voie, ou l'instrument qu'elle joue. Rien à afficher quand les noms sont
-  /// éteints: le choix n'aurait aucun effet visible.
+  /// Oscilloscope par voies: la GRILLE, les NOMS des voies, et ce que ce
+  /// libellé dit (V = nom de la voie, I = instrument qu'elle joue). Les mêmes
+  /// réglages que Réglages → Visualiseurs → Voies, posés là où l'effet se voit.
+  /// V/I restent visibles mais GRISÉS quand les noms sont éteints: le choix
+  /// n'aurait aucun effet, mais on sait qu'il existe (même règle que le piano).
   Widget _voicesControls(AppLocalizations l10n, ColorScheme cs) {
     return ListenableBuilder(
       listenable: UserSettings.instance,
       builder: (context, _) {
         final s = UserSettings.instance;
-        if (!s.vizVoiceNames) return const SizedBox.shrink();
         final idle = Colors.white.withValues(alpha: 0.85);
         const activeColor = Color(0xFF5AD1FF);
-        Widget btn(bool active, String letter, String tooltip, VoidCallback onTap) {
+        Widget btn(bool active, IconData? icon, String tooltip, VoidCallback onTap,
+                {bool enabled = true, String? letter}) {
+          final color = !enabled
+              ? Colors.white.withValues(alpha: 0.28)
+              : active ? activeColor : idle;
           return Tooltip(
             message: tooltip,
             child: InkResponse(
-              onTap: onTap,
+              onTap: enabled ? onTap : null,
               radius: 22,
               child: Padding(
                 padding: const EdgeInsets.all(7),
-                child: SizedBox(
-                  width: 20, height: 20,
-                  child: Center(
-                    child: Text(letter,
-                        style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            height: 1,
-                            color: active ? activeColor : idle)),
-                  ),
-                ),
+                child: letter != null
+                    ? SizedBox(
+                        width: 20, height: 20,
+                        child: Center(
+                          child: Text(letter,
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1,
+                                  color: color)),
+                        ),
+                      )
+                    : Icon(icon, size: 20, color: color),
               ),
             ),
           );
         }
+        final names = s.vizVoiceNames;
         return Container(
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.42),
@@ -1279,10 +1289,16 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              btn(s.vizVoiceNameSource == 0, 'V', l10n.settingsPianoColorVoice,
-                  () => s.vizVoiceNameSource = 0),
-              btn(s.vizVoiceNameSource == 1, 'I', l10n.settingsPianoColorInstrument,
-                  () => s.vizVoiceNameSource = 1),
+              btn(s.vizVoiceGrid, Icons.grid_on, l10n.settingsVoiceGridTitle,
+                  () => s.vizVoiceGrid = !s.vizVoiceGrid),
+              btn(names, Icons.label_outline, l10n.settingsVoiceNamesTitle,
+                  () => s.vizVoiceNames = !names),
+              const SizedBox(width: 4),
+              btn(s.vizVoiceNameSource == 0, null, l10n.settingsPianoColorVoice,
+                  () => s.vizVoiceNameSource = 0, enabled: names, letter: 'V'),
+              btn(s.vizVoiceNameSource == 1, null,
+                  l10n.settingsPianoColorInstrument,
+                  () => s.vizVoiceNameSource = 1, enabled: names, letter: 'I'),
             ],
           ),
         );
@@ -1771,7 +1787,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
               child: _fitControlBar(_spectrumControls(l10n, cs)),
             ),
           ),
-        // Oscilloscope par voies: libellé par voie / par instrument, top-left.
+        // Oscilloscope par voies: grille, noms, libellé voie/instrument, top-left.
         if (_effective == VizEffect.voices)
           Align(
             alignment: Alignment.topLeft,

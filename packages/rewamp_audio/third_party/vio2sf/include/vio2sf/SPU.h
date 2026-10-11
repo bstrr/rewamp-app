@@ -235,6 +235,12 @@ public:
     void SetPowerCnt(u32 val);
 
     void SetSampleRate(AudioSampleRate rate);
+    // rewamp: native playback speed - the output sample comes every
+    // MixInterval x speed bus cycles while each mix still advances the
+    // channels by the nominal MixInterval: the CPUs, their timers and the
+    // sound driver run speed times faster against an SPU at its own pitch.
+    // 1 = upstream, bit for bit.
+    void RewampSetSpeed(double speed) { RewampSpeed = speed > 0 ? speed : 1.0; RewampFrac = 0; }
 
     // 0=none 1=linear 2=cosine 3=cubic
     void SetInterpolation(AudioInterpolation type);
@@ -279,6 +285,7 @@ private:
     s16 OutputLastSamples[2];
 
     u32 MixInterval;
+    double RewampSpeed = 1.0, RewampFrac = 0.0;
 
     Platform::Mutex* AudioLock;
 

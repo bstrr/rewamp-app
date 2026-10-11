@@ -6,6 +6,7 @@
 #ifndef PSGPLAY_H
 #define PSGPLAY_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -32,6 +33,17 @@ struct psgplay *psgplay_init(const void *data, size_t size,
  * Note: If @pp is %NULL, no operation is performed.
  */
 void psgplay_free(struct psgplay *pp);
+
+/**
+ * psgplay_rewamp_speed - rewamp: native playback speed (0.2..3)
+ * @pp: PSG play object
+ * @speed: tempo factor; the replay timer runs @speed times faster, the PSG,
+ * 	the DMA sound and the other MFP timers (which also make sound) keep
+ * 	their clock, so the pitch does not move
+ *
+ * Return: %false when the replay is not on an MFP timer (VBL tunes)
+ */
+bool psgplay_rewamp_speed(struct psgplay *pp, double speed);
 
 /**
  * psgplay_stop - stop a PSG play object previously initialised

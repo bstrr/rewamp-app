@@ -6,11 +6,14 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show MethodChannel, rootBundle;
 
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_service_platform_interface/audio_service_platform_interface.dart'
+    show AudioServicePlatform;
 import 'package:audio_session/audio_session.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'artwork_image.dart' show ArtworkCache;
+import 'media_session_windows.dart';
 import 'platform_artwork.dart'
     show allSoundPlatforms, platformAssetFor, platformAssetForPlatform;
 import 'player_controller.dart';
@@ -23,11 +26,14 @@ import 'transport_log.dart';
 ///
 /// Supported by audio_service on iOS, Android and macOS, and on LINUX through
 /// `audio_service_mpris` (MPRIS over D-Bus: GNOME's top-bar player, KDE's tray,
-/// the keyboard media keys). No-op on Windows (SMTC — not done).
+/// the keyboard media keys), and on WINDOWS through our own SMTC bridge
+/// (`media_session_windows.dart` + `windows/runner/media_controls.cpp`: the
+/// volume / taskbar flyout, the keyboard and headset media keys).
 ///
 /// ⚠️ Linux: `audio_session` n'y a AUCUNE implémentation — ses appels lèvent
 /// MissingPluginException. Le bloc de session audio est donc sauté, et surtout
 /// `ensureAudioSession` n'est PAS posé: il est appelé à CHAQUE lecture.
+/// Même chose sous Windows.
 RewampAudioHandler? gMediaHandler;
 bool _mediaInited = false;
 
@@ -37,11 +43,16 @@ Future<void> initMediaSession(PlayerController c) async {
       () => RewampAudioHandler.notificationArtFor(c);
   if (_mediaInited) return;
   if (!(Platform.isIOS || Platform.isAndroid || Platform.isMacOS ||
-      Platform.isLinux)) {
+      Platform.isLinux || Platform.isWindows)) {
     return;
   }
   _mediaInited = true;
-  if (!Platform.isLinux) await _configureAudioSession(c);
+  // Windows: aucune implémentation dans `audio_service` — la nôtre, posée
+  // AVANT `AudioService.init`, qui lit l'instance au premier appel.
+  if (Platform.isWindows) AudioServicePlatform.instance = AudioServiceSmtc();
+  if (!Platform.isLinux && !Platform.isWindows) {
+    await _configureAudioSession(c);
+  }
 
   try {
     gMediaHandler = await AudioService.init(

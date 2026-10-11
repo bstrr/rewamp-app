@@ -62,6 +62,7 @@ const RewampPluginVTable* rewamp_furnace_plugin(void);
 #endif
 #ifdef REWAMP_WITH_ZXTUNE
 const RewampPluginVTable* rewamp_zxtune_plugin(void);
+const RewampPluginVTable* rewamp_samcop_plugin(void);
 #endif
 #ifdef REWAMP_WITH_UADE
 const RewampPluginVTable* rewamp_uade_plugin(void);
@@ -129,8 +130,14 @@ const RewampPluginVTable* rewamp_libpt3_plugin(void);
 #ifdef REWAMP_WITH_ORGANYA
 const RewampPluginVTable* rewamp_organya_plugin(void);
 #endif
+#ifdef REWAMP_WITH_NTGS
+const RewampPluginVTable* rewamp_ntgs_plugin(void);
+#endif
 #ifdef REWAMP_WITH_TIATRACKER
 const RewampPluginVTable* rewamp_tiatracker_plugin(void);
+#endif
+#ifdef REWAMP_WITH_RONKLAREN
+const RewampPluginVTable* rewamp_ronklaren_plugin(void);
 #endif
 #ifdef REWAMP_WITH_PXTONE
 const RewampPluginVTable* rewamp_pxtone_plugin(void);
@@ -227,6 +234,11 @@ void rewamp_register_builtin_plugins(void) {
 #ifdef REWAMP_WITH_ZXTUNE
     // ZX Spectrum / AY chiptune formats (score 55) — before vgmstream's catch-all.
     rewamp_register_plugin(rewamp_zxtune_plugin());
+    // SAM Coupé `.cop` qui sont des programmes Z80 BRUTS (pas des modules
+    // E-Tracker): z80ex + la SAA1099 de zxtune. Lecteur « B » reconnu à
+    // l'en-tête (100), le reste par l'absence d'E-Tracker (probe_path, 70) —
+    // les deux au-dessus des 55 de zxtune, qui échouait à les ouvrir.
+    rewamp_register_plugin(rewamp_samcop_plugin());
 #endif
 #ifdef REWAMP_WITH_HVL
     // HivelyTracker/AHX native replayer — beats UADE's generic suffix claim
@@ -334,10 +346,26 @@ void rewamp_register_builtin_plugins(void) {
     // extension, no conflict with any other plugin.
     rewamp_register_plugin(rewamp_organya_plugin());
 #endif
+#ifdef REWAMP_WITH_NTGS
+    // NoiseTracker GS 1.x (Apple IIGS): reconnu par le CONTENU (« FTA
+    // MODULEFILE » aux octets 2..15) — les rips n'ont le plus souvent AUCUNE
+    // extension. Aucun autre greffon ne revendique cette magie.
+    rewamp_register_plugin(rewamp_ntgs_plugin());
+#endif
 #ifdef REWAMP_WITH_TIATRACKER
     // Atari VCS 2600 .ttt (TIATracker project files, which are JSON -> 95/80)
     // — exclusive extension, no conflict with any other plugin.
     rewamp_register_plugin(rewamp_tiatracker_plugin());
+#endif
+#ifdef REWAMP_WITH_RONKLAREN
+    // Ron Klaren (Amiga .rk): 100 seulement quand le fichier porte le hunk
+    // exécutable ET « RON_KLAREN_SOUNDMODULE! » à l'octet 40 — devant les 58
+    // qu'UADE donne à l'extension seule, sous REWAMP_SCORE_EXCLUSIVE. UADE y
+    // envoyait le player générique CustomMade, qui ne connaît que la forme à
+    // interruption CIA de la routine (« electricity.rk »: 2 418 sous-chansons
+    // annoncées, silence). Sans la marque (`.cm`, `.rkb`, autre `.rk`): 0, le
+    // fichier reste à UADE. L'ordre d'enregistrement ne joue pas (pas d'égalité).
+    rewamp_register_plugin(rewamp_ronklaren_plugin());
 #endif
 #ifdef REWAMP_WITH_PXTONE
     // PxTone Collage .ptcop/.pttune (magic "PTCOLLAGE-"/"PTTUNE--" -> 110/90)

@@ -16,10 +16,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rewamp/rewamp_db.dart';
 
-SearchResult row(String ext, {int? count, bool resolved = false}) =>
+SearchResult row(String ext,
+        {int? count, bool resolved = false, String collection = 'modland'}) =>
     SearchResult(
       songId: 'bcb8c353-590d-50b7-82ee-7bc72c3f0bb9',
-      collection: 'modland',
+      collection: collection,
       title: 'eob2 - catacomb',
       filename: 'eob2 - catacomb.$ext',
       formatExt: ext,
@@ -60,5 +61,16 @@ void main() {
   test('un rang de tracklist n\'est jamais le conteneur', () {
     final r = row('adl', count: 1).copyWith(trackPosition: 3);
     expect(RewampDb.isContainerRow(r), isFalse);
+  });
+
+  // `modland/Sam Coupe COP/Frantisek Fuka/manic.cop`: un programme Z80 à 11
+  // morceaux, le serveur répond 1. Mais la même extension couvre 166 modules
+  // E-Tracker mono — et TOUS les `.cop` de zxart: la règle reste à modland.
+  test('un `.cop` de modland est compté par le moteur, pas ceux de zxart', () {
+    expect(RewampDb.isContainerRow(row('cop', count: 1)), isTrue);
+    expect(RewampDb.isNativeCounted(row('cop')), isTrue);
+    expect(RewampDb.isContainerRow(row('cop', count: 1, collection: 'zxart')),
+        isFalse);
+    expect(RewampDb.isNativeCounted(row('cop', collection: 'zxart')), isFalse);
   });
 }

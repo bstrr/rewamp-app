@@ -384,6 +384,12 @@ struct YAM_STATE {
     sint16 *out_buf; // EXTERNALLY-REGISTERED pointer
     uint32 out_pending;
     uint32 odometer;
+    /* rewamp: native playback speed. The three SCSP/AICA timers - what the
+    ** sound driver is clocked by - count `speed` timer samples per output
+    ** sample on their own odometer; voices and envelopes keep `odometer`.
+    ** 0 = 1x: the timer odometer then equals odometer, as upstream. */
+    double rw_speed;
+    uint32 rw_timer_odometer;
     uint8 dry_out_enabled;
     uint8 dsp_emulation_enabled;
 #ifdef ENABLE_DYNAREC
@@ -676,7 +682,7 @@ uint32 EMU_CALL yam_get_min_samples_until_interrupt(void *state) {
         if(YAMSTATE->scieb & (1 << (INT_TIMER_A + t))) {
             samples = 0x100-((uint32)(YAMSTATE->tim[t]));
             samples <<= YAMSTATE->tctl[t];
-            samples -= (YAMSTATE->odometer) & ((1<<YAMSTATE->tctl[t])-1);
+            samples -= (YAMSTATE->rw_timer_odometer) & ((1<<YAMSTATE->tctl[t])-1);
             if(samples < min) { min = samples; }
         }
     }
@@ -690,19 +696,55 @@ uint32 EMU_CALL yam_get_min_samples_until_interrupt(void *state) {
 //
 // Advance timers and interrupts
 //
-void EMU_CALL yam_advance(void *state, uint32 samples) {
+void EMU_CALL yam_rewamp_set_speed(void *state, double speed) {
+    YAMSTATE->rw_speed = (speed <= 0.0 || speed == 1.0) ? 0.0 : speed;
+}
+
+double EMU_CALL yam_rewamp_speed(void *state) {
+    return YAMSTATE->rw_speed > 0.0 ? YAMSTATE->rw_speed : 1.0;
+}
+
+/* rewamp: native speed - the timers advance on their own, in timer samples,
+** driven by the CPU cycles (satsound/dcsound): an output sample being worth
+** `speed` timer samples, folding them into one step would merge several
+** overflows of a fast timer into one interrupt. */
+static void yam_timers_advance(void *state, uint32 tsamples) {
     uint32 t;
-    //printf("yam_advance(%u)",samples);
     for(t = 0; t < 3; t++) {
         uint8 scale = YAMSTATE->tctl[t];
         uint32 whole = YAMSTATE->tim[t];
-        uint32 frac = (YAMSTATE->odometer) & ((1<<scale)-1);
+        uint32 frac = (YAMSTATE->rw_timer_odometer) & ((1<<scale)-1);
         uint32 remain = ((0x100 - whole) << scale) - frac;
-        if(samples >= remain) { sci_signal(state, INT_TIMER_A + t); }
-        YAMSTATE->tim[t] = ((frac + samples + (whole << scale)) >> scale) & 0xFF;
+        if(tsamples >= remain) { sci_signal(state, INT_TIMER_A + t); }
+        YAMSTATE->tim[t] = ((frac + tsamples + (whole << scale)) >> scale) & 0xFF;
+    }
+    YAMSTATE->rw_timer_odometer += tsamples;
+}
+
+void EMU_CALL yam_rewamp_advance_timers(void *state, uint32 tsamples) {
+    yam_timers_advance(state, tsamples);
+}
+
+void EMU_CALL yam_advance(void *state, uint32 samples) {
+    uint32 t;
+    uint32 tsamples = samples;
+    //printf("yam_advance(%u)",samples);
+    if(YAMSTATE->rw_speed > 0.0) {
+        YAMSTATE->out_pending += samples;
+        YAMSTATE->odometer += samples;
+        return;
+    }
+    for(t = 0; t < 3; t++) {
+        uint8 scale = YAMSTATE->tctl[t];
+        uint32 whole = YAMSTATE->tim[t];
+        uint32 frac = (YAMSTATE->rw_timer_odometer) & ((1<<scale)-1);
+        uint32 remain = ((0x100 - whole) << scale) - frac;
+        if(tsamples >= remain) { sci_signal(state, INT_TIMER_A + t); }
+        YAMSTATE->tim[t] = ((frac + tsamples + (whole << scale)) >> scale) & 0xFF;
     }
     YAMSTATE->out_pending += samples;
     YAMSTATE->odometer += samples;
+    YAMSTATE->rw_timer_odometer += tsamples;
 }
 
 /////////////////////////////////////////////////////////////////////////////

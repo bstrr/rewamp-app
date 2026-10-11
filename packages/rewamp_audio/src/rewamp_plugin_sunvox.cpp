@@ -34,6 +34,7 @@
 
 /* Added to sunvox_lib.cpp (surfaces the engine's internal per-module mute). */
 extern "C" int rewamp_sv_set_module_mute(int slot, int mod_num, int mute);
+extern double g_rewamp_sv_speed;   /* psynth.h: tick size ÷ speed */
 
 /* Per-module playing note, filled by the psynth_add_event patch (psynth_net.cpp).
  * Indexed by SunVox module id; the plugin maps module -> voice for vgm_last_*. */
@@ -53,6 +54,7 @@ struct RewampDecoder {
     int        nlines;
     uint64_t   totalFrames;
     uint64_t   pos;                /* absolute frame position (monotonic) */
+    double     posFrac;            /* sub-frame remainder (native speed) */
     int64_t    muteApplied;        /* last generic_mute_mask we pushed */
     int16_t    scopeTmp[4096];
     /* Pattern view: SunVox lays patterns FREELY on a 2D timeline and plays MANY
@@ -212,6 +214,10 @@ static RewampDecoder* sv_open(const char* path, RewampAudioFormat* outFormat) {
     void* data = read_all(path, &size);
     if (!data) return NULL;
 
+    /* The time map (line → frame) and the song length are computed with the
+     * tick size: at 1×, whatever the previous song left. The producer pushes
+     * the speed again after open(). */
+    g_rewamp_sv_speed = 1.0;
     sv_open_slot(SV_SLOT);
     if (sv_load_from_memory(SV_SLOT, data, size) != 0) {
         free(data);
@@ -328,7 +334,10 @@ static uint64_t sv_read(RewampDecoder* d, float* out, uint64_t frameCount) {
     apply_mute(d);
     sv_audio_callback(out, (int)frameCount, 0, sv_get_ticks());
     fill_scope(d, frameCount);
-    d->pos += frameCount;
+    d->posFrac += (double)frameCount * g_rewamp_sv_speed;   /* temps du MORCEAU */
+    uint64_t whole = (uint64_t)d->posFrac;
+    d->posFrac -= (double)whole;
+    d->pos += whole;
     return frameCount;  /* self-looping: never signals EOF (generic loop path) */
 }
 
@@ -350,6 +359,15 @@ static void sv_seek(RewampDecoder* d, uint64_t frameIndex) {
     memset(g_rewamp_sv_note_vel, 0, sizeof(g_rewamp_sv_note_vel));  /* drop stale notes */
     d->muteApplied = 0;   /* re-push mute after the engine reset */
     d->pos = frameIndex;
+    d->posFrac = 0.0;
+}
+
+/* Vitesse NATIVE: la taille du tick du moteur ÷ vitesse (PSYNTH_TICK_SIZE),
+ * les générateurs gardent leur hauteur. Un seul slot: un global suffit. */
+static int sv_set_speed(RewampDecoder* d, double speed) {
+    if (!d || s_active != d || speed < 0.2 || speed > 3.0) return 0;
+    g_rewamp_sv_speed = speed;
+    return 1;
 }
 
 static uint64_t sv_length(RewampDecoder* d) {
@@ -361,6 +379,7 @@ static void sv_close(RewampDecoder* d) {
     if (s_active == d) {
         sv_stop(SV_SLOT);
         sv_close_slot(SV_SLOT);
+        g_rewamp_sv_speed = 1.0;
         s_active = NULL;
     }
     free(d->lineFrame);
@@ -439,6 +458,9 @@ static const RewampPluginVTable kVTable = {
     /* pattern_num_rows */ sv_pattern_num_rows,
     /* pattern_get    */ sv_pattern_get,
     /* pattern_cursor */ sv_pattern_cursor,
+    /* probe_path     */ NULL,
+    /* noPrefixProbe  */ 0,
+    /* set_speed      */ sv_set_speed,
 };
 
 extern "C" const RewampPluginVTable* rewamp_sunvox_plugin(void) { return &kVTable; }

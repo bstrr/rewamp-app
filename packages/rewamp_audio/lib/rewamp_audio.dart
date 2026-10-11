@@ -361,6 +361,8 @@ class RewampAudio {
   _GetMaskDart?         _handoffSerialFn;  // int64 Function()
   _SetCrossfadeDart?    _setCrossfadeFn;
   _SetCrossfadeDart?    _setTrackEndFn;
+  _SetCrossfadeDart?    _setPlaybackSpeedFn;
+  int Function()?       _playbackSpeedModeFn;
   late final _BackendNameDart _backendName;
   _TrackMessageDart? _trackMessageFn;
   _TrackArtworkDart? _trackArtworkFn;
@@ -1023,6 +1025,35 @@ class RewampAudio {
   /// Crossfade duration (seconds). 0 = plain gapless. The native side clamps
   /// and also suppresses the engines' own default end-fadeouts while active.
   void setCrossfadeSeconds(double seconds) => _setCrossfadeFn?.call(seconds);
+
+  void _lookupPlaybackSpeed() {
+    if (_playbackSpeedLooked) return;
+    _playbackSpeedLooked = true;
+    try {
+      _setPlaybackSpeedFn = _lib.lookupFunction<_SetCrossfadeNative,
+          _SetCrossfadeDart>('rewamp_set_playback_speed');
+      _playbackSpeedModeFn = _lib.lookupFunction<Int32 Function(),
+          int Function()>('rewamp_get_playback_speed_mode');
+    } catch (_) {}
+  }
+  bool _playbackSpeedLooked = false;
+
+  /// Vitesse de lecture, 0,2 à 3 (1 = normale). Le natif applique le
+  /// mécanisme PROPRE de l'engine quand il en a un (tempo: la hauteur ne bouge
+  /// pas), sinon un rééchantillonnage générique (vitesse ET hauteur). Position
+  /// et durée restent en temps du MORCEAU. Vaut aussi pour les pistes
+  /// suivantes.
+  void setPlaybackSpeed(double speed) {
+    _lookupPlaybackSpeed();
+    _setPlaybackSpeedFn?.call(speed);
+  }
+
+  /// Comment la vitesse en vigueur est appliquée: 0 = 1×, 1 = par l'engine
+  /// (hauteur conservée), 2 = rééchantillonnage générique (hauteur modifiée).
+  int get playbackSpeedMode {
+    _lookupPlaybackSpeed();
+    return _playbackSpeedModeFn?.call() ?? 0;
+  }
 
   /// End of the CURRENT track (seconds, 0 = unknown) — lets the native
   /// producer end/hand off engines that never stop by themselves (SID, NSF…).

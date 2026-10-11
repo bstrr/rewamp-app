@@ -1,0 +1,47 @@
+# Release d'un tag `v*`: les AppImage (x86_64 + aarch64) et le zip Windows,
+# attachés à UNE SEULE release BROUILLON.
+#
+# Pourquoi un workflow de plus: tant que appimage.yml et windows.yml se
+# déclenchaient chacun sur le tag, seul l'un des deux pouvait créer le
+# brouillon — action-gh-release ne retrouve pas un brouillon par son tag, deux
+# workflows en auraient créé deux — et le zip Windows se joignait à la main.
+# Ici les deux builds sont APPELÉS (workflow_call): leurs artefacts
+# appartiennent au même run, et un dernier job les rassemble.
+#
+# Brouillon, pas publiée: le texte et le moment d'appuyer appartiennent à
+# l'auteur. Un build en échec ne crée AUCUN brouillon (pas de release à
+# moitié): relancer le job en échec depuis l'onglet Actions suffit.
+#
+# Ce fichier voyage dans le dépôt PUBLIC (allowlist de publish_public.sh).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write        # le dernier job crée la release
+
+jobs:
+  appimage:
+    uses: ./.github/workflows/appimage.yml
+
+  windows:
+    uses: ./.github/workflows/windows.yml
+
+  release:
+    needs: [appimage, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -lh dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/Rewamp-*.AppImage
+            dist/Rewamp-*-windows-x64.zip

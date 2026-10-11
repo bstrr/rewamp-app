@@ -110,6 +110,9 @@ struct QSOUND_STATE {
   uint32 cycles_until_irq;
   uint32 cycles_per_irq;
   uint32 cycles_per_sample;
+  /* rewamp: native speed - sound cycles per Z80 cycle, 16.16 (0 = 1x) */
+  uint32 rw_sound_scale;
+  uint32 rw_sound_frac;
   uint64 odometer;
   uint8 ramC[0x1000];
   uint8 ramF[0x1000];
@@ -165,6 +168,20 @@ void EMU_CALL qsound_set_rates(
 ) {
   QSOUNDSTATE->cycles_per_irq    = (z80 + (irq   /2)) / irq   ;
   QSOUNDSTATE->cycles_per_sample = (z80 + (sample/2)) / sample;
+}
+
+/*
+** rewamp: native playback speed. The whole Z80 side - the CPU AND its 250 Hz
+** driver IRQ, still 32000 cycles apart - runs `speed` times faster against
+** the QSound mixer: a Z80 cycle is worth 1/speed of a sound cycle. Speeding
+** up the IRQ alone starved the driver above 1x (a heavy driver no longer
+** fits twice in an IRQ period); this way it keeps all its cycles. The mixer
+** keeps its sample clock, so the pitch does not move. 1.0 = upstream.
+*/
+void EMU_CALL qsound_rewamp_speed(void *state, double speed) {
+  if(speed <= 0.0) speed = 1.0;
+  QSOUNDSTATE->rw_sound_scale = (speed == 1.0) ? 0 : (uint32)(65536.0 / speed + 0.5);
+  QSOUNDSTATE->rw_sound_frac = 0;
 }
 
 void EMU_CALL qsound_clear_state(void *state) {
@@ -341,7 +358,13 @@ static void EMU_CALL qsound_advance(void *state, uint32 elapse) {
   //
   // Update pending sound cycles
   //
-  QSOUNDSTATE->sound_cycles_pending += elapse;
+  if(!QSOUNDSTATE->rw_sound_scale) {
+    QSOUNDSTATE->sound_cycles_pending += elapse;
+  } else {
+    uint64 t = ((uint64)elapse) * QSOUNDSTATE->rw_sound_scale + QSOUNDSTATE->rw_sound_frac;
+    QSOUNDSTATE->sound_cycles_pending += (uint32)(t >> 16);
+    QSOUNDSTATE->rw_sound_frac = (uint32)(t & 0xFFFF);
+  }
   //
   // Update odometer
   //
@@ -525,6 +548,10 @@ sint32 EMU_CALL qsound_execute(
     cyc_upperbound -= QSOUNDSTATE->sound_cycles_pending;
   } else {
     cyc_upperbound = 0;
+  }
+  /* rewamp: that many SOUND cycles are speed x as many Z80 cycles */
+  if(QSOUNDSTATE->rw_sound_scale) {
+    cyc_upperbound = (cyc_upperbound << 16) / QSOUNDSTATE->rw_sound_scale;
   }
   /*
   ** Bound cyc_upperbound by the number of cycles requested

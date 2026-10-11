@@ -2,8 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
 
+import 'package:intl/intl.dart';
+
 import 'artwork_palette.dart';
 import 'l10n.dart';
+import 'user_settings.dart';
 
 /// Compact voice-control sheet: voices grouped by chip, one small pill per
 /// voice. Tap a pill = mute/unmute; LONG-PRESS = solo (mutes everything else;
@@ -135,9 +138,20 @@ class _VoicesSheetState extends State<VoicesSheet> {
     final a = widget.audio;
 
     if (_voiceCount == 0) {
-      return Padding(
-        padding: const EdgeInsets.all(32),
-        child: Text(l10n.voicesNone),
+      // La vitesse vaut pour TOUT moteur, voies exposées ou non.
+      return SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _speedSection(l10n, cs, tt, a),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(l10n.voicesNone),
+            ),
+          ],
+        ),
       );
     }
 
@@ -182,6 +196,7 @@ class _VoicesSheetState extends State<VoicesSheet> {
                 ],
               ),
             ),
+            _speedSection(l10n, cs, tt, a),
             const Divider(height: 1),
             Flexible(
               child: ListView(
@@ -196,6 +211,76 @@ class _VoicesSheetState extends State<VoicesSheet> {
         ),
       ),
     );
+  }
+
+  /// Vitesse de lecture, 0,2× à 3× (UserSettings.playbackSpeed, poussée au
+  /// natif par AppShell). La ligne du dessous dit COMMENT elle s'applique: le
+  /// tempo de l'engine (hauteur conservée) ou le rééchantillonnage (la hauteur
+  /// suit) — le natif le décide au pas suivant du producteur, d'où la relecture
+  /// différée du mode.
+  Widget _speedSection(
+      AppLocalizations l10n, ColorScheme cs, TextTheme tt, RewampAudio a) {
+    final s = UserSettings.instance;
+    final v = s.playbackSpeed;
+    final fmt = NumberFormat('0.0#', Localizations.localeOf(context).toString());
+    final mode = (v - 1.0).abs() < 1e-6 ? 0 : a.playbackSpeedMode;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.speed, size: 18, color: cs.primary),
+              const SizedBox(width: 8),
+              Text(l10n.voicesSpeed, style: tt.labelLarge),
+              const SizedBox(width: 8),
+              Text('×${fmt.format(v)}',
+                  style: tt.labelLarge?.copyWith(
+                      color: cs.primary,
+                      fontFeatures: const [FontFeature.tabularFigures()])),
+              Expanded(
+                child: Slider(
+                  value: v,
+                  min: 0.2,
+                  max: 3.0,
+                  divisions: 56, // pas de 0,05
+                  label: '×${fmt.format(v)}',
+                  onChanged: (x) => setState(() => s.playbackSpeed = x),
+                  onChangeEnd: (_) => _refreshSpeedModeSoon(),
+                ),
+              ),
+              IconButton(
+                tooltip: l10n.voicesSpeedNormal,
+                icon: const Icon(Icons.restart_alt, size: 20),
+                onPressed: (v - 1.0).abs() < 1e-6
+                    ? null
+                    : () {
+                        setState(() => s.playbackSpeed = 1.0);
+                        _refreshSpeedModeSoon();
+                      },
+              ),
+            ],
+          ),
+          if (mode != 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 26, bottom: 2),
+              child: Text(
+                mode == 1 ? l10n.voicesSpeedNative : l10n.voicesSpeedResampled,
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Le mode n'est connu qu'une fois le producteur passé (pas de ~12 ms):
+  /// on le relit juste après.
+  void _refreshSpeedModeSoon() {
+    Future<void>.delayed(const Duration(milliseconds: 150), () {
+      if (mounted) setState(() {});
+    });
   }
 
   Widget _chipSection(_Chip chip, List<String> names, ColorScheme cs,

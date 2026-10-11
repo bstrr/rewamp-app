@@ -98,12 +98,18 @@ void sunvox_add_psynth_event_UNSAFE( int mod_num, psynth_event* evt, sunvox_engi
 	s->psynth_events = SMEM_RESIZE2( s->psynth_events, sunvox_psynth_event, prev_size + 32 );
     }
 }
+double g_rewamp_sv_speed = 1.0;
+static double g_rewamp_sv_prev_speed = 1.0;
 static uint sunvox_check_speed( int offset, sunvox_engine* s )
 {
     uint one_tick = PSYNTH_TICK_SIZE( s->net->sampling_freq, s->bpm );
     if( s->prev_bpm != s->bpm ||
-	s->prev_speed != s->speed )
+	s->prev_speed != s->speed ||
+	g_rewamp_sv_prev_speed != g_rewamp_sv_speed )
     {
+	g_rewamp_sv_prev_speed = g_rewamp_sv_speed;
+	/* a tick already under way would otherwise run past the new size */
+	if( s->tick_counter >= one_tick ) s->tick_counter = one_tick - 256;
 	psynth_event module_evt;
 	module_evt.command = PS_CMD_SPEED_CHANGED;
 	module_evt.offset = offset;

@@ -14,6 +14,7 @@ int pmd_length_sec ( void );
 int pmd_length_msec ( void ); //YOYOFR
 int pmd_loop_sec ( void );
 int pmd_loop_msec ( void ); //YOYOFR
+void pmd_set_speed ( double speed );
 void pmd_renderer ( short *buf , int len );
 void pmd_stop ( void );
 void pmd_get_title( char *dest );

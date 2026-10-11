@@ -3,13 +3,18 @@
 // Included as part of rewamp_viz_impl.mm; GL headers already visible.
 #include "rewamp_audio.h"
 #include "rewamp_gl.h"   // rewamp_gl_ensure / rewamp_gl_generation
+#include "rewamp_channel_data.h"  // rewamp_trigger_align_i8 (même stabilisation que les voies)
+#include "rewamp_waveform.h"      // REWAMP_WAVEFORM_FRAMES / _MAX_LAG
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <mutex>
 
-#define VIZ_SAMPLES REWAMP_WAVEFORM_COUNT
+// 512 échantillons affichés, comme l'oscilloscope par voies (SCOPE_SAMPLES):
+// les deux montrent la même durée. Indépendant de REWAMP_WAVEFORM_COUNT, qui
+// dimensionne le repli Dart (oscilloscope_widget.dart).
+#define VIZ_SAMPLES 512
 
 #ifdef REWAMP_GL_GLES
 static const char *k_gl_preamble = "#version 300 es\nprecision mediump float;\n";
@@ -36,10 +41,17 @@ static GLuint g_vbo = 0;
 static GLuint g_vbo_a = 0;     // per-vertex alpha (beam-speed intensity)
 static GLint g_colorLoc = -1;
 static GLint g_alphaLoc = -1;  // aAlpha attribute location
-// Trigger stabilisation: fetch extra samples so we can search for a
-// rising zero-crossing before the display window.
-#define VIZ_TRIGGER_GUARD 256  // extra samples to search in (≥ VIZ_SAMPLES/2)
-#define VIZ_FETCH (VIZ_SAMPLES + VIZ_TRIGGER_GUARD)
+// Stabilisation: la MÊME que l'oscilloscope par voies — corrélation contre le
+// début de l'image précédente (rewamp_trigger_align_i8), UN gabarit PAR CANAL.
+// L'ancienne règle (premier passage par zéro montant du canal GAUCHE, cherché
+// sur 256 échantillons, imposé aux DEUX canaux) sautait d'une image à l'autre
+// dès que le signal portait plusieurs passages par période, et ne stabilisait
+// jamais le droit pour lui-même.
+#define VIZ_FETCH (VIZ_SAMPLES + REWAMP_TRIGGER_SEARCH_LEN)
+static_assert(VIZ_FETCH + REWAMP_WAVEFORM_MAX_LAG <= REWAMP_WAVEFORM_FRAMES,
+              "la fenêtre de recherche doit tenir dans l'anneau stéréo");
+static int8_t g_trig_q[VIZ_FETCH];                               // canal quantifié
+static int8_t g_trig_tmpl[2][REWAMP_TRIGGER_TEMPLATE_SIZE];      // gabarit L, R
 
 static GLfloat g_verts[VIZ_SAMPLES * 2 * 2];
 static float g_left[VIZ_FETCH];
@@ -105,20 +117,23 @@ static void build_speed_alpha(const float* pts, int n, int level, int W, int H, 
 }
 
 
-// Returns the index in [0, VIZ_TRIGGER_GUARD) of the first rising
-// zero-crossing in buf[], or 0 if none found.
-static int find_trigger(const float* buf, int guard)
+// Décalage où `buf` colle le mieux à l'image précédente de CE canal. La
+// corrélation travaille en 8 bits (le code des voies): le canal est normalisé
+// sur son pic avant quantification, sinon un passage doux ne garderait que
+// quelques niveaux. L'échelle ne change pas l'argmax (corrélation non normée,
+// gabarit et fenêtre mis à l'échelle ensemble image après image).
+static int align_channel(const float* buf, int8_t* tmpl)
 {
-    // Hysteresis: require previous sample < -threshold, current >= +threshold.
-    static const float kThresh = 0.02f;
-    for (int i = 1; i < guard; i++) {
-        if (buf[i - 1] < -kThresh && buf[i] >= kThresh) return i;
+    float peak = 0.0f;
+    for (int i = 0; i < VIZ_FETCH; i++) {
+        const float a = fabsf(buf[i]);
+        if (a > peak) peak = a;
     }
-    // Fallback: simple zero-crossing (no hysteresis).
-    for (int i = 1; i < guard; i++) {
-        if (buf[i - 1] < 0.0f && buf[i] >= 0.0f) return i;
-    }
-    return 0;
+    if (peak < 1e-4f) return 0;                        // silence: rien à aligner
+    const float k = 127.0f / peak;
+    for (int i = 0; i < VIZ_FETCH; i++)
+        g_trig_q[i] = (int8_t)lrintf(buf[i] * k);
+    return rewamp_trigger_align_i8(g_trig_q, VIZ_FETCH, VIZ_SAMPLES, tmpl);
 }
 
 static GLuint compile_shader(GLenum type, const char *preamble, const char *body)
@@ -518,16 +533,17 @@ REWAMP_EXPORT void rewamp_viz_render(void)
     rewamp_gl_make_current();
     rewamp_get_waveform(g_left, g_right, VIZ_FETCH);
 
-    // Find a stable trigger point using the left channel.
-    int trig = find_trigger(g_left, VIZ_TRIGGER_GUARD);
+    // Chaque canal suit SA propre forme (voir align_channel).
+    const int trigL = align_channel(g_left,  g_trig_tmpl[0]);
+    const int trigR = align_channel(g_right, g_trig_tmpl[1]);
 
     for (int i = 0; i < VIZ_SAMPLES; i++)
     {
         float x = (float)i / (VIZ_SAMPLES - 1) * 2.0f - 1.0f;
         g_verts[i * 2] = x;
-        g_verts[i * 2 + 1] = g_left[trig + i];
+        g_verts[i * 2 + 1] = g_left[trigL + i];
         g_verts[VIZ_SAMPLES * 2 + i * 2] = x;
-        g_verts[VIZ_SAMPLES * 2 + i * 2 + 1] = g_right[trig + i];
+        g_verts[VIZ_SAMPLES * 2 + i * 2 + 1] = g_right[trigR + i];
     }
 
     const int speedLvl = REWAMP_CRT_SPEED_LEVEL(rewamp_get_crt_flags());

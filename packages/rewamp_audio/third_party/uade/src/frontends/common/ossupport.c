@@ -38,6 +38,15 @@
 #endif
 #include <unistd.h>
 
+/* rewamp: l'accroche des fichiers chargés (panneau ⓘ). Incluse ICI, au niveau
+   du fichier, et plus dans le corps de uade_find_amiga_file: depuis que
+   rewamp_loaded_files.h tire rewamp_audio.h (donc <stdint.h>), un #include
+   dans une fonction est une ERREUR sous clang avec modules (Xcode,
+   -Wmodules-import-nested-redundant) — l'archive iOS échouait là. */
+#ifdef UADE_IN_PROCESS
+#include "rewamp_loaded_files.h"
+#endif
+
 #ifdef _WIN32
 /* rewamp: Windows n'a ni <libgen.h> ni socketpair(). Voir uade_dirname et
    uade_arch_spawn ci-dessous; docs/BUILD_WINDOWS.md §6.3. */
@@ -148,10 +157,6 @@ int uade_find_amiga_file(char *realname, size_t maxlen, const char *aname,
 			     "filename.\nPlease REPORT THIS!\n");
 		return -1;
 	}
-
-#ifdef UADE_IN_PROCESS
-#include "rewamp_loaded_files.h"
-#endif
 
 #ifdef UADE_IN_PROCESS
 	/* rewamp: macOS/iOS sandbox + TCC forbid opendir() on a path's ancestor

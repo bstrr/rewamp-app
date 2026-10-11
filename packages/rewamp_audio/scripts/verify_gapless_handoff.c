@@ -11,6 +11,9 @@
 unsigned int generic_mute_mask = 0;
 int64_t g_loop_fadeout_start_frame = -1;
 int64_t g_loop_fadeout_total_frames = 0;
+int64_t g_loop_fadeout_track = 0;
+volatile double g_playback_speed = 1.0;
+volatile int    g_playback_speed_mode = 0;
 void rewamp_notes_capture(int64_t p) { (void)p; }
 void rewamp_notes_reset(int n) { (void)n; }
 void rewamp_notes_set_rate(int r) { (void)r; }
@@ -22,6 +25,12 @@ int  rewamp_channel_count(void) { return 0; }
 int  rewamp_channel_count_raw(void) { return 0; }
 void rewamp_pattern_cursor_capture(int64_t p, int o, int r) { (void)p;(void)o;(void)r; }
 void rewamp_pattern_cursor_reset(void) {}
+void rewamp_pattern_cursor_new_epoch(void) {}
+void rewamp_notes_new_epoch(int n, int r) { (void)n; (void)r; }
+void rewamp_notes_seek_played(int64_t p) { (void)p; }
+struct RewampPluginVTable;
+void rewamp_notes_grid_update(const struct RewampPluginVTable* vt, void* d, int o, int r)
+    { (void)vt; (void)d; (void)o; (void)r; }
 void rewamp_pattern_cursor_set_played(int64_t p) { (void)p; }
 void rewamp_waveform_write(const float* p, uint64_t n, int c) { (void)p;(void)n;(void)c; }
 double rewamp_get_lookahead_seconds(void) { return 0; }
@@ -52,6 +61,31 @@ static const RewampPluginVTable kFakeVt = {
     "fake", fake_probe, fake_open, fake_read, fake_seek, fake_length, fake_close,
 };
 
+/* ── décodeur factice NATIF: il gère la vitesse lui-même (set_speed), comme
+ * un tracker: sa sortie reste au rythme réel, son MORCEAU avance de `speed`
+ * trames par trame rendue. ── */
+typedef struct { FakeDec base; double speed; double songLeft; } FakeNat;
+static uint64_t nat_read(RewampDecoder* d, float* out, uint64_t frames) {
+    FakeNat* f = (FakeNat*)d;
+    int64_t n = 0;
+    while ((uint64_t)n < frames && f->songLeft > 0.0) {
+        out[n * 2] = out[n * 2 + 1] = f->base.value;
+        f->songLeft -= f->speed;
+        n++;
+    }
+    return (uint64_t)n;
+}
+static void nat_seek(RewampDecoder* d, uint64_t frame) {
+    FakeNat* f = (FakeNat*)d;
+    f->songLeft = (double)(f->base.total - (int64_t)frame);
+    if (f->songLeft < 0) f->songLeft = 0;
+}
+static int nat_set_speed(RewampDecoder* d, double s) { ((FakeNat*)d)->speed = s; return 1; }
+static const RewampPluginVTable kNatVt = {
+    "fake-native", fake_probe, fake_open, nat_read, nat_seek, fake_length, fake_close,
+    NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, nat_set_speed,
+};
+
 /* ── le "prochain" que rewamp_audio.c fournirait ── */
 static int g_staged = 0;
 static float g_next_value = 0;
@@ -59,7 +93,8 @@ static int64_t g_next_frames = 0;
 static uint32_t g_next_rate = 44100;
 int rewamp_next_staged(void) { return g_staged; }
 int rewamp_handoff_open_next(const RewampPluginVTable** vt, RewampDecoder** dec,
-                             RewampAudioFormat* fmt) {
+                             RewampAudioFormat* fmt, RewampDeclick** dk) {
+    *dk = NULL;   /* le déclic des rips CD n'a rien à faire ici */
     if (!g_staged) return 0;
     g_staged = 0;
     FakeDec* f = calloc(1, sizeof *f);
@@ -82,7 +117,7 @@ int main(void) {
     RewampAudioFormat fmt = { .channels = 2, .sampleRate = 44100 };
     RewampDataSource ds;
     memset(&ds, 0, sizeof ds);
-    if (rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a, fmt) != MA_SUCCESS)
+    if (rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a, fmt, NULL) != MA_SUCCESS)
         { printf("init ds FAIL\n"); return 1; }
 
     g_staged = 1; g_next_value = 0.75f; g_next_frames = 8000; g_next_rate = 44100;
@@ -142,7 +177,7 @@ int main(void) {
     FakeDec* a2 = calloc(1, sizeof *a2);
     a2->left = a2->total = 5000; a2->value = 0.25f;
     memset(&ds, 0, sizeof ds);
-    rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a2, fmt);
+    rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a2, fmt, NULL);
     g_staged = 1; g_next_value = 0.75f; g_next_frames = 48000; g_next_rate = 48000;
     int64_t s0 = rewamp_handoff_serial();
     usleep(300000);
@@ -169,7 +204,7 @@ int main(void) {
     FakeDec* a3 = calloc(1, sizeof *a3);
     a3->left = a3->total = 44100; a3->value = 0.25f;   /* 1 s */
     memset(&ds, 0, sizeof ds);
-    rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a3, fmt);
+    rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a3, fmt, NULL);
     g_staged = 1; g_next_value = 0.75f; g_next_frames = 44100; g_next_rate = 44100;
     int64_t s3 = rewamp_handoff_serial();
     usleep(300000);
@@ -220,7 +255,7 @@ int main(void) {
     a4->left = a4->total = 1LL << 40;        /* ne finit jamais */
     a4->value = 0.25f;
     memset(&ds, 0, sizeof ds);
-    rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a4, fmt);
+    rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a4, fmt, NULL);
     ds.trackLenRing = 0;                     /* length() ~infinie: on l'ignore */
     g_staged = 1; g_next_value = 0.75f; g_next_frames = 8000; g_next_rate = 44100;
     int64_t s4 = rewamp_handoff_serial();
@@ -246,6 +281,147 @@ int main(void) {
     CHECK(rewamp_handoff_serial() == s4 + 1, "serial bascule (gapless malgre un moteur sans fin)");
     CHECK(total == 22050 + 8000, "duree totale = fin Dart + piste B");
     rewamp_data_source_uninit(&ds);
+
+
+    /* ══ VITESSE DE LECTURE ══════════════════════════════════════════════
+     * Le temps du MORCEAU (curseur = position que Dart lit) et le temps JOUÉ
+     * (trames de l'anneau) divergent: à 2×, une seconde jouée = deux secondes
+     * de morceau. Tolérance: le rééchantillonneur retient quelques trames. */
+#define NEAR(a, b, tol) ((a) >= (b) - (tol) && (a) <= (b) + (tol))
+    struct { const char* name; double speed; int native; int64_t frames; } sp[] = {
+        { "generique 2x",   2.0, 0, 44100 },
+        { "generique 0.5x", 0.5, 0, 44100 },
+        { "natif 2x",       2.0, 1, 44100 },
+    };
+    for (int k = 0; k < 3; k++) {
+        printf("== vitesse: %s ==\n", sp[k].name);
+        g_playback_speed = sp[k].speed;
+        RewampDataSource d5; memset(&d5, 0, sizeof d5);
+        const RewampPluginVTable* vt5 = sp[k].native ? &kNatVt : &kFakeVt;
+        RewampDecoder* dec5;
+        if (sp[k].native) {
+            FakeNat* f = calloc(1, sizeof *f);
+            f->base.total = sp[k].frames; f->base.value = 0.25f;
+            f->speed = 1.0; f->songLeft = (double)sp[k].frames;
+            dec5 = (RewampDecoder*)f;
+        } else {
+            FakeDec* f = calloc(1, sizeof *f);
+            f->left = f->total = sp[k].frames; f->value = 0.25f;
+            dec5 = (RewampDecoder*)f;
+        }
+        rewamp_data_source_init(&d5, vt5, dec5, fmt, NULL);
+        usleep(300000);
+        int64_t played = 0, songMid = -1, playedMid = 0;
+        for (int it = 0; it < 6000; it++) {
+            ma_uint64 got = 0;
+            ma_result r = ma_data_source_read_pcm_frames(&d5.base, buf, 512, &got);
+            played += (int64_t)got;
+            if (songMid < 0 && played >= 8192) {
+                ma_uint64 c = 0; ma_data_source_get_cursor_in_pcm_frames(&d5.base, &c);
+                songMid = (int64_t)c; playedMid = played;
+            }
+            if (r == MA_AT_END) break;
+            usleep(11000);
+        }
+        ma_uint64 cEnd = 0; ma_data_source_get_cursor_in_pcm_frames(&d5.base, &cEnd);
+        const int64_t expect = (int64_t)((double)sp[k].frames / sp[k].speed);
+        printf("   (joue=%lld attendu=%lld  morceau@%lld joue=%lld  fin morceau=%llu mode=%d)\n",
+               (long long)played, (long long)expect, (long long)songMid,
+               (long long)playedMid, (unsigned long long)cEnd, g_playback_speed_mode);
+        CHECK(NEAR(played, expect, 64), "trames JOUEES = longueur / vitesse");
+        CHECK(NEAR(songMid, (int64_t)((double)playedMid * sp[k].speed), 64),
+              "position = temps du MORCEAU (joue x vitesse)");
+        CHECK(NEAR((int64_t)cEnd, sp[k].frames, 64), "fin: position = longueur du morceau");
+        CHECK(g_playback_speed_mode == (sp[k].native ? 1 : 2),
+              sp[k].native ? "mode NATIF (set_speed accepte)" : "mode GENERIQUE (resampler)");
+        rewamp_data_source_uninit(&d5);
+    }
+
+    printf("== vitesse: seek sous 2x ==\n");
+    {
+        g_playback_speed = 2.0;
+        FakeDec* f = calloc(1, sizeof *f);
+        f->left = f->total = 44100; f->value = 0.25f;
+        RewampDataSource d6; memset(&d6, 0, sizeof d6);
+        rewamp_data_source_init(&d6, &kFakeVt, (RewampDecoder*)f, fmt, NULL);
+        usleep(200000);
+        ma_data_source_seek_to_pcm_frame(&d6.base, 22050);
+        ma_uint64 c0 = 0; ma_data_source_get_cursor_in_pcm_frames(&d6.base, &c0);
+        usleep(300000);
+        int64_t played = 0;
+        for (int it = 0; it < 6000; it++) {
+            ma_uint64 got = 0;
+            ma_result r = ma_data_source_read_pcm_frames(&d6.base, buf, 512, &got);
+            played += (int64_t)got;
+            if (r == MA_AT_END) break;
+            usleep(11000);
+        }
+        printf("   (position apres seek=%llu, reste joue=%lld)\n", (unsigned long long)c0, (long long)played);
+        CHECK(c0 == 22050, "le seek pose la position du MORCEAU demandee");
+        CHECK(NEAR(played, 11025, 64), "le reste (22050 de morceau) se joue en 11025 trames");
+        rewamp_data_source_uninit(&d6);
+    }
+
+    printf("== vitesse: changement en cours de piste ==\n");
+    {
+        g_playback_speed = 1.0;
+        FakeDec* f = calloc(1, sizeof *f);
+        f->left = f->total = 88200; f->value = 0.25f;
+        RewampDataSource d7; memset(&d7, 0, sizeof d7);
+        rewamp_data_source_init(&d7, &kFakeVt, (RewampDecoder*)f, fmt, NULL);
+        usleep(300000);
+        int64_t played = 0; int changed = 0;
+        for (int it = 0; it < 9000; it++) {
+            ma_uint64 got = 0;
+            ma_result r = ma_data_source_read_pcm_frames(&d7.base, buf, 512, &got);
+            played += (int64_t)got;
+            if (!changed && played >= 22050) { g_playback_speed = 3.0; changed = 1; }
+            if (r == MA_AT_END) break;
+            usleep(11000);
+        }
+        ma_uint64 cEnd = 0; ma_data_source_get_cursor_in_pcm_frames(&d7.base, &cEnd);
+        printf("   (joue=%lld, fin morceau=%llu)\n", (long long)played, (unsigned long long)cEnd);
+        CHECK(played < 88200 - 20000, "le passage a 3x a raccourci la lecture");
+        CHECK(NEAR((int64_t)cEnd, 88200, 64), "fin: position = longueur du morceau malgre le changement");
+        rewamp_data_source_uninit(&d7);
+    }
+
+    printf("== vitesse: relais gapless sous 2x ==\n");
+    {
+        g_playback_speed = 2.0;
+        FakeDec* a8 = calloc(1, sizeof *a8);
+        a8->left = a8->total = 10000; a8->value = 0.25f;
+        RewampDataSource d8; memset(&d8, 0, sizeof d8);
+        rewamp_data_source_init(&d8, &kFakeVt, (RewampDecoder*)a8, fmt, NULL);
+        g_staged = 1; g_next_value = 0.75f; g_next_frames = 8000; g_next_rate = 44100;
+        int64_t s8 = rewamp_handoff_serial();
+        usleep(300000);
+        int64_t total8 = 0, firstB8 = -1, nSil8 = 0, songAfter = -1;
+        for (int it = 0; it < 3000; it++) {
+            ma_uint64 got = 0;
+            ma_result r = ma_data_source_read_pcm_frames(&d8.base, buf, 512, &got);
+            for (ma_uint64 i = 0; i < got; i++) {
+                const float v = buf[i * 2];
+                if (v > 0.5f) { if (firstB8 < 0) firstB8 = total8 + (int64_t)i; }
+                else if (v < 0.1f) nSil8++;
+            }
+            total8 += (int64_t)got;
+            if (songAfter < 0 && rewamp_handoff_serial() != s8) {
+                ma_uint64 c = 0; ma_data_source_get_cursor_in_pcm_frames(&d8.base, &c);
+                songAfter = (int64_t)c;
+            }
+            if (r == MA_AT_END) break;
+            usleep(11000);
+        }
+        printf("   (firstB=%lld total=%lld silence=%lld morceau B juste apres=%lld)\n",
+               (long long)firstB8, (long long)total8, (long long)nSil8, (long long)songAfter);
+        CHECK(NEAR(firstB8, 5000, 16), "B commence apres 10000/2 trames jouees");
+        CHECK(NEAR(total8, 9000, 32), "total joue = (10000 + 8000) / 2");
+        CHECK(nSil8 <= 16, "pas de trou a la frontiere");
+        CHECK(songAfter >= 0 && songAfter < 2 * 512 + 32, "la position de B repart de 0 (temps du morceau)");
+        rewamp_data_source_uninit(&d8);
+        g_playback_speed = 1.0;
+    }
 
     printf(fails ? "\n%d ECHEC(S)\n" : "\nTOUT VERT\n", fails);
     return fails != 0;

@@ -248,6 +248,8 @@ rewamp_option(REWAMP_WITH_HIGHLYTHEORITICAL "Build the highlytheoritical plugin 
 rewamp_option(REWAMP_WITH_LIBPT3 "Build the libpt3 plugin (ZX Spectrum .pt3, AY-3-8910/YM2149)" ON)
 rewamp_option(REWAMP_WITH_ORGANYA "Build the Organya plugin (Cave Story .org)" ON)
 rewamp_option(REWAMP_WITH_TIATRACKER "Build the TIATracker plugin (Atari VCS 2600 .ttt)" ON)
+rewamp_option(REWAMP_WITH_NTGS      "Build the NoiseTracker GS plugin (Apple IIGS, FTA MODULEFILE)" ON)
+rewamp_option(REWAMP_WITH_RONKLAREN "Build the Ron Klaren plugin (Amiga .rk, NostalgicPlayer port)" ON)
 rewamp_option(REWAMP_WITH_PXTONE  "Build the PxTone Collage plugin (.ptcop/.pttune)" ON)
 rewamp_option(REWAMP_WITH_PMD     "Build the PMD plugin (PC-98 .m/.m2/.mz, OPNA)" ON)
 rewamp_option(REWAMP_WITH_MDX     "Build the MDX plugin (X68000 .mdx + .pdx, YM2151)" ON)
@@ -838,6 +840,9 @@ function(rewamp_add_zxtune target)
   set(CHPCONV_DIR "${REWAMP_THIRD_PARTY_DIR}/libchpconv")
   add_library(rewamp_zxtune STATIC ${ZXTUNE_SOURCES}
     "${REWAMP_SRC_DIR}/rewamp_zxtune_stubs.cpp"
+    # SAM Coupé .cop en code Z80 brut: compilé DANS la lib pour hériter de ses
+    # defines (MODIZER, boost, z80ex) — il emprunte z80ex et Devices::SAA.
+    "${REWAMP_SRC_DIR}/rewamp_plugin_samcop.cpp"
     "${CHPCONV_DIR}/chp2ym.c")
   set_target_properties(rewamp_zxtune PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
   rewamp_win_compat(rewamp_zxtune)   # MSVC: en-tetes POSIX manquants
@@ -1556,6 +1561,30 @@ function(rewamp_add_tiatracker target)
     "${REWAMP_SRC_DIR}/tiatracker/ttt_player.cpp")
   target_compile_definitions(${target} PRIVATE REWAMP_WITH_TIATRACKER=1)
   target_link_libraries(${target} PRIVATE rewamp_tiasound)
+endfunction()
+
+# NoiseTracker GS 1.x (Apple IIGS, « FTA MODULEFILE ») — notre propre lecteur,
+# écrit d'après le désassemblage du programme d'origine (docs/re/noisetracker_gs/
+# NTGS_SPEC.md); aucun code d'origine. Un seul fichier C, sans bibliothèque.
+function(rewamp_add_ntgs target)
+  target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_ntgs.c")
+  target_compile_definitions(${target} PRIVATE REWAMP_WITH_NTGS=1)
+endfunction()
+
+# Ron Klaren (Amiga .rk) — portage C++ du lecteur de NostalgicPlayer (MIT,
+# Thomas Neumann) sous third_party/ronklaren, plus une Paula à 4 voix écrite
+# dans le greffon. Aucun chemin d'inclusion ajouté: le greffon inclut
+# "../third_party/ronklaren/RonKlarenWorker.h" relativement à lui-même, et tout
+# le portage vit dans `namespace ronklaren`.
+function(rewamp_add_ronklaren target)
+  set(RK_ROOT "${REWAMP_THIRD_PARTY_DIR}/ronklaren")
+  if(NOT EXISTS "${RK_ROOT}/RonKlarenWorker.cpp")
+    message(FATAL_ERROR "REWAMP_WITH_RONKLAREN=ON but sources are missing at ${RK_ROOT}")
+  endif()
+  target_sources(${target} PRIVATE
+    "${REWAMP_SRC_DIR}/rewamp_plugin_ronklaren.cpp"
+    "${RK_ROOT}/RonKlarenWorker.cpp")
+  target_compile_definitions(${target} PRIVATE REWAMP_WITH_RONKLAREN=1)
 endfunction()
 
 # Organya (Cave Story .org) — a single self-contained file (Daisuke "Pixel"
@@ -2755,6 +2784,14 @@ function(rewamp_configure_decoders target)
 
   if(REWAMP_WITH_TIATRACKER)
     rewamp_add_tiatracker(${target})
+  endif()
+
+  if(REWAMP_WITH_NTGS)
+    rewamp_add_ntgs(${target})
+  endif()
+
+  if(REWAMP_WITH_RONKLAREN)
+    rewamp_add_ronklaren(${target})
   endif()
 
   if(REWAMP_WITH_ORGANYA)

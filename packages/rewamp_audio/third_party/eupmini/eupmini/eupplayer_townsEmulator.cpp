@@ -835,6 +835,12 @@ inline int16_t clip(int in) {
 	return (in > 0x7fff) ? 0x7fff : (in < -0x8000) ? -0x8000 : in;
 }
 
+// rewamp: native playback speed. A sequencer step renders 1/speed as many
+// samples (the 1x count, divided, with the remainder carried), so the tempo
+// follows and the chips keep their pitch. 1.0 = upstream, bit for bit.
+double eup_rewamp_speed = 1.0;
+static double s_eup_rewamp_frac = 0.0;
+
 void EUP_TownsEmulator::nextTick(bool nosound)
 {
     // steptime advance one step
@@ -844,6 +850,14 @@ void EUP_TownsEmulator::nextTick(bool nosound)
     //buflen /= 1000 * 1000;
     buflen /= 1000 * 1012; // Around 1010 to 1015, at home. Depends on the song.
     buflen++;
+    if (eup_rewamp_speed != 1.0) {
+        double exact = (double)buflen / eup_rewamp_speed + s_eup_rewamp_frac;
+        buflen = (int64_t)exact;
+        s_eup_rewamp_frac = exact - (double)buflen;
+        if (buflen < 1) { s_eup_rewamp_frac += (double)(buflen - 1); buflen = 1; }
+    } else {
+        s_eup_rewamp_frac = 0.0;
+    }
 
     int *buf0 = getMixBuffer(buflen);
     memset(buf0, 0, sizeof(int) * buflen * streamAudioChannelsNum);

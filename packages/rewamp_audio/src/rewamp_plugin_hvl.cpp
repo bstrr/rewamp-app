@@ -26,6 +26,12 @@ struct RewampDecoder {
     int              fifoSamples; /* capacity in frames */
     int              fifoPos;     /* consumed frames */
     int              fifoLen;     /* valid frames */
+    /* Vitesse native: chaque tick du séquenceur (hvl_play_irq) mixe
+     * taux/50/multiplicateur ÷ vitesse échantillons au lieu d'une trame fixe —
+     * les ticks se rapprochent, les voix gardent leur hauteur. Seek et durée
+     * comptent en ticks: déjà en temps du MORCEAU. */
+    double           speed;
+    double           acc;         /* reste fractionnaire d'échantillons */
 };
 
 static const char* const kHvlExts[] = { "hvl", "ahx", "thx", NULL };
@@ -101,7 +107,8 @@ static uint64_t hvl_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || !dec->ht || frameCount == 0) return 0;
 
     if (!dec->fifo) {
-        dec->fifoSamples = (int)(dec->ht->ht_Frequency / 50);
+        /* Un tick à la vitesse la plus lente (0,2×) tient dans le tampon. */
+        dec->fifoSamples = (int)(dec->ht->ht_Frequency / 50 / 0.2) + 4;
         if (dec->fifoSamples <= 0) return 0;
         dec->fifo = (int16_t*)malloc((size_t)dec->fifoSamples * 2 *
                                      sizeof(int16_t));
@@ -113,12 +120,22 @@ static uint64_t hvl_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     while (written < frameCount) {
         if (dec->fifoPos >= dec->fifoLen) {
             if (dec->ht->ht_SongEndReached) break;
-            /* DecodeFrame = hvl_play_irq (sequencer) + mix of one 1/50s frame,
-             * int16 L/R via two byte pointers with stride 4. */
-            hvl_DecodeFrame(dec->ht, (int8*)dec->fifo,
-                            (int8*)dec->fifo + 2, 4);
+            /* Un tick: hvl_play_irq (séquenceur) puis le mix de sa durée —
+             * ce que fait hvl_DecodeFrame, tick par tick, avec une durée qui
+             * suit la vitesse. int16 L/R par deux pointeurs, pas de 4. */
+            const double sp = dec->speed > 0.0 ? dec->speed : 1.0;
+            const int mult = dec->ht->ht_SpeedMultiplier > 0 ? dec->ht->ht_SpeedMultiplier : 1;
+            dec->acc += (double)dec->ht->ht_Frequency / 50.0 / mult / sp;
+            int n = (int)dec->acc;
+            if (n > dec->fifoSamples) n = dec->fifoSamples;
+            dec->acc -= n;
+            hvl_play_irq(dec->ht);
+            if (n > 0)
+                hvl_mixchunk(dec->ht, (uint32)n, (int8*)dec->fifo,
+                             (int8*)dec->fifo + 2, 4);
             dec->fifoPos = 0;
-            dec->fifoLen = dec->fifoSamples;
+            dec->fifoLen = n;
+            if (n == 0) continue;
         }
         const int take0 = (int)(frameCount - written);
         const int avail = dec->fifoLen - dec->fifoPos;
@@ -136,6 +153,7 @@ static void hvl_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->ht) return;
     hvl_Seek(dec->ht, (int)(frameIndex * 1000ull / HVL_RATE));
     dec->fifoPos = dec->fifoLen = 0;   /* drop stale mixed audio */
+    dec->acc = 0.0;
 }
 
 static uint64_t hvl_length(RewampDecoder* dec) {
@@ -152,6 +170,13 @@ static void hvl_close(RewampDecoder* dec) {
     free(dec);
 }
 
+/* Vitesse NATIVE (voir RewampDecoder.speed). */
+static int hvl_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->ht || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    return 1;
+}
+
 static const RewampPluginVTable kHvlVTable = {
     "hivelytracker",
     hvl_probe,
@@ -160,6 +185,10 @@ static const RewampPluginVTable kHvlVTable = {
     hvl_seek,
     hvl_length,
     hvl_close,
+    nullptr, 0, nullptr, nullptr,                /* configure_loop … param_changed */
+    nullptr, nullptr, nullptr, nullptr, nullptr, /* pattern view */
+    nullptr, 0,                                  /* probe_path, noPrefixProbe */
+    hvl_set_speed,                               /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_hvl_plugin(void) { return &kHvlVTable; }

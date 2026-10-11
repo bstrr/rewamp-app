@@ -32,6 +32,11 @@ extern int GBAMode, MSXPSGType, MSXPSGVolume, FDS_RealMode, LowPassFilterLevel;
 extern int NESAPUVolume, NESRealDAC, Always_stereo;
 }
 
+/* Vitesse NATIVE (HES: vsync + timer; SGC: vsync — voir m_hes.c/m_sgc.c).
+ * Défini ici, lu par les coeurs; un seul NEZ_PLAY vit à la fois. */
+extern "C" { double nez_rewamp_speed = 1.0; }
+static double s_nez_speed = 1.0;
+
 #define NEZ_CHANNELS 2
 #define NEZ_RING_SAMPLES (512 * 2 * 4)   // audiosys.c mask: SOUND_BUFFER_SIZE_SAMPLE*2*4
 
@@ -203,6 +208,8 @@ static uint64_t nez_read_frames(RewampDecoder* dec, float* out, uint64_t frameCo
 static void nez_seek_frames(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->play) return;
     // No random seek: reset and render-skip to the target (Modizer approach).
+    /* Le seek est en temps du MORCEAU: l'avance rapide tourne à 1×. */
+    nez_rewamp_speed = 1.0;
     NEZReset(dec->play);
     int16_t tmp[4096 * NEZ_CHANNELS];
     uint64_t remaining = frameIndex;
@@ -211,7 +218,14 @@ static void nez_seek_frames(RewampDecoder* dec, uint64_t frameIndex) {
         NEZRender(dec->play, tmp, (Uint)chunk);
         remaining -= chunk;
     }
+    nez_rewamp_speed = s_nez_speed;
     dec->ended = 0;
+}
+
+static int nez_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->play || speed < 0.2 || speed > 3.0) return 0;
+    s_nez_speed = nez_rewamp_speed = speed;
+    return 1;
 }
 
 static uint64_t nez_length_frames(RewampDecoder* dec) {
@@ -222,6 +236,7 @@ static uint64_t nez_length_frames(RewampDecoder* dec) {
 static void nez_close(RewampDecoder* dec) {
     if (!dec) return;
     if (dec->play) NEZDelete(dec->play);
+    s_nez_speed = nez_rewamp_speed = 1.0;
     free(dec->file);
     free(dec->pcm);
     free(dec);
@@ -235,6 +250,14 @@ static const RewampPluginVTable kNezVTable = {
     nez_seek_frames,
     nez_length_frames,
     nez_close,
+    NULL,             /* configure_loop */
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    nez_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_nez_plugin(void) { return &kNezVTable; }

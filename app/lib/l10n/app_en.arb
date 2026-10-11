@@ -517,6 +517,18 @@
   "engineDescHighlyTheoritical": "Saturn .ssf / Dreamcast .dsf — 68000/ARM7 + SCSP",
   "engineDescPt3": "ZX Spectrum .pt3 — real AY-3-8910/YM2149 synth",
   "engineDescOrganya": "Cave Story .org — Pixel's own engine",
+  "engineDescNtgs": "Apple IIGS (Ensoniq 5503) — NoiseTracker GS modules",
+  "@engineDescNtgs": {
+    "description": "Engine description: NoiseTracker GS (Apple IIGS)"
+  },
+  "engineDescRonKlaren": "Amiga — Ron Klaren modules (.rk)",
+  "@engineDescRonKlaren": {
+    "description": "Engine description: Ron Klaren (Amiga, NostalgicPlayer port)"
+  },
+  "engineDescSamCop": "SAM Coupé — Z80 programs driving the SAA1099 (.cop)",
+  "@engineDescSamCop": {
+    "description": "Engine description: SAM Coupé .cop files that are raw Z80 player code (z80ex + ZXTune SAA1099)"
+  },
   "engineDescPxtone": "Pixel's tracker — .ptcop/.pttune",
   "engineDescSc68": "Atari ST (YM2149/STE) + Amiga (Paula) — real 68000 via emu68",
   "engineDescPmd": "PC-98 Professional Music Driver — OPNA FM + SSG + PPZ8 samples",
@@ -925,6 +937,22 @@
   "vizNextPreset": "Next preset",
   "vizProjectmUnavailable": "projectM unavailable",
   "voicesTitle": "Voices",
+  "voicesSpeed": "Speed",
+  "@voicesSpeed": {
+    "description": "Voices sheet: playback speed section title"
+  },
+  "voicesSpeedNormal": "Normal speed",
+  "@voicesSpeedNormal": {
+    "description": "Voices sheet: reset playback speed to 1x (tooltip)"
+  },
+  "voicesSpeedNative": "Engine tempo — pitch unchanged",
+  "@voicesSpeedNative": {
+    "description": "Voices sheet: the engine applies the speed itself (tempo), pitch preserved"
+  },
+  "voicesSpeedResampled": "Resampled — pitch changes too",
+  "@voicesSpeedResampled": {
+    "description": "Voices sheet: speed applied by resampling, pitch changes too"
+  },
   "voicesNone": "No voices for this track.",
   "voicesLongPressSolo": "long-press = solo",
   "voicesMuteAll": "Mute all",
@@ -1584,6 +1612,10 @@
   "libraryOnAnotherDevice": "On another device",
   "@libraryOnAnotherDevice": {
     "description": "Library row whose local file lives on another device of the same account: shown greyed, not playable here."
+  },
+  "libraryHideElsewhere": "Hide items not on this device",
+  "@libraryHideElsewhere": {
+    "description": "Library toggle: hide local entries whose file is not on this device (on another device, or missing)"
   },
   "localLibraryEmpty": "No local imports yet. Use “Import files” or “Import a folder” from Home.",
   "queueLimitReached": "Queue limited to the first {count} tracks",
@@ -2357,57 +2389,49 @@
     "description": "Featured rail: label of the freshly-added-tunes playlist"
   },
   "releaseNotesTitle": "What's new",
-  "releaseNotesV8Windows": "Rewamp now runs on Windows, with every engine and the visualizers, projectM included.",
-  "@releaseNotesV8Windows": {
-    "description": "Release note: first Windows version"
+  "releaseNotesV9Speed": "Playback speed from 0.2× to 3×, in the Voices panel. Most engines change the tempo and keep the pitch; the others resample.",
+  "@releaseNotesV9Speed": {
+    "description": "Release note: playback speed 0.2x-3x in the Voices panel"
   },
-  "releaseNotesV8Linux": "Linux: visualizers now work under X11 too (Steam Deck game mode), “Always on top” is back there, and closing the window no longer crashes the app.",
-  "@releaseNotesV8Linux": {
-    "description": "Release note: Linux X11 visualizers, always-on-top under X11, no crash on window close"
+  "releaseNotesV9Windows": "Windows: the media keys and the system media controls (volume pop-up, taskbar) drive playback, and the fullscreen visualizer now fills the screen.",
+  "@releaseNotesV9Windows": {
+    "description": "Release note: Windows system media controls + fullscreen visualizer fills the screen"
   },
-  "releaseNotesV8Formats": "Game Boy .gbr and DefleMask .dmf files now play.",
-  "@releaseNotesV8Formats": {
-    "description": "Release note: .gbr and .dmf formats"
+  "releaseNotesV9Formats": "New players: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) and SAM Coupé .cop programs.",
+  "@releaseNotesV9Formats": {
+    "description": "Release note: new players NoiseTracker GS, Ron Klaren, SAM Coup\u00e9 .cop"
   },
-  "releaseNotesV8Smooth": "Smoother player and visualizers: the screen no longer redraws everything at every position update.",
-  "@releaseNotesV8Smooth": {
-    "description": "Release note: player no longer rebuilds on every position tick"
+  "releaseNotesV9Amiga": "Amiga and Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory and some Maximum Effect modules now play.",
+  "@releaseNotesV9Amiga": {
+    "description": "Release note: Amiga/Atari ST formats that now play"
   },
-  "releaseNotesV8Scrolling": "A title too long for its space now scrolls in a loop, in one direction, instead of going back and forth.",
-  "@releaseNotesV8Scrolling": {
-    "description": "Release note: long labels scroll in a one-way loop"
+  "releaseNotesV9MoonBlaster": "MSX MoonBlaster: songs load their sample kit instead of playing noise, and edit-mode files play correctly.",
+  "@releaseNotesV9MoonBlaster": {
+    "description": "Release note: MSX MoonBlaster sample kit loaded, edit-mode files"
   },
-  "releaseNotesV8MouseDrag": "Computers: the horizontal rows scroll by click-and-drag with the mouse.",
-  "@releaseNotesV8MouseDrag": {
-    "description": "Release note: horizontal rails scroll by mouse drag on desktop"
+  "releaseNotesV9HideElsewhere": "Library: “Hide items not on this device” hides the local entries whose file is on another device.",
+  "@releaseNotesV9HideElsewhere": {
+    "description": "Release note: library toggle to hide items not on this device (label quoted verbatim)"
   },
-  "releaseNotesV8Presets": "projectM: preset packs install up to nine times faster, and large preset folders are no longer cut short.",
-  "@releaseNotesV8Presets": {
-    "description": "Release note: faster projectM preset pack install, large folders no longer truncated"
+  "releaseNotesV9ArtworkFullscreen": "Long-press the artwork in the player to see it full screen.",
+  "@releaseNotesV9ArtworkFullscreen": {
+    "description": "Release note: long-press player artwork for full screen"
   },
-  "releaseNotesV8Pause": "Fixed: pausing could skip to the next track.",
-  "@releaseNotesV8Pause": {
-    "description": "Release note: pause no longer skips to next track"
+  "releaseNotesV9Viz": "Visualizers: per-voice oscilloscope by default (line spectrum for streamed formats), grid and voice names switchable from the oscilloscope, and a steadier stereo oscilloscope.",
+  "@releaseNotesV9Viz": {
+    "description": "Release note: visualizer defaults, oscilloscope toolbar, steadier stereo oscilloscope"
   },
-  "releaseNotesV8Psf": "PSF albums (PlayStation, Nintendo DS…) delivered as a single archive now unfold into their tracks, also when added to the queue.",
-  "@releaseNotesV8Psf": {
-    "description": "Release note: single-archive PSF albums unfold into tracks"
+  "releaseNotesV9PsfTrack": "Fixed: tapping a track of some PSF albums could play another one.",
+  "@releaseNotesV9PsfTrack": {
+    "description": "Release note: PSF album track tap played another track"
   },
-  "releaseNotesV8ArtistTracks": "Artist pages: the track list shows tracks again, not whole album archives.",
-  "@releaseNotesV8ArtistTracks": {
-    "description": "Release note: artist tracks tab lists tracks, not album archives"
+  "releaseNotesV9Playlists": "A folder holding several playlists now forms one album with all their tracks, without duplicates.",
+  "@releaseNotesV9Playlists": {
+    "description": "Release note: several playlists in one folder merge into one album"
   },
-  "releaseNotesV8VizFixes": "Visualizers: Nintendo 64 voices are shown and muted correctly, the piano reframes itself for each song, and the artwork background no longer vanishes.",
-  "@releaseNotesV8VizFixes": {
-    "description": "Release note: N64 voices, piano auto-frame, artwork background fixes"
-  },
-  "releaseNotesV8ProjectMFixes": "projectM: presets follow the real frame rate (some reacted sluggishly), and two presets that never showed up now appear.",
-  "@releaseNotesV8ProjectMFixes": {
-    "description": "Release note: projectM real frame rate, two hidden presets"
-  },
-  "releaseNotesV8Covers": "Covers load much faster: a grid of albums fills in at once instead of one cover every second and a half.",
-  "@releaseNotesV8Covers": {
-    "description": "Release note: much faster cover loading"
+  "releaseNotesV9AmigaInfo": "Amiga songs with no known length or author ask the server again after a week, instead of never.",
+  "@releaseNotesV9AmigaInfo": {
+    "description": "Release note: missing Amiga length/author retried after a week"
   },
   "releaseNotesDataReset": "Local data was reset for this beta. Your library and playlists rebuild from your account; downloads start over.",
   "releaseNotesDismiss": "Continue",

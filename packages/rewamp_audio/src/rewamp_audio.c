@@ -317,8 +317,8 @@ void rewamp_get_waveform(float* leftOut, float* rightOut, int count) {
     last = now;
     last_target = target;
     if (sm_pos > target) sm_pos = target;                       /* never ahead  */
-    if (target - sm_pos > REWAMP_WAVEFORM_FRAMES / 2)           /* bounded lag  */
-        sm_pos = target - REWAMP_WAVEFORM_FRAMES / 2;
+    if (target - sm_pos > REWAMP_WAVEFORM_MAX_LAG)             /* bounded lag  */
+        sm_pos = target - REWAMP_WAVEFORM_MAX_LAG;
 
     int end   = (int)sm_pos;
     int start = end - count;
@@ -509,6 +509,25 @@ static int    g_native_loop_supported    = 0;  /* set by the last rewamp_load_fi
  * read (and, once exhausted, cleared) from rewamp_datasource.c. */
 int64_t g_loop_fadeout_start_frame  = -1;
 int64_t g_loop_fadeout_total_frames = 0;
+/* Piste de la source à laquelle la fenêtre appartient (RewampDataSource.trackId):
+ * 0 pour celle d'un chargement, le numéro du relais pour une piste gapless. */
+int64_t g_loop_fadeout_track        = 0;
+
+/* Vitesse de lecture (0,2 à 3), réglée par Dart, appliquée par le PRODUCTEUR de
+ * la source au pas suivant: le mécanisme propre de l'engine s'il en a un
+ * (vt->set_speed), sinon le rééchantillonnage générique. Elle s'applique aussi
+ * aux pistes suivantes (relais gapless, chargements). */
+volatile double g_playback_speed      = 1.0;
+volatile int    g_playback_speed_mode = 0;
+
+void rewamp_set_playback_speed(double speed) {
+    if (!(speed > 0.0)) speed = 1.0;
+    if (speed < 0.2) speed = 0.2;
+    if (speed > 3.0) speed = 3.0;
+    g_playback_speed = speed;
+}
+
+int rewamp_get_playback_speed_mode(void) { return g_playback_speed_mode; }
 
 /* Seek state — written by g_seek_thread (see below) and by each plugin's
  * seek() while it runs on that thread (e.g. sid_seek), read by Dart via FFI.
@@ -1127,6 +1146,9 @@ static int rewamp_open_track(const char* path, RewampOpenedTrack* out) {
                             totalFrames = totalFrames * REWAMP_RING_RATE
                                           / (int64_t)fmt.sampleRate;
                         if (fadeFrames > 0 && fadeFrames < totalFrames) {
+                            // En temps du MORCEAU de cette piste; un relais
+                            // gapless la réétiquette avec son numéro.
+                            g_loop_fadeout_track        = 0;
                             g_loop_fadeout_start_frame  = totalFrames - fadeFrames;
                             g_loop_fadeout_total_frames = fadeFrames;
                         }
@@ -1570,6 +1592,8 @@ extern int         rewamp_asap_probe_get_duration_ms(int idx);
 #ifdef REWAMP_WITH_ZXTUNE
 extern int         rewamp_zxtune_probe_subsong_count(const char* path);
 extern const char* rewamp_zxtune_probe_get_title(int idx);
+extern int         rewamp_samcop_probe_subsong_count(const char* path);
+extern int         rewamp_samcop_probe_get_duration_ms(int idx);
 #endif
 #ifdef REWAMP_WITH_ADPLUG
 extern int         rewamp_adplug_probe_subsong_count(const char* path);
@@ -1577,6 +1601,10 @@ extern int         rewamp_adplug_probe_get_index(int idx);
 extern int         rewamp_gbsplay_probe_subsong_count(const char* path);
 extern int         rewamp_gbsplay_probe_get_index(int idx);
 extern int         rewamp_adplug_probe_get_duration_ms(int idx);
+#endif
+#ifdef REWAMP_WITH_RONKLAREN
+extern int         rewamp_ronklaren_probe_subsong_count(const char* path);
+extern int         rewamp_ronklaren_probe_get_duration_ms(int idx);
 #endif
 #ifdef REWAMP_WITH_FURNACE
 extern int         rewamp_furnace_probe_subsong_info(const char* path);
@@ -1693,6 +1721,22 @@ int rewamp_probe_subsong_count(const char* path) {
         }
     }
 #endif
+#ifdef REWAMP_WITH_RONKLAREN
+    // Ron Klaren `.rk`: le lecteur trouve le nombre de sous-chansons dans le
+    // CODE 68000 du module et en mesure chacune (simulation sans mixage).
+    // Sans cette branche, Dart prenait la liste du songdb d'UADE, calculée par
+    // le player CustomMade — 2 418 sous-chansons pour « electricity.rk », qui
+    // n'en a qu'une. Bornée au contenu (hunk + marque): tout le reste passe.
+    // Index 0-based, comme `?subsong=N` dans le greffon.
+    {
+        const int n = rewamp_ronklaren_probe_subsong_count(path);
+        if (n > 0) {
+            s_probe_title_fn    = NULL;   // le format ne nomme pas ses morceaux
+            s_probe_duration_fn = rewamp_ronklaren_probe_get_duration_ms;
+            return n;
+        }
+    }
+#endif
 #ifdef REWAMP_WITH_OPENMPT
     // Tracker modules (s3m/xm/it/mod/…) can hold several subsongs (order-list
     // sequences). Only claim when there really are >1 — a single-song module
@@ -1748,6 +1792,19 @@ int rewamp_probe_subsong_count(const char* path) {
     }
 #endif
 #ifdef REWAMP_WITH_ZXTUNE
+    // SAM Coupé `.cop` joué par son propre code Z80 (greffon samcop): le
+    // lecteur « B » (manic, prince, splat…) tient une table de morceaux que la
+    // sonde lit sans émuler, puis mesure chacun (arrêt ou rebouclage). Bornée
+    // au contenu: un module E-Tracker rend 0 et passe à zxtune juste dessous.
+    // Index 0-based, comme `?subsong=N` dans le greffon.
+    {
+        const int n = rewamp_samcop_probe_subsong_count(path);
+        if (n > 1) {
+            s_probe_title_fn    = NULL;   // le format ne nomme pas ses morceaux
+            s_probe_duration_fn = rewamp_samcop_probe_get_duration_ms;
+            return n;
+        }
+    }
     // An .ay is a container — a real one on disk holds eleven tunes — and
     // nothing exposed them, so only the first was ever reachable. zxtune claims
     // ONLY when it finds more than one module: a single-song file falls through

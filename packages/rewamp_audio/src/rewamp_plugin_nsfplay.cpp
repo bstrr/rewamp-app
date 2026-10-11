@@ -431,8 +431,21 @@ static uint64_t nsfplay_read(RewampDecoder* dec, float* out, uint64_t frameCount
 static void nsfplay_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->player) return;
     dec->player->Reset();
-    // Skip(samples): same frame-based unit as Render's length.
-    dec->player->Skip((xgm::UINT32)frameIndex);
+    // Skip(samples): same frame-based unit as Render's length. Il saute des
+    // échantillons de SORTIE à la vitesse en vigueur; la cible est en temps du
+    // MORCEAU ⇒ ÷ vitesse (la vitesse survit au Reset: NES_CPU la garde).
+    const double sp = dec->player->rewamp_speed > 0.0 ? dec->player->rewamp_speed : 1.0;
+    dec->player->Skip((xgm::UINT32)((double)frameIndex / sp + 0.5));
+}
+
+/* Vitesse NATIVE (patch REWAMP de libnsfplay, nes_cpu.cpp): la routine PLAY du
+ * NSF est appelée `speed` fois plus souvent, CPU et APU gardent leur horloge —
+ * tempo plus rapide, hauteur conservée. Le temps du lecteur (fondu, fin)
+ * avance × vitesse, donc en temps du MORCEAU. */
+static int nsfplay_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->player || speed < 0.2 || speed > 3.0) return 0;
+    dec->player->RewampSetSpeed(speed);
+    return 1;
 }
 
 // ── length ────────────────────────────────────────────────────────────────────
@@ -482,6 +495,10 @@ static const RewampPluginVTable kNsfplayVTable = {
     /* supportsNativeFadeout */ 0,
     "nsfplay",              /* engine_id */
     nsfplay_param_changed,  /* live settings */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,                   /* probe_path */
+    0,                      /* noPrefixProbe */
+    nsfplay_set_speed,      /* vitesse native (période de PLAY) */
 };
 
 extern "C" const RewampPluginVTable* rewamp_nsfplay_plugin(void) {

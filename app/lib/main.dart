@@ -82,7 +82,11 @@ const _bundledAssetDirs = <String>[
 // 9: +textures/heartfelt2.jpg — la texture de bruit par défaut du convertisseur
 //    Milkwave, que lit « oneshade - Koch Snowflake Kaleidoscope ». Absente,
 //    projectM la remplaçait par un pixel NOIR: image noire partout.
-const _kBundledAssetsVersion = 9;
+// 10: +uade/players/SonicArranger-pc-all (UADE 3.05) et son préfixe `sa_old`
+//     dans eagleplayer.conf — `amifilemagic` classe « SA_old » les .sa qui
+//     embarquent leur replay (4EFA 002A…), que le player SonicArranger refuse
+//     (« module check failed »): silence total sur la plupart de modland.
+const _kBundledAssetsVersion = 10;
 
 /// Copy bundled assets into `{appSupport}/rewamp_data/` (preserving their
 /// sub-path under assets/) and return that root so native code can load them.

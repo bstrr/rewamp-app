@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'l10n.dart';
 import 'local_db.dart';
+import 'user_settings.dart';
 import 'view_mode_picker.dart';
 import 'cancel_field.dart';
 
@@ -245,6 +246,12 @@ class LibraryToolbar extends StatelessWidget {
   final String? viewMode;
   final ValueChanged<String>? onViewMode;
 
+  /// Montrer dans le menu la bascule « masquer ce qui n'est pas sur cet
+  /// appareil » (UserSettings.libraryHideElsewhere). L'écran la demande quand
+  /// il a des entrées concernées — ou quand le masquage est actif, sinon on ne
+  /// pourrait plus le défaire.
+  final bool elsewhereToggle;
+
   const LibraryToolbar({
     super.key,
     required this.query,
@@ -257,6 +264,7 @@ class LibraryToolbar extends StatelessWidget {
     this.titleWording = false,
     this.viewMode,
     this.onViewMode,
+    this.elsewhereToggle = false,
   });
 
   @override
@@ -299,7 +307,10 @@ class LibraryToolbar extends StatelessWidget {
               color: cs.onSurfaceVariant),
           tooltip: l10n.commonSort,
           onSelected: (v) {
-            if (v == 'asc' || v == 'desc') {
+            if (v == 'hide_elsewhere') {
+              final s = UserSettings.instance;
+              s.libraryHideElsewhere = !s.libraryHideElsewhere;
+            } else if (v == 'asc' || v == 'desc') {
               onSort(sort, v == 'asc');
             } else {
               onSort(LibrarySortLabel.fromPref(v, sort), ascending);
@@ -324,6 +335,13 @@ class LibraryToolbar extends StatelessWidget {
                 value: 'desc',
                 checked: !ascending,
                 child: Text(l10n.searchSortDesc)),
+            if (elsewhereToggle) ...[
+              const PopupMenuDivider(),
+              CheckedPopupMenuItem(
+                  value: 'hide_elsewhere',
+                  checked: UserSettings.instance.libraryHideElsewhere,
+                  child: Text(l10n.libraryHideElsewhere)),
+            ],
           ],
         ),
         if (viewMode != null && onViewMode != null)

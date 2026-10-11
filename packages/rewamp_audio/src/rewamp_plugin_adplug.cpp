@@ -46,6 +46,10 @@ struct RewampDecoder {
     int        ended;
     uint64_t   totalFrames;   // songlength()-derived duration (0 = unknown)
     uint64_t   framePos;
+    // Vitesse native: un tick du lecteur (update) dure taux/refresh ÷ vitesse;
+    // l'OPL garde son horloge (hauteur conservée). Fin (update), durée et seek
+    // (CPlayer::seek rejoue des update au rythme du refresh): temps du MORCEAU.
+    double     speed;
 };
 
 // AdLib-exclusive extensions (Modizer SUPPORTED_FILETYPE_ADPLUG minus the ones
@@ -341,7 +345,8 @@ static uint64_t adplug_read_frames(RewampDecoder* dec, float* out, uint64_t fram
             if (!dec->player->update()) { dec->ended = 1; break; }
             float refresh = dec->player->getrefresh();
             if (refresh <= 0.0f) refresh = 50.0f;
-            dec->tickSamples += (double)dec->rate / (double)refresh;
+            dec->tickSamples += (double)dec->rate / (double)refresh /
+                                (dec->speed > 0.0 ? dec->speed : 1.0);
         }
         uint64_t chunk = frameCount - produced;
         if ((double)chunk > dec->tickSamples) chunk = (uint64_t)dec->tickSamples;
@@ -380,6 +385,13 @@ static void adplug_close(RewampDecoder* dec) {
     free(dec);
 }
 
+/* Vitesse NATIVE (voir RewampDecoder.speed). */
+static int adplug_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->player || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    return 1;
+}
+
 static const RewampPluginVTable kAdplugVTable = {
     "adplug",
     adplug_probe,
@@ -388,6 +400,10 @@ static const RewampPluginVTable kAdplugVTable = {
     adplug_seek_frames,
     adplug_length_frames,
     adplug_close,
+    nullptr, 0, nullptr, nullptr,                /* configure_loop … param_changed */
+    nullptr, nullptr, nullptr, nullptr, nullptr, /* pattern view */
+    nullptr, 0,                                  /* probe_path, noPrefixProbe */
+    adplug_set_speed,                            /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_adplug_plugin(void) { return &kAdplugVTable; }

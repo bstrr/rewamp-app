@@ -79,6 +79,8 @@ struct RewampDecoder {
     uint64_t framePos;
     int      voices;       // real count, re-applied after a seek's reload
     char     path[4096];   // kept for seek (backward = reload + discard-render)
+    double   speed;        // native playback speed, 0 = 1×
+    double   posFrac;
 };
 
 static const char* const kPmdExts[] = { "m", "m2", "mz", NULL };
@@ -237,7 +239,11 @@ static uint64_t pmd_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         float* dst = out + written * 2;
         for (uint32_t i = 0; i < want * 2; i++) dst[i] = s_buf[i] * scale;
         written += want;
-        dec->framePos += want;
+        /* framePos est en temps du MORCEAU: vitesse × le rendu. */
+        dec->posFrac += (double)want * (dec->speed > 0.0 ? dec->speed : 1.0);
+        uint64_t whole = (uint64_t)dec->posFrac;
+        dec->posFrac -= (double)whole;
+        dec->framePos += whole;
     }
     return written;
 }
@@ -254,12 +260,25 @@ static void pmd_seek(RewampDecoder* dec, uint64_t frameIndex) {
         pmd_apply_voice_layout(dec->voices);
         dec->framePos = 0;
     }
+    /* L'avance rapide est en temps du MORCEAU: à 1×. */
+    pmd_set_speed(1.0);
     while (dec->framePos < frameIndex) {
         uint64_t skip = frameIndex - dec->framePos;
         if (skip > SOUND_BUFFER_SIZE_SAMPLE) skip = SOUND_BUFFER_SIZE_SAMPLE;
         pmd_renderer(NULL, (int)skip);
         dec->framePos += skip;
     }
+    pmd_set_speed(dec->speed > 0.0 ? dec->speed : 1.0);
+    dec->posFrac = 0.0;
+}
+
+/* Vitesse NATIVE: les timers OPNA (qui appellent le pilote) avancent de `us`
+ * pendant qu'on ne rend que us/vitesse d'audio (PMDWIN::getpcmdata). */
+static int pmd_set_speed_impl(RewampDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    pmd_set_speed(speed);
+    return 1;
 }
 
 static uint64_t pmd_length(RewampDecoder* dec) {
@@ -284,6 +303,7 @@ static void pmd_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
 static void pmd_close(RewampDecoder* dec) {
     if (!dec) return;
     pmd_stop();
+    pmd_set_speed(1.0);
     free(dec);
 }
 
@@ -296,6 +316,13 @@ static const RewampPluginVTable kPmdVTable = {
     pmd_length,
     pmd_close,
     pmd_configure_loop_fn,
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    pmd_set_speed_impl,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_pmd_plugin(void) { return &kPmdVTable; }

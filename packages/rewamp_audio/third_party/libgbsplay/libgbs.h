@@ -200,6 +200,8 @@ long gbs_step(struct gbs* const gbs, long time_to_work);
 void gbs_set_nextsubsong_cb(struct gbs* const gbs, gbs_nextsubsong_cb cb, void *priv);
 void gbs_set_io_callback(struct gbs* const gbs, gbs_io_cb fn, void *priv);
 void gbs_set_step_callback(struct gbs* const gbs, gbs_step_cb fn, void *priv);
+/* REWAMP: vitesse de lecture (tempo, hauteur conservee). */
+void gbs_rewamp_set_speed(struct gbs* const gbs, double speed);
 void gbs_set_sound_callback(struct gbs* const gbs, gbs_sound_cb fn, void *priv);
 long gbs_set_filter(struct gbs* const gbs, enum gbs_filter_type type);
 void gbs_set_loop_mode(struct gbs* const gbs, enum gbs_loop_mode mode);

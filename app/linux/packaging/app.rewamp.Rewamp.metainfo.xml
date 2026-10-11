@@ -118,6 +118,21 @@
   </screenshots>
 
   <releases>
+    <release version="0.8.0" date="2026-10-11">
+      <description>
+        <ul>
+          <li>Playback speed from 0.2× to 3×; most engines keep the pitch</li>
+          <li>New players: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) and SAM Coupé .cop programs</li>
+          <li>More Amiga and Atari ST formats play: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory</li>
+          <li>MSX MoonBlaster songs load their sample kit instead of playing noise</li>
+          <li>Library: hide items not on this device</li>
+          <li>Long-press the player artwork to see it full screen</li>
+          <li>Visualizer defaults: per-voice oscilloscope, and the line spectrum for streamed formats; steadier stereo oscilloscope</li>
+          <li>Fixed: tapping a track of some PSF-family albums played another track</li>
+          <li>A folder with several playlists now forms one album with every track</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-10-04">
       <description>
         <ul>

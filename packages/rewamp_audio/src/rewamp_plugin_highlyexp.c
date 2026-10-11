@@ -53,6 +53,8 @@ struct RewampDecoder {
     uint64_t totalFrames;   /* from tags (length + fade), 0 if unknown */
     uint64_t fadeFrames;    /* rampe finale (tag `fade`), 0 = aucune */
     uint64_t framePos;      /* current emulator output position (frames) */
+    double   speed;         /* native playback speed, 0 = 1× */
+    double   posFrac;
     int      finished;
     char     path[4096];    /* clean path, for reload-based backward seek */
 };
@@ -207,6 +209,17 @@ static int he_probe(const char *ext, const uint8_t *hdr, size_t hdrSize) {
 // Builds (or rebuilds) the PSX emulator state from dec->path + dec->version,
 // freeing any previous core/psf2fs first.  Returns 0 on success, -1 on failure.
 
+/* Vitesse NATIVE: la machine entière (R3000/IOP, ses timers, la DMA) dépense
+ * 768 × vitesse cycles par échantillon du SPU au lieu de 768 — l'API que le
+ * coeur prévoit pour ça (« 768 is normal »). Le SPU garde son horloge: la
+ * hauteur ne bouge pas, et le pilote garde tous ses cycles par tick. */
+static void he_apply_speed(RewampDecoder *dec, double speed) {
+    if (!dec || !dec->core) return;
+    if (speed <= 0.0) speed = 1.0;
+    iop_set_cycles_per_sample(psx_get_iop_state(dec->core),
+                              (uint32_t)(768.0 * speed + 0.5));
+}
+
 static int he_build_core(RewampDecoder *dec) {
     if (dec->core)   { free(dec->core);          dec->core   = NULL; }
     if (dec->psf2fs) { psf2fs_delete(dec->psf2fs); dec->psf2fs = NULL; }
@@ -248,6 +261,7 @@ static int he_build_core(RewampDecoder *dec) {
     }
     dec->framePos = 0;
     dec->finished = 0;
+    he_apply_speed(dec, dec->speed);
     return 0;
 }
 
@@ -329,9 +343,12 @@ static uint64_t he_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
      * psx_execute never signals end on its own. Without this the track plays
      * indefinitely and the queue never auto-advances. totalFrames == 0 means no
      * length tag — then we fall back to the driver's own end (rarely fires). */
+    const double sp = dec->speed > 0.0 ? dec->speed : 1.0;
     if (dec->totalFrames > 0) {
         if (dec->framePos >= dec->totalFrames) { dec->finished = 1; return 0; }
+        /* remain is song time; the output covers sp × as much of it */
         uint64_t remain = dec->totalFrames - dec->framePos;
+        if (sp != 1.0) remain = (uint64_t)((double)remain / sp) + 1;
         if (frameCount > remain) frameCount = remain;
     }
 
@@ -355,9 +372,13 @@ static uint64_t he_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
             dst[i] = tmp[i] / 32768.0f;
         written += howmany;
     }
-    rewamp_psf_fade_apply(out, written, HE_STEREO, fadeBase,
-                          dec->totalFrames, dec->fadeFrames);
-    dec->framePos += written;
+    rewamp_psf_fade_apply_speed(out, written, HE_STEREO, fadeBase,
+                                dec->totalFrames, dec->fadeFrames, sp);
+    /* framePos is SONG time */
+    dec->posFrac += (double)written * sp;
+    const uint64_t whole = (uint64_t)dec->posFrac;
+    dec->posFrac -= (double)whole;
+    dec->framePos += whole;
     return written;
 }
 
@@ -377,9 +398,11 @@ static void he_seek(RewampDecoder *dec, uint64_t frameIndex) {
     if (frameIndex < dec->framePos) {
         if (he_build_core(dec) != 0) { dec->finished = 1; return; }
     }
+    dec->posFrac = 0.0;
     if (frameIndex <= dec->framePos) return;
 
     g_is_seeking = 1;
+    he_apply_speed(dec, 1.0);   /* the fast-forward is song time: 1× */
     static int16_t tmp[HE_BATCH_FRAMES * HE_STEREO];
     while (dec->framePos < frameIndex && !g_seek_cancel) {
         uint32_t want = HE_BATCH_FRAMES;
@@ -391,7 +414,15 @@ static void he_seek(RewampDecoder *dec, uint64_t frameIndex) {
         dec->framePos += howmany;
         g_seek_progress_s = (double)dec->framePos / (double)(dec->sampleRate > 0 ? dec->sampleRate : 1);
     }
+    he_apply_speed(dec, dec->speed);
     g_is_seeking = 0;
+}
+
+static int he_set_speed(RewampDecoder *dec, double speed) {
+    if (!dec || !dec->core || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    he_apply_speed(dec, speed);
+    return 1;
 }
 
 /* ── length ─────────────────────────────────────────────────────────────────── */
@@ -456,6 +487,10 @@ static const RewampPluginVTable kHeVTable = {
     0,                 /* supportsNativeFadeout */
     "highlyexp",       /* engine_id */
     he_param_changed,  /* live settings */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,              /* probe_path */
+    0,                 /* noPrefixProbe */
+    he_set_speed,      /* vitesse native */
 };
 
 const RewampPluginVTable* rewamp_highlyexp_plugin(void) {

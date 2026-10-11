@@ -817,6 +817,16 @@ class AppLocalizationsJa extends AppLocalizations {
   String get engineDescOrganya => 'Cave Story .org — Pixel 純正エンジン';
 
   @override
+  String get engineDescNtgs =>
+      'Apple IIGS（Ensoniq 5503）— NoiseTracker GS モジュール';
+
+  @override
+  String get engineDescRonKlaren => 'Amiga — Ron Klaren モジュール（.rk）';
+
+  @override
+  String get engineDescSamCop => 'SAM Coupé — SAA1099 を駆動する Z80 プログラム (.cop)';
+
+  @override
   String get engineDescPxtone => 'Pixel のトラッカー — .ptcop/.pttune';
 
   @override
@@ -1303,6 +1313,18 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get voicesTitle => 'ボイス';
+
+  @override
+  String get voicesSpeed => '速度';
+
+  @override
+  String get voicesSpeedNormal => '通常の速度';
+
+  @override
+  String get voicesSpeedNative => 'エンジンのテンポ — 音程は変わりません';
+
+  @override
+  String get voicesSpeedResampled => 'リサンプリング — 音程も変わります';
 
   @override
   String get voicesNone => 'この曲にはボイスがありません。';
@@ -2397,6 +2419,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get libraryOnAnotherDevice => '別のデバイスにあります';
+
+  @override
+  String get libraryHideElsewhere => 'この端末にない項目を隠す';
 
   @override
   String get localLibraryEmpty =>
@@ -3939,54 +3964,48 @@ class AppLocalizationsJa extends AppLocalizations {
   String get releaseNotesTitle => '新着情報';
 
   @override
-  String get releaseNotesV8Windows =>
-      'Windows 版が登場。すべてのエンジンとビジュアライザー（projectM を含む）に対応しています。';
+  String get releaseNotesV9Speed =>
+      '再生速度を 0.2×〜3× で変更できるようになりました（「ボイス」パネル）。多くのエンジンは音程を保ったままテンポを変え、それ以外はリサンプリングします。';
 
   @override
-  String get releaseNotesV8Linux =>
-      'Linux：X11 環境（Steam Deck のゲームモード）でもビジュアライザーが動作し、「常に手前に表示」が復活。ウィンドウを閉じてもアプリがクラッシュしなくなりました。';
+  String get releaseNotesV9Windows =>
+      'Windows：メディアキーとシステムのメディアコントロール（音量ポップアップ、タスクバー）で再生を操作でき、全画面ビジュアライザーが画面全体に表示されるようになりました。';
 
   @override
-  String get releaseNotesV8Formats =>
-      'Game Boy の .gbr ファイルと DefleMask の .dmf ファイルを再生できるようになりました。';
+  String get releaseNotesV9Formats =>
+      '新しいプレーヤー：NoiseTracker GS（Apple IIGS）、Ron Klaren（Amiga）、SAM Coupé の .cop プログラム。';
 
   @override
-  String get releaseNotesV8Smooth =>
-      'プレーヤーとビジュアライザーがより滑らかに：再生位置が進むたびに画面全体を描き直さなくなりました。';
+  String get releaseNotesV9Amiga =>
+      'Amiga と Atari ST：SidMon 1、Sonic Arranger、Paul Robotham、Quartet、SoundFactory、一部の Maximum Effect モジュールが再生できるようになりました。';
 
   @override
-  String get releaseNotesV8Scrolling =>
-      '表示しきれない長いタイトルは、往復ではなく一方向にループしてスクロールするようになりました。';
+  String get releaseNotesV9MoonBlaster =>
+      'MSX MoonBlaster：曲がサンプルキットを読み込み、ノイズが鳴らなくなりました。エディットモードのファイルも正しく再生されます。';
 
   @override
-  String get releaseNotesV8MouseDrag => 'パソコン：横方向の列をマウスのクリック＆ドラッグでスクロールできます。';
+  String get releaseNotesV9HideElsewhere =>
+      'ライブラリ：「この端末にない項目を隠す」で、ファイルが別の端末にあるローカル項目を非表示にできます。';
 
   @override
-  String get releaseNotesV8Presets =>
-      'projectM：プリセットパックのインストールが最大 9 倍高速になり、大きなプリセットフォルダーが途中で切れなくなりました。';
+  String get releaseNotesV9ArtworkFullscreen =>
+      'プレーヤーでアートワークを長押しすると全画面で表示されます。';
 
   @override
-  String get releaseNotesV8Pause => '修正：一時停止すると次の曲に進むことがありました。';
+  String get releaseNotesV9Viz =>
+      'ビジュアライザー：既定でボイスごとのオシロスコープ（ストリーム形式はライン スペクトラム）、オシロスコープからグリッドとボイス名を切り替え可能、ステレオ オシロスコープもより安定しました。';
 
   @override
-  String get releaseNotesV8Psf =>
-      '1 つのアーカイブで配布される PSF アルバム（PlayStation、ニンテンドー DS など）が、キューに追加したときも含めて曲ごとに展開されるようになりました。';
+  String get releaseNotesV9PsfTrack =>
+      '修正：一部の PSF アルバムで曲をタップすると別の曲が再生されることがありました。';
 
   @override
-  String get releaseNotesV8ArtistTracks =>
-      'アーティストページ：曲リストに、アルバム全体のアーカイブではなく曲が再び表示されます。';
+  String get releaseNotesV9Playlists =>
+      '複数のプレイリストを含むフォルダーは、すべての曲を重複なくまとめた 1 つのアルバムになりました。';
 
   @override
-  String get releaseNotesV8VizFixes =>
-      'ビジュアライザー：NINTENDO 64 の各ボイスが正しく表示・ミュートされ、ピアノは曲ごとに表示範囲を合わせ直し、アートワークの背景が消えなくなりました。';
-
-  @override
-  String get releaseNotesV8ProjectMFixes =>
-      'projectM：プリセットが実際のフレームレートに従うようになり（反応が鈍いものがありました）、表示されなかった 2 つのプリセットが表示されるようになりました。';
-
-  @override
-  String get releaseNotesV8Covers =>
-      'アートワークの読み込みが大幅に高速化：1.5 秒に 1 枚ではなく、アルバム一覧が一度に埋まります。';
+  String get releaseNotesV9AmigaInfo =>
+      '長さや作者が不明な Amiga の曲は、1 週間後にサーバーへ再問い合わせするようになりました（以前は再問い合わせしませんでした）。';
 
   @override
   String get releaseNotesDataReset =>

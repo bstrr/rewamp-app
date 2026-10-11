@@ -43,6 +43,7 @@ struct RewampDecoder {
     int                      voiceCount;
     int                      finished;
     int64_t                  lastMuteMask; /* applied generic_mute_mask snapshot */
+    double                   speed;        /* vitesse native (gbs_rewamp_set_speed) */
 };
 
 /* `.gbr` n'est pas un `.gbs`: c'est un rip du DRIVER (magie « GBRF », ROM à
@@ -127,6 +128,7 @@ static RewampDecoder* gbsplay_open(const char *path,
     if (!dec) { gbs_close(gbs); return NULL; }
 
     dec->gbs = gbs;
+    dec->speed = 1.0;
 
     /* Allocate int16 PCM batch (gbhw render target) + drain FIFO */
     dec->pcm_buf = (int16_t*)calloc(GBS_BATCH_FRAMES * GBS_STEREO, sizeof(int16_t));
@@ -435,6 +437,7 @@ static void gbsplay_seek(RewampDecoder *dec, uint64_t frameIndex)
     const struct gbs_status *st = gbs_get_status(dec->gbs);
     int subsong = st ? (int)st->subsong : 0;
     gbs_init(dec->gbs, subsong);
+    gbs_rewamp_set_speed(dec->gbs, dec->speed);   /* gbs_init repart à 1× */
     dec->fifo_frames = 0;
     dec->finished    = 0;
     /* gbs_init resets the engine's per-channel mute state while the plugin's
@@ -447,8 +450,10 @@ static void gbsplay_seek(RewampDecoder *dec, uint64_t frameIndex)
     /* Fast-forward by running gbs_step and discarding audio.
      * Disable voice-buffer writes during seek (gbhw.c checks seek_needed). */
     gbs_seek_needed = 0;
+    /* Cible en temps du MORCEAU ⇒ ÷ vitesse en trames de sortie. */
+    const uint64_t outTarget = (uint64_t)((double)frameIndex / dec->speed + 0.5);
     uint64_t done = 0;
-    while (done < frameIndex) {
+    while (done < outTarget) {
         if (!gbs_step(dec->gbs, GBS_STEP_MS)) break;
         done += (uint64_t)dec->fifo_frames;
         dec->fifo_frames = 0;
@@ -489,6 +494,16 @@ static void gbsplay_param_changed(struct RewampDecoder* dec, const char* key) {
             (int)rewamp_get_engine_param("gbsplay", "hp_filter", 1));
 }
 
+/* Vitesse NATIVE (patch REWAMP de gbhw.c): VBlank et timer — ce qui appelle
+ * la routine de jeu — avancent `speed` fois plus vite, CPU et APU gardent
+ * leur horloge. Tempo changé, hauteur conservée. */
+static int gbsplay_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->gbs || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    gbs_rewamp_set_speed(dec->gbs, speed);
+    return 1;
+}
+
 static const RewampPluginVTable kGbsplayVTable = {
     "gbsplay",
     gbsplay_probe,
@@ -501,6 +516,10 @@ static const RewampPluginVTable kGbsplayVTable = {
     0,                      /* supportsNativeFadeout */
     "gbsplay",              /* engine_id */
     gbsplay_param_changed,  /* live settings */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,                   /* probe_path */
+    0,                      /* noPrefixProbe */
+    gbsplay_set_speed,      /* vitesse native (interruptions) */
 };
 
 const RewampPluginVTable* rewamp_gbsplay_plugin(void) {

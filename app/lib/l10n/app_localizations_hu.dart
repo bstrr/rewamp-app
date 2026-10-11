@@ -838,6 +838,17 @@ class AppLocalizationsHu extends AppLocalizations {
   String get engineDescOrganya => 'Cave Story .org — Pixel saját motorja';
 
   @override
+  String get engineDescNtgs =>
+      'Apple IIGS (Ensoniq 5503) — NoiseTracker GS modulok';
+
+  @override
+  String get engineDescRonKlaren => 'Amiga — Ron Klaren modulok (.rk)';
+
+  @override
+  String get engineDescSamCop =>
+      'SAM Coupé — a SAA1099-et vezérlő Z80-programok (.cop)';
+
+  @override
   String get engineDescPxtone => 'Pixel trackere — .ptcop/.pttune';
 
   @override
@@ -1345,6 +1356,20 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get voicesTitle => 'Szólamok';
+
+  @override
+  String get voicesSpeed => 'Sebesség';
+
+  @override
+  String get voicesSpeedNormal => 'Normál sebesség';
+
+  @override
+  String get voicesSpeedNative =>
+      'A motor tempója — a hangmagasság nem változik';
+
+  @override
+  String get voicesSpeedResampled =>
+      'Újramintavételezve — a hangmagasság is változik';
 
   @override
   String get voicesNone => 'Ehhez a számhoz nincsenek szólamok.';
@@ -2479,6 +2504,10 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get libraryOnAnotherDevice => 'Egy másik eszközön';
+
+  @override
+  String get libraryHideElsewhere =>
+      'Az ezen az eszközön nem lévő elemek elrejtése';
 
   @override
   String get localLibraryEmpty =>
@@ -4099,56 +4128,48 @@ class AppLocalizationsHu extends AppLocalizations {
   String get releaseNotesTitle => 'Újdonságok';
 
   @override
-  String get releaseNotesV8Windows =>
-      'A Rewamp mostantól Windowson is fut, az összes motorral és a vizualizációkkal, a projectM-mel együtt.';
+  String get releaseNotesV9Speed =>
+      'Lejátszási sebesség 0,2× és 3× között, a Szólamok panelen. A legtöbb motor a tempót változtatja és megtartja a hangmagasságot; a többi újramintavételez.';
 
   @override
-  String get releaseNotesV8Linux =>
-      'Linux: a vizualizációk mostantól X11 alatt is működnek (Steam Deck játékmód), ott ismét elérhető a „Mindig felül” beállítás, és az ablak bezárása már nem okozza az alkalmazás összeomlását.';
+  String get releaseNotesV9Windows =>
+      'Windows: a médiabillentyűk és a rendszer médiavezérlői (hangerő-ablak, tálca) irányítják a lejátszást, a teljes képernyős vizualizáció pedig most kitölti az egész képernyőt.';
 
   @override
-  String get releaseNotesV8Formats =>
-      'Mostantól lejátszhatók a Game Boy .gbr és a DefleMask .dmf fájlok.';
+  String get releaseNotesV9Formats =>
+      'Új lejátszók: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) és a SAM Coupé .cop programjai.';
 
   @override
-  String get releaseNotesV8Smooth =>
-      'Gördülékenyebb lejátszó és vizualizációk: a képernyő már nem rajzolódik újra teljesen minden pozícióváltozáskor.';
+  String get releaseNotesV9Amiga =>
+      'Amiga és Atari ST: a SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory és egyes Maximum Effect modulok mostantól lejátszhatók.';
 
   @override
-  String get releaseNotesV8Scrolling =>
-      'A helyéhez túl hosszú cím mostantól körbe-körbe, egy irányba görög, oda-vissza helyett.';
+  String get releaseNotesV9MoonBlaster =>
+      'MSX MoonBlaster: a dalok betöltik a mintakészletüket ahelyett, hogy zajt játszanának, és a szerkesztő módban mentett fájlok helyesen szólnak.';
 
   @override
-  String get releaseNotesV8MouseDrag =>
-      'Számítógépek: a vízszintes sorok egérrel kattintva és húzva görgethetők.';
+  String get releaseNotesV9HideElsewhere =>
+      'Könyvtár: „Az ezen az eszközön nem lévő elemek elrejtése” elrejti azokat a helyi bejegyzéseket, amelyek fájlja egy másik eszközön van.';
 
   @override
-  String get releaseNotesV8Presets =>
-      'projectM: az előbeállítás-csomagok akár kilencszer gyorsabban települnek, és a nagy előbeállítás-mappák már nem csonkulnak.';
+  String get releaseNotesV9ArtworkFullscreen =>
+      'A lejátszóban a borítóra hosszan nyomva teljes képernyőn jelenik meg.';
 
   @override
-  String get releaseNotesV8Pause =>
-      'Javítva: a szüneteltetés a következő számra ugorhatott.';
+  String get releaseNotesV9Viz =>
+      'Vizualizációk: alapértelmezésben szólamonkénti oszcilloszkóp (vonalspektrum a streamelt formátumokhoz), a rács és a szólamnevek az oszcilloszkópról kapcsolhatók, és stabilabb sztereó oszcilloszkóp.';
 
   @override
-  String get releaseNotesV8Psf =>
-      'Az egyetlen archívumként érkező PSF-albumok (PlayStation, Nintendo DS…) mostantól kibomlanak a számaikra, a sorhoz adáskor is.';
+  String get releaseNotesV9PsfTrack =>
+      'Javítva: egyes PSF-albumok egy számára koppintva egy másik szólalhatott meg.';
 
   @override
-  String get releaseNotesV8ArtistTracks =>
-      'Előadói oldalak: a számlista ismét számokat mutat, nem teljes albumok archívumait.';
+  String get releaseNotesV9Playlists =>
+      'Egy több lejátszási listát tartalmazó mappa mostantól egyetlen albumot alkot az összes számukkal, ismétlődés nélkül.';
 
   @override
-  String get releaseNotesV8VizFixes =>
-      'Vizualizációk: a Nintendo 64 hangjai helyesen jelennek meg és némíthatók, a zongora minden számnál újra igazítja a nézetét, és a borítós háttér már nem tűnik el.';
-
-  @override
-  String get releaseNotesV8ProjectMFixes =>
-      'projectM: az előbeállítások a valós képkockasebességet követik (némelyik lomhán reagált), és két korábban soha meg nem jelenő előbeállítás most már látható.';
-
-  @override
-  String get releaseNotesV8Covers =>
-      'A borítók sokkal gyorsabban töltődnek be: egy albumrács egyszerre telik meg, nem másfél másodpercenként egy borítóval.';
+  String get releaseNotesV9AmigaInfo =>
+      'Az ismeretlen hosszúságú vagy szerzőjű Amiga-dalok egy hét után újra lekérdezik a szervert, ahelyett hogy soha többé nem tennék.';
 
   @override
   String get releaseNotesDataReset =>

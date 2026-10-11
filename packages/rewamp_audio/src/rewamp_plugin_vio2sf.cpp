@@ -254,6 +254,8 @@ struct RewampDecoder {
     int finished = 0;
     int64_t lastMuteMask = 0;
     char path[4096];
+    double speed = 1.0;      /* vitesse native */
+    double posFrac = 0.0;
 };
 
 /* Build (or rebuild) the NDS core from dec->rom.  Returns 0 on success. */
@@ -379,9 +381,12 @@ static uint64_t vio_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
     if (!dec || !dec->nds || dec->finished || frameCount == 0) return 0;
     const uint64_t fadeBase = dec->framePos;
 
+    const double sp = dec->speed > 0.0 ? dec->speed : 1.0;
     if (dec->totalFrames > 0) {
         if (dec->framePos >= dec->totalFrames) { dec->finished = 1; return 0; }
+        /* remain is song time; the output covers sp × as much of it */
         uint64_t remain = dec->totalFrames - dec->framePos;
+        if (sp != 1.0) remain = (uint64_t)((double)remain / sp) + 1;
         if (frameCount > remain) frameCount = remain;
     }
 
@@ -404,9 +409,13 @@ static uint64_t vio_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
         for (int i = 0; i < got * VIO2SF_STEREO; i++) dst[i] = tmp[i] / 32768.0f;
         written += got;
     }
-    rewamp_psf_fade_apply(out, written, 2, fadeBase,
-                          dec->totalFrames, dec->fadeFrames);
-    dec->framePos += written;
+    rewamp_psf_fade_apply_speed(out, written, 2, fadeBase,
+                                dec->totalFrames, dec->fadeFrames, sp);
+    /* framePos is SONG time */
+    dec->posFrac += (double)written * sp;
+    const uint64_t whole = (uint64_t)dec->posFrac;
+    dec->posFrac -= (double)whole;
+    dec->framePos += whole;
     return written;
 }
 
@@ -423,10 +432,12 @@ static void vio_seek(RewampDecoder *dec, uint64_t frameIndex) {
     if (frameIndex < dec->framePos) {
         if (vio_build_core(dec) != 0) { dec->finished = 1; return; }
     }
-    if (frameIndex <= dec->framePos) return;
+    dec->posFrac = 0.0;
+    if (frameIndex <= dec->framePos) { dec->nds->SPU.RewampSetSpeed(dec->speed); return; }
 
     g_is_seeking = 1;
     melonDS::NDS *nds = dec->nds;
+    nds->SPU.RewampSetSpeed(1.0);   /* the fast-forward is song time: 1× */
     static int16_t tmp[VIO2SF_BATCH_FRAMES * VIO2SF_STEREO];
     while (dec->framePos < frameIndex && !g_seek_cancel) {
         int num_avail = nds->SPU.GetOutputSize();
@@ -440,7 +451,19 @@ static void vio_seek(RewampDecoder *dec, uint64_t frameIndex) {
         dec->framePos += got;
         g_seek_progress_s = (double)dec->framePos / VIO2SF_SAMPLE_RATE;
     }
+    nds->SPU.RewampSetSpeed(dec->speed);
     g_is_seeking = 0;
+}
+
+/* Vitesse NATIVE: un échantillon de sortie toutes les MixInterval × vitesse
+ * cycles, chaque mixage avançant toujours les voies de MixInterval (SPU::
+ * RewampSetSpeed): les CPU, leurs timers et le pilote vont vitesse × plus
+ * vite, le SPU garde sa hauteur. */
+static int vio_set_speed(RewampDecoder *dec, double speed) {
+    if (!dec || !dec->nds || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    dec->nds->SPU.RewampSetSpeed(speed);
+    return 1;
 }
 
 /* ── length / close ─────────────────────────────────────────────────────────── */
@@ -482,6 +505,13 @@ static const RewampPluginVTable kVioVTable = {
     vio_length,
     vio_close,
     vio_configure_loop_fn,
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    vio_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_vio2sf_plugin(void) {

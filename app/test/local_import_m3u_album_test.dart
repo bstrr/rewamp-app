@@ -70,7 +70,10 @@ void main() {
     expect(items.every((t) => t.album == null), isTrue);
   });
 
-  test('une piste déjà rattachée ne change pas d\'album', () async {
+  test('deux playlists du même dossier font UN album, nommé par le dossier',
+      () async {
+    // Fusionnées (RewampDb.mergeM3uTexts): aucune ne nomme l'album à elle
+    // seule, le DOSSIER le fait. Voir m3u_merge_test.dart.
     final a = await mk('a.vgz');
     final b = await mk('b.vgz');
     final first = await mk('Premier.m3u', 'a.vgz\nb.vgz\n');
@@ -79,9 +82,9 @@ void main() {
 
     final albums = (await applyM3uAlbums(items, const [], [first, second])).albums;
 
-    expect(items.every((t) => t.album == 'Premier'), isTrue);
-    // Le second M3U ne revendique rien: pas d'album vide non plus.
-    expect(albums.map((a) => a.name), ['Premier']);
+    final folder = p.basename(tmp.path);
+    expect(items.every((t) => t.album == folder), isTrue);
+    expect(albums.map((a) => a.name), [folder]);
   });
 
   test('le M3U fait AUTORITÉ: il promeut ce qu\'il nomme et démote le reste',

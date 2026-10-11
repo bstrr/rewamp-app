@@ -63,6 +63,9 @@ class DecoderEngine {
         'highlytheoritical'          => l10n.engineDescHighlyTheoritical,
         'libpt3 (ayumi)'             => l10n.engineDescPt3,
         'Organya'                    => l10n.engineDescOrganya,
+        'NoiseTracker GS'            => l10n.engineDescNtgs,
+        'Ron Klaren'                 => l10n.engineDescRonKlaren,
+        'SAM Coupé COP'              => l10n.engineDescSamCop,
         'PxTone Collage'             => l10n.engineDescPxtone,
         'PMD'                        => l10n.engineDescPmd,
         'mdxplay'                    => l10n.engineDescMdx,
@@ -411,6 +414,41 @@ const List<DecoderEngine> kEngines = [
     formats: kTiaTrackerExts,
   ),
   DecoderEngine(
+    name: 'NoiseTracker GS',
+    url: 'https://www.whatisthe2gs.apple2.org.za/noisetracker/index.html',
+    // Notre propre lecteur, écrit d'après le désassemblage du programme
+    // d'origine (docs/re/noisetracker_gs): aucun code d'origine n'est
+    // embarqué, la ligne CRÉDITE le format et ses auteurs.
+    author: 'Format: Olivier Goguel · FTA (1991-92) · lecteur Rewamp',
+    license: 'GPL-3.0-or-later (lecteur Rewamp)',
+    description: 'Apple IIGS (Ensoniq 5503) — modules NoiseTracker GS',
+    formats: kNtgsExts,
+  ),
+  DecoderEngine(
+    name: 'Ron Klaren',
+    url: 'https://github.com/neumatho/NostalgicPlayer',
+    // Portage C++ du lecteur Ron Klaren de NostalgicPlayer (third_party/
+    // ronklaren, licence MIT vendorée à côté), Paula écrite pour Rewamp. Ne
+    // prend que les `.rk` qui portent « RON_KLAREN_SOUNDMODULE! »; les autres
+    // restent à UADE — d'où le recouvrement d'extension avec la ligne UADE.
+    author: 'Thomas Neumann (NostalgicPlayer) · port Rewamp',
+    license: 'MIT',
+    description: 'Amiga — modules Ron Klaren (.rk)',
+    formats: {'rk'},
+  ),
+  DecoderEngine(
+    name: 'SAM Coupé COP',
+    url: 'https://zxtune.bitbucket.io/',
+    // Lecteur Rewamp: le code Z80 du `.cop` tourne dans z80ex et le son sort
+    // de la SAA1099 de ZXTune (src/rewamp_plugin_samcop.cpp). Ne prend que les
+    // `.cop` SANS module E-Tracker — ceux-là restent à la ligne ZXTune, d'où
+    // le recouvrement d'extension.
+    author: 'Lecteur Rewamp · SAA1099 : Vitamin/CAIG (ZXTune) · z80ex : Boo-boo',
+    license: 'GPL-3.0 (ZXTune) · z80ex GPL-2.0',
+    description: 'SAM Coupé — programmes Z80 + SAA1099 (.cop)',
+    formats: {'cop'},
+  ),
+  DecoderEngine(
     name: "Monkey's Audio (MACLib)",
     url: 'https://monkeysaudio.com/',
     author: 'Matthew T. Ashland',
@@ -464,6 +502,12 @@ const List<BundledComponent> kComponents = [
       'Replayer © FAC, tous droits réservés',
       url: 'https://www.msx.org/wiki/FAC_Soundtracker',
       author: 'FAC ; conversion : NYYRIKKI'),
+  // z80ex: le Z80 de ZXTune (lecteur .ay ZXAYEMUL), et désormais celui des
+  // `.cop` SAM Coupé en code brut. Redistribué depuis toujours avec ZXTune
+  // sans ligne à lui; licence lue dans 3rdparty/z80ex/COPYING.
+  BundledComponent('z80ex (émulateur Z80)', 'GPL-2.0',
+      url: 'https://sourceforge.net/projects/z80ex/',
+      author: 'Boo-boo (code du projet FUSE)'),
   BundledComponent('ProWizard (libxmp)', 'MIT',
       url: 'https://xmp.sourceforge.net/',
       author: "Claudio Matsuoka ; ProWizard : Sylvain 'Asle' Chipaux"),

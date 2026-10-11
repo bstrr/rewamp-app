@@ -48,7 +48,12 @@ struct RewampDecoder {
     struct ayumi ay[PT3_MAX_CHIPS];
     int      numChips;
     int      isrStep;              // samples per music tick (rate/frameRate)
-    int      sampleCounter[PT3_MAX_CHIPS];
+    double   sampleCounter[PT3_MAX_CHIPS];   // avance de `speed` par échantillon
+    // Vitesse native: le tick 50 Hz du lecteur tombe `speed` fois plus souvent,
+    // les ayumi restent cadencés à l'échantillon (hauteur conservée).
+    // songPos = temps du MORCEAU (fin, seek).
+    double   speed;
+    double   songPos;
     uint64_t totalFrames;          // measured via silent render; 0 = unknown
     uint64_t framePos;
     int64_t  lastMuteMask;
@@ -172,7 +177,7 @@ static int pt3_tick_and_render(RewampDecoder* dec, int ch, int16_t* buf, int fra
             buf[i * 2 + 0] = (int16_t)(ay->left  * 10000.0);
             buf[i * 2 + 1] = (int16_t)(ay->right * 10000.0);
         }
-        dec->sampleCounter[ch]++;
+        dec->sampleCounter[ch] += dec->speed;
         if (ret) break;
     }
     return ret;
@@ -473,6 +478,7 @@ static RewampDecoder* pt3_open(const char* path, RewampAudioFormat* outFormat) {
     if (got != (size_t)size) { free(buf); return NULL; }
 
     RewampDecoder* dec = (RewampDecoder*)calloc(1, sizeof(*dec));
+    if (dec) dec->speed = 1.0;
     if (!dec) { free(buf); return NULL; }
 
     int numChips = func_setup_music(buf, (int)size, 0, 1);
@@ -578,9 +584,10 @@ static RewampDecoder* pt3_open(const char* path, RewampAudioFormat* outFormat) {
 static uint64_t pt3_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || frameCount == 0) return 0;
     if (dec->totalFrames > 0) {
-        if (dec->framePos >= dec->totalFrames) return 0;
-        uint64_t remain = dec->totalFrames - dec->framePos;
+        if (dec->songPos >= (double)dec->totalFrames) return 0;
+        uint64_t remain = (uint64_t)ceil(((double)dec->totalFrames - dec->songPos) / dec->speed);
         if (frameCount > remain) frameCount = remain;
+        if (frameCount == 0) return 0;
     }
 
     if (dec->lastMuteMask != generic_mute_mask) dec->lastMuteMask = generic_mute_mask;
@@ -604,6 +611,7 @@ static uint64_t pt3_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         }
         written += want;
         dec->framePos += want;
+        dec->songPos  += (double)want * dec->speed;
         if (ended) break;
     }
     return written;
@@ -615,21 +623,24 @@ extern "C" volatile double g_seek_progress_s;
 
 static void pt3_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec) return;
-    if (frameIndex < dec->framePos) {
+    // frameIndex est en temps du MORCEAU (songPos), l'avance se fait en sortie.
+    if ((double)frameIndex < dec->songPos) {
         for (int ch = 0; ch < dec->numChips; ch++) {
             func_restart_music(ch);
             dec->sampleCounter[ch] = 0;
         }
         dec->framePos = 0;
+        dec->songPos  = 0.0;
     }
-    if (dec->framePos == frameIndex) return;
+    if (dec->songPos >= (double)frameIndex) return;
     g_is_seeking = 1;
     float tmp[256 * 2];
-    while (dec->framePos < frameIndex && !g_seek_cancel) {
-        uint64_t want = frameIndex - dec->framePos;
+    while (dec->songPos < (double)frameIndex && !g_seek_cancel) {
+        uint64_t want = (uint64_t)ceil(((double)frameIndex - dec->songPos) / dec->speed);
         if (want > 256) want = 256;
+        if (want == 0) want = 1;
         uint64_t got = pt3_read(dec, tmp, want);
-        g_seek_progress_s = (double)dec->framePos / (double)PT3_RATE;
+        g_seek_progress_s = dec->songPos / (double)PT3_RATE;
         if (got == 0) break;
     }
     g_is_seeking = 0;
@@ -756,6 +767,13 @@ static void pt3_pattern_cursor(RewampDecoder* dec, int* order, int* row) {
     if (row)   *row   = r;
 }
 
+/* Vitesse NATIVE (voir RewampDecoder.speed). */
+static int pt3_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    return 1;
+}
+
 static const RewampPluginVTable kPt3VTable = {
     "libpt3",
     pt3_probe,
@@ -773,6 +791,9 @@ static const RewampPluginVTable kPt3VTable = {
     pt3_pattern_num_rows,
     pt3_pattern_get,
     pt3_pattern_cursor,
+    NULL,                     /* probe_path */
+    0,                        /* noPrefixProbe */
+    pt3_set_speed,            /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_libpt3_plugin(void) { return &kPt3VTable; }

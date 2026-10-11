@@ -62,6 +62,8 @@ struct RewampDecoder {
     uint64_t totalFrames;  /* 0 = unknown */
     uint8_t* data;         /* depacked SNDH, kept for re-init on seek */
     size_t   size;
+    double   speed;        /* native playback speed, 0 = 1× */
+    double   posFrac;
 };
 
 /* ── Per-voice capture ─────────────────────────────────────────────────────
@@ -287,7 +289,11 @@ static uint64_t psg_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
             out[(written + (uint64_t)i) * 2 + 1] = buf[i].right * scale;
         }
         written    += (uint64_t)got;
-        dec->framePos += (uint64_t)got;
+        /* framePos est en temps du MORCEAU: vitesse × le rendu. */
+        dec->posFrac += (double)got * (dec->speed > 0.0 ? dec->speed : 1.0);
+        const uint64_t whole = (uint64_t)dec->posFrac;
+        dec->posFrac -= (double)whole;
+        dec->framePos += whole;
         if ((size_t)got < want) break;
     }
     return written;
@@ -312,6 +318,8 @@ static void psg_seek(RewampDecoder* dec, uint64_t frameIndex) {
     }
     if (dec->framePos == frameIndex) return;
     g_is_seeking = 1;
+    /* the fast-forward is in song time: 1× */
+    if (dec->speed > 0.0 && dec->speed != 1.0) psgplay_rewamp_speed(dec->pp, 1.0);
     static struct psgplay_stereo tmp[512];
     while (dec->framePos < frameIndex && !g_seek_cancel) {
         uint64_t room = frameIndex - dec->framePos;
@@ -321,7 +329,20 @@ static void psg_seek(RewampDecoder* dec, uint64_t frameIndex) {
         dec->framePos += (uint64_t)got;
         g_seek_progress_s = (double)dec->framePos / (double)PSG_RATE;
     }
+    if (dec->speed > 0.0) psgplay_rewamp_speed(dec->pp, dec->speed);
+    dec->posFrac = 0.0;
     g_is_seeking = 0;
+}
+
+/* Vitesse NATIVE: le timer MFP du rejeu (étiquette SNDH, TC par défaut)
+ * compte sur une horloge virtuelle × vitesse; le PSG, le son DMA et les
+ * autres timers — qui font aussi du SON (voix SID, digidrums) — gardent la
+ * leur. Un rejeu au VBL refuse (repli générique). */
+static int psg_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || !dec->pp || speed < 0.2 || speed > 3.0) return 0;
+    if (!psgplay_rewamp_speed(dec->pp, speed)) return 0;
+    dec->speed = speed;
+    return 1;
 }
 
 static uint64_t psg_length(RewampDecoder* dec) {
@@ -343,6 +364,14 @@ static const RewampPluginVTable kPsgPlayVTable = {
     psg_seek,
     psg_length,
     psg_close,
+    NULL,             /* configure_loop */
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    psg_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_psgplay_plugin(void) { return &kPsgPlayVTable; }

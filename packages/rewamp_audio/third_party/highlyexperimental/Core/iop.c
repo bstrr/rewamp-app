@@ -872,7 +872,20 @@ static uint32 EMU_CALL cycles_until_next_interrupt(struct IOP_STATE *state, uint
   //
   // SPU
   //
-  state->sound_cycles_until_interrupt = cyc = spu_cycles_until_interrupt(SPUSTATE, (min + 767) / 768);
+  if(state->cycles_per_sample == 768) {
+    state->sound_cycles_until_interrupt = cyc = spu_cycles_until_interrupt(SPUSTATE, (min + 767) / 768);
+  } else {
+    /* rewamp: native playback speed (iop_set_cycles_per_sample != 768) -
+    ** the SPU counts its IRQ in 768-cycle samples, the CPU now spends
+    ** cycles_per_sample per sample: convert both ways. */
+    const uint32 cps = state->cycles_per_sample;
+    cyc = spu_cycles_until_interrupt(SPUSTATE, (min + cps - 1) / cps);
+    if(cyc != 0xFFFFFFFF) {
+      uint64 c = ((uint64)cyc * cps) / 768;
+      cyc = c > 0xFFFFFFFE ? 0xFFFFFFFE : (uint32)c;
+    }
+    state->sound_cycles_until_interrupt = cyc;
+  }
   if(cyc < min) min = cyc;
 
   if(min < 1) min = 1;

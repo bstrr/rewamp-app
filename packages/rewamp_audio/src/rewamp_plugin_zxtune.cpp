@@ -37,6 +37,7 @@ struct RewampDecoder {
     int            lastRow;
     int            cursorMoves;  // 1 dès que (ordre,ligne) a bougé une fois
     int64_t        stalledFrames;// images rendues sans que la LIGNE bouge
+    int            ayEmul;       // .ay ZXAYEMUL: code Z80 émulé (vitesse générique)
 };
 
 /* Boucle infinie: au-delà de ce temps rendu SANS que la LIGNE du motif change,
@@ -162,6 +163,7 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
         mdz_amstrad_cph_hack = false;
     }
 
+    const int ayEmul = len >= 8 && memcmp(data, "ZXAYEMUL", 8) == 0;
     ZxTuneWrapper* w = NULL;
     try {
         w = new ZxTuneWrapper(std::string(clean), data, (size_t)len, ZXTUNE_RATE);
@@ -227,6 +229,7 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
     RewampDecoder* dec = (RewampDecoder*)calloc(1, sizeof(*dec));
     if (!dec) { delete w; return NULL; }
     dec->w         = w;
+    dec->ayEmul    = ayEmul;
     dec->subsong   = subsong;
     dec->rate      = ZXTUNE_RATE;
     dec->pcm       = NULL;
@@ -511,6 +514,25 @@ static void zx_pattern_cursor(RewampDecoder* dec, int* order, int* row) {
     if (dec && dec->w) dec->w->pattern_cursor(order, row);
 }
 
+/* Vitesse NATIVE: la durée de trame du rendu zxtune (FRAMEDURATION) devient
+ * nominale ÷ vitesse — les trames du lecteur se rapprochent, l'AY/YM/SAA/TFM
+ * garde son horloge (hauteur conservée). Position, durée et seek du wrapper
+ * comptent en trames × durée NOMINALE: déjà en temps du MORCEAU. */
+static int zx_set_speed(RewampDecoder* dec, double speed) {
+    /* Pas pour un .ay ZXAYEMUL: c'est le CODE Z80 du jeu qui joue, et beaucoup
+     * de routines tournent en continu, cadencées par le CPU et non par
+     * l'interruption trame — accélérer l'interruption ne les accélère pas
+     * (mesuré, enveloppe d'énergie contre 1×: Trantor 0,88-0,97, Lisitska
+     * 0,24-0,34, AgentX de Tim Follin 0,01-0,05). La source rééchantillonne. */
+    if (dec && dec->ayEmul) return 0;
+    if (!dec || !dec->w || speed < 0.2 || speed > 3.0) return 0;
+    try {
+        return dec->w->set_speed(speed) ? 1 : 0;
+    } catch (...) {
+        return 0;
+    }
+}
+
 static const RewampPluginVTable kZxVTable = {
     "zxtune",
     zx_probe,
@@ -528,6 +550,9 @@ static const RewampPluginVTable kZxVTable = {
     zx_pattern_num_rows,
     zx_pattern_get,
     zx_pattern_cursor,
+    NULL,                    /* probe_path */
+    0,                       /* noPrefixProbe */
+    zx_set_speed,            /* vitesse native (durée de trame) */
 };
 
 

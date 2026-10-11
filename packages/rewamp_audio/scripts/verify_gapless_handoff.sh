@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.16)
 project(dstest LANGUAGES C)
 set(SRC "\${RW}/packages/rewamp_audio/src")
 add_executable(dstest "\${RW}/packages/rewamp_audio/scripts/verify_gapless_handoff.c"
-               "\${SRC}/rewamp_datasource.c" "\${SRC}/miniaudio_impl.c")
+               "\${SRC}/rewamp_datasource.c" "\${SRC}/rewamp_declick.c" "\${SRC}/miniaudio_impl.c")
 target_include_directories(dstest PRIVATE "\${SRC}")
 find_package(Threads REQUIRED)
 target_link_libraries(dstest PRIVATE Threads::Threads)

@@ -41,6 +41,10 @@ struct digital_buffer {
 };
 
 struct psgplay {
+	/* rewamp: the MFP timer the SNDH replay runs on ('A'..'D'), from the
+	 * file's timer tag; 'V' (VBL) is not handled, see psgplay_rewamp_speed */
+	int rewamp_replay_timer;
+
 	struct stereo_buffer stereo_buffer;
 	struct digital_buffer digital_buffer;
 

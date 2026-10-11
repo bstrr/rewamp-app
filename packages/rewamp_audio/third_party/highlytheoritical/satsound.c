@@ -52,6 +52,7 @@ struct SATSOUND_STATE {
 #endif
   uint32 sound_samples_remaining;
   uint32 cycles_ahead_of_sound;
+  uint32 rw_cycles_ahead_of_timers; /* rewamp: native speed, see sync_sound */
   sint32 cycles_executed;
 };
 
@@ -284,8 +285,21 @@ void EMU_CALL satsound_upload_to_ram(
 // Sync Yamaha emulation with satsound
 //
 static void sync_sound(struct SATSOUND_STATE *state) {
-  if(state->cycles_ahead_of_sound >= CYCLES_PER_SAMPLE) {
-    uint32 samples = (state->cycles_ahead_of_sound) / CYCLES_PER_SAMPLE;
+  /* rewamp: at native speed s an OUTPUT sample costs CYCLES_PER_SAMPLE x s
+  ** CPU cycles (the yam timers count s timer samples for it) */
+  const double rw_cps = CYCLES_PER_SAMPLE * yam_rewamp_speed(YAMSTATE);
+  if(rw_cps != CYCLES_PER_SAMPLE) {
+    /* the timers keep CYCLES_PER_SAMPLE CPU cycles per timer sample */
+    uint32 t = state->rw_cycles_ahead_of_timers / CYCLES_PER_SAMPLE;
+    if(t) {
+      yam_rewamp_advance_timers(YAMSTATE, t);
+      state->rw_cycles_ahead_of_timers -= t * CYCLES_PER_SAMPLE;
+    }
+  }
+  if(state->cycles_ahead_of_sound >= (uint32)rw_cps) {
+    uint32 samples = (rw_cps == CYCLES_PER_SAMPLE)
+      ? (state->cycles_ahead_of_sound) / CYCLES_PER_SAMPLE
+      : (uint32)((double)(state->cycles_ahead_of_sound) / rw_cps);
     //
     // Avoid overflowing the number of samples remaining
     //
@@ -294,10 +308,14 @@ static void sync_sound(struct SATSOUND_STATE *state) {
     }
     if(samples > 0) {
       yam_advance(YAMSTATE, samples);
-      state->cycles_ahead_of_sound -= CYCLES_PER_SAMPLE * samples;
+      state->cycles_ahead_of_sound -= (rw_cps == CYCLES_PER_SAMPLE)
+        ? CYCLES_PER_SAMPLE * samples
+        : (uint32)((double)samples * rw_cps);
       state->sound_samples_remaining -= samples;
     }
   }
+  if(rw_cps == CYCLES_PER_SAMPLE)
+    state->rw_cycles_ahead_of_timers = state->cycles_ahead_of_sound;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -324,6 +342,7 @@ static void satsound_advancesync(struct SATSOUND_STATE *state) {
   //
   state->cycles_executed += elapse;
   state->cycles_ahead_of_sound += elapse;
+  state->rw_cycles_ahead_of_timers += elapse;
   //
   // Synchronize the sound part
   //
@@ -616,8 +635,10 @@ static uint32 cycles_until_next_interrupt(struct SATSOUND_STATE *state) {
   yamsamples = yam_get_min_samples_until_interrupt(YAMSTATE);
   if(yamsamples > 0x10000) { yamsamples = 0x10000; }
   yamcycles = yamsamples * CYCLES_PER_SAMPLE;
-  if(yamcycles <= state->cycles_ahead_of_sound) return 1;
-  return yamcycles - state->cycles_ahead_of_sound;
+  { const uint32 ahead = (yam_rewamp_speed(YAMSTATE) == 1.0)
+      ? state->cycles_ahead_of_sound : state->rw_cycles_ahead_of_timers;
+    if(yamcycles <= ahead) return 1;
+    return yamcycles - ahead; }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -686,7 +707,8 @@ sint32 EMU_CALL satsound_execute(
   //
   // Cap cycles depending on how many samples we have left to generate
   //
-  { sint32 cap = CYCLES_PER_SAMPLE * SATSOUNDSTATE->sound_samples_remaining;
+  { sint32 cap = (sint32)((double)CYCLES_PER_SAMPLE * yam_rewamp_speed(YAMSTATE)
+                          * SATSOUNDSTATE->sound_samples_remaining);
     cap -= SATSOUNDSTATE->cycles_ahead_of_sound;
     if(cap < 0) cap = 0;
     if(cycles > cap) cycles = cap;

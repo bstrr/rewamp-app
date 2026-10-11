@@ -1510,6 +1510,24 @@ abstract class AppLocalizations {
   /// **'Cave Story .org — Pixel\'s own engine'**
   String get engineDescOrganya;
 
+  /// Engine description: NoiseTracker GS (Apple IIGS)
+  ///
+  /// In en, this message translates to:
+  /// **'Apple IIGS (Ensoniq 5503) — NoiseTracker GS modules'**
+  String get engineDescNtgs;
+
+  /// Engine description: Ron Klaren (Amiga, NostalgicPlayer port)
+  ///
+  /// In en, this message translates to:
+  /// **'Amiga — Ron Klaren modules (.rk)'**
+  String get engineDescRonKlaren;
+
+  /// Engine description: SAM Coupé .cop files that are raw Z80 player code (z80ex + ZXTune SAA1099)
+  ///
+  /// In en, this message translates to:
+  /// **'SAM Coupé — Z80 programs driving the SAA1099 (.cop)'**
+  String get engineDescSamCop;
+
   /// No description provided for @engineDescPxtone.
   ///
   /// In en, this message translates to:
@@ -2194,6 +2212,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Voices'**
   String get voicesTitle;
+
+  /// Voices sheet: playback speed section title
+  ///
+  /// In en, this message translates to:
+  /// **'Speed'**
+  String get voicesSpeed;
+
+  /// Voices sheet: reset playback speed to 1x (tooltip)
+  ///
+  /// In en, this message translates to:
+  /// **'Normal speed'**
+  String get voicesSpeedNormal;
+
+  /// Voices sheet: the engine applies the speed itself (tempo), pitch preserved
+  ///
+  /// In en, this message translates to:
+  /// **'Engine tempo — pitch unchanged'**
+  String get voicesSpeedNative;
+
+  /// Voices sheet: speed applied by resampling, pitch changes too
+  ///
+  /// In en, this message translates to:
+  /// **'Resampled — pitch changes too'**
+  String get voicesSpeedResampled;
 
   /// No description provided for @voicesNone.
   ///
@@ -4078,6 +4120,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On another device'**
   String get libraryOnAnotherDevice;
+
+  /// Library toggle: hide local entries whose file is not on this device (on another device, or missing)
+  ///
+  /// In en, this message translates to:
+  /// **'Hide items not on this device'**
+  String get libraryHideElsewhere;
 
   /// No description provided for @localLibraryEmpty.
   ///
@@ -6767,83 +6815,71 @@ abstract class AppLocalizations {
   /// **'What\'s new'**
   String get releaseNotesTitle;
 
-  /// Release note: first Windows version
+  /// Release note: playback speed 0.2x-3x in the Voices panel
   ///
   /// In en, this message translates to:
-  /// **'Rewamp now runs on Windows, with every engine and the visualizers, projectM included.'**
-  String get releaseNotesV8Windows;
+  /// **'Playback speed from 0.2× to 3×, in the Voices panel. Most engines change the tempo and keep the pitch; the others resample.'**
+  String get releaseNotesV9Speed;
 
-  /// Release note: Linux X11 visualizers, always-on-top under X11, no crash on window close
+  /// Release note: Windows system media controls + fullscreen visualizer fills the screen
   ///
   /// In en, this message translates to:
-  /// **'Linux: visualizers now work under X11 too (Steam Deck game mode), “Always on top” is back there, and closing the window no longer crashes the app.'**
-  String get releaseNotesV8Linux;
+  /// **'Windows: the media keys and the system media controls (volume pop-up, taskbar) drive playback, and the fullscreen visualizer now fills the screen.'**
+  String get releaseNotesV9Windows;
 
-  /// Release note: .gbr and .dmf formats
+  /// Release note: new players NoiseTracker GS, Ron Klaren, SAM Coupé .cop
   ///
   /// In en, this message translates to:
-  /// **'Game Boy .gbr and DefleMask .dmf files now play.'**
-  String get releaseNotesV8Formats;
+  /// **'New players: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) and SAM Coupé .cop programs.'**
+  String get releaseNotesV9Formats;
 
-  /// Release note: player no longer rebuilds on every position tick
+  /// Release note: Amiga/Atari ST formats that now play
   ///
   /// In en, this message translates to:
-  /// **'Smoother player and visualizers: the screen no longer redraws everything at every position update.'**
-  String get releaseNotesV8Smooth;
+  /// **'Amiga and Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory and some Maximum Effect modules now play.'**
+  String get releaseNotesV9Amiga;
 
-  /// Release note: long labels scroll in a one-way loop
+  /// Release note: MSX MoonBlaster sample kit loaded, edit-mode files
   ///
   /// In en, this message translates to:
-  /// **'A title too long for its space now scrolls in a loop, in one direction, instead of going back and forth.'**
-  String get releaseNotesV8Scrolling;
+  /// **'MSX MoonBlaster: songs load their sample kit instead of playing noise, and edit-mode files play correctly.'**
+  String get releaseNotesV9MoonBlaster;
 
-  /// Release note: horizontal rails scroll by mouse drag on desktop
+  /// Release note: library toggle to hide items not on this device (label quoted verbatim)
   ///
   /// In en, this message translates to:
-  /// **'Computers: the horizontal rows scroll by click-and-drag with the mouse.'**
-  String get releaseNotesV8MouseDrag;
+  /// **'Library: “Hide items not on this device” hides the local entries whose file is on another device.'**
+  String get releaseNotesV9HideElsewhere;
 
-  /// Release note: faster projectM preset pack install, large folders no longer truncated
+  /// Release note: long-press player artwork for full screen
   ///
   /// In en, this message translates to:
-  /// **'projectM: preset packs install up to nine times faster, and large preset folders are no longer cut short.'**
-  String get releaseNotesV8Presets;
+  /// **'Long-press the artwork in the player to see it full screen.'**
+  String get releaseNotesV9ArtworkFullscreen;
 
-  /// Release note: pause no longer skips to next track
+  /// Release note: visualizer defaults, oscilloscope toolbar, steadier stereo oscilloscope
   ///
   /// In en, this message translates to:
-  /// **'Fixed: pausing could skip to the next track.'**
-  String get releaseNotesV8Pause;
+  /// **'Visualizers: per-voice oscilloscope by default (line spectrum for streamed formats), grid and voice names switchable from the oscilloscope, and a steadier stereo oscilloscope.'**
+  String get releaseNotesV9Viz;
 
-  /// Release note: single-archive PSF albums unfold into tracks
+  /// Release note: PSF album track tap played another track
   ///
   /// In en, this message translates to:
-  /// **'PSF albums (PlayStation, Nintendo DS…) delivered as a single archive now unfold into their tracks, also when added to the queue.'**
-  String get releaseNotesV8Psf;
+  /// **'Fixed: tapping a track of some PSF albums could play another one.'**
+  String get releaseNotesV9PsfTrack;
 
-  /// Release note: artist tracks tab lists tracks, not album archives
+  /// Release note: several playlists in one folder merge into one album
   ///
   /// In en, this message translates to:
-  /// **'Artist pages: the track list shows tracks again, not whole album archives.'**
-  String get releaseNotesV8ArtistTracks;
+  /// **'A folder holding several playlists now forms one album with all their tracks, without duplicates.'**
+  String get releaseNotesV9Playlists;
 
-  /// Release note: N64 voices, piano auto-frame, artwork background fixes
+  /// Release note: missing Amiga length/author retried after a week
   ///
   /// In en, this message translates to:
-  /// **'Visualizers: Nintendo 64 voices are shown and muted correctly, the piano reframes itself for each song, and the artwork background no longer vanishes.'**
-  String get releaseNotesV8VizFixes;
-
-  /// Release note: projectM real frame rate, two hidden presets
-  ///
-  /// In en, this message translates to:
-  /// **'projectM: presets follow the real frame rate (some reacted sluggishly), and two presets that never showed up now appear.'**
-  String get releaseNotesV8ProjectMFixes;
-
-  /// Release note: much faster cover loading
-  ///
-  /// In en, this message translates to:
-  /// **'Covers load much faster: a grid of albums fills in at once instead of one cover every second and a half.'**
-  String get releaseNotesV8Covers;
+  /// **'Amiga songs with no known length or author ask the server again after a week, instead of never.'**
+  String get releaseNotesV9AmigaInfo;
 
   /// No description provided for @releaseNotesDataReset.
   ///

@@ -374,7 +374,15 @@ typedef struct {
     uint64_t               out_pos;       /* frames rendered at `rate` */
     uint64_t               total_frames;
     unsigned               total_ms;
-    int64_t                ts_offset;     /* file native ts − synth counter (re-aligned by every seek) */
+    /* File time → synth counter: the file native ts `anchor_song` plays at
+     * synth counter `anchor_ctr`, and the file advances `speed` × faster
+     * than the counter from there. Re-anchored by every seek and every speed
+     * change. Speed = NATIVE playback speed: the events come sooner, the
+     * synth keeps its clock, so the pitch does not move. */
+    int64_t                anchor_song;
+    int64_t                anchor_ctr;
+    double                 speed;         /* 0 = 1× */
+    double                 out_frac;      /* sub-frame remainder of out_pos */
     int64_t                mute_applied;  /* generic_mute_mask last pushed */
     uint8_t                chan_prog[16]; /* piano « par instrument » */
     int                    remap_gm;      /* channel 1 used, channel 9 free: GM layout */
@@ -474,7 +482,9 @@ static void mt32_dispatch_now(Mt32Dec* d, const tml_message* m) {
  * and stays put across a fast-forward, while file times keep counting from
  * the start: the offset, recomputed by every seek, realigns the two. */
 static inline uint32_t mt32_file_ts(const Mt32Dec* d, const tml_message* m) {
-    int64_t ts = (int64_t)m->time * (MT32_NATIVE_RATE / 1000) - d->ts_offset;
+    const double sp = d->speed > 0.0 ? d->speed : 1.0;
+    int64_t ts = d->anchor_ctr
+               + (int64_t)((double)((int64_t)m->time * (MT32_NATIVE_RATE / 1000) - d->anchor_song) / sp);
     return ts > 0 ? (uint32_t)ts : 0u;
 }
 
@@ -834,7 +844,11 @@ static uint64_t mt32_read(RewampDecoder* rd, float* out, uint64_t frameCount) {
         if (d->next != NULL) rewamp_decoder_activity();
         d->synth->render(out + done * 2, (Bit32u)chunk);
         done += chunk;
-        d->out_pos += chunk;
+        /* out_pos is SONG time: it advances `speed` × the rendered frames. */
+        d->out_frac += (double)chunk * (d->speed > 0.0 ? d->speed : 1.0);
+        uint64_t whole = (uint64_t)d->out_frac;
+        d->out_frac -= (double)whole;
+        d->out_pos += whole;
         if (d->next == NULL && d->out_pos >= d->total_frames) break;
     }
     mt32_poll_notes(d);
@@ -871,11 +885,25 @@ static void mt32_seek(RewampDecoder* rd, uint64_t frameIndex) {
         d->next = d->next->next;
     }
     d->out_pos = frameIndex;
+    d->out_frac = 0.0;
     /* Realign: the event due at the target must play at the synth's NOW —
      * forward seeks left the synth counter at the departure point, and the
      * next 22 seconds of the file waited for 22 seconds of rendering. */
-    d->ts_offset = (int64_t)targetMs * (MT32_NATIVE_RATE / 1000)
-                 - (int64_t)d->synth->getInternalRenderedSampleCount();
+    d->anchor_song = (int64_t)targetMs * (MT32_NATIVE_RATE / 1000);
+    d->anchor_ctr  = (int64_t)d->synth->getInternalRenderedSampleCount();
+}
+
+/* Native speed: re-anchor at the synth's NOW, so what was already queued
+ * keeps its timestamp and only what follows moves. */
+static int mt32_set_speed(RewampDecoder* rd, double speed) {
+    Mt32Dec* d = (Mt32Dec*)rd;
+    if (!d || !d->synth || speed < 0.2 || speed > 3.0) return 0;
+    const double old = d->speed > 0.0 ? d->speed : 1.0;
+    const int64_t now = (int64_t)d->synth->getInternalRenderedSampleCount();
+    d->anchor_song += (int64_t)((double)(now - d->anchor_ctr) * old);
+    d->anchor_ctr = now;
+    d->speed = speed;
+    return 1;
 }
 
 static uint64_t mt32_length(RewampDecoder* rd) {
@@ -923,6 +951,7 @@ static const RewampPluginVTable g_mt32_vtable = {
     NULL, NULL, NULL, NULL, NULL,   /* pattern_* : MIDI has no tracker grid */
     mt32_probe_path,      /* probe_path: sysex sniff needs the whole file */
     1,                    /* noPrefixProbe */
+    mt32_set_speed,       /* native speed (event clock) */
 };
 
 extern "C" const RewampPluginVTable* rewamp_mt32_plugin(void) {

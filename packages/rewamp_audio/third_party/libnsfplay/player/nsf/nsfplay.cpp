@@ -22,6 +22,7 @@ namespace xgm
   NSFPlayer::NSFPlayer () : PlayerMSP ()
   {
     nsf = NULL;
+    rewamp_speed = 1.0; // REWAMP
 
     sc[APU] = (apu = new NES_APU());
     sc[DMC] = (dmc = new NES_DMC());
@@ -390,7 +391,8 @@ void NSFPlayer::SetPlayFreq (double r)
     silent_length = 0;
     playtime_detected = false;
     total_render = 0;
-    frame_render = (int)(rate)/60; // ‰‰‘tî•ñ‚ðXV‚·‚éŽüŠú
+    frame_render = (int)(rate)/60; /* REWAMP: un releve par trame de MORCEAU (la routine PLAY tourne `rewamp_speed` fois plus vite) */
+    if (rewamp_speed > 0.0) { frame_render = (int)((double)frame_render / rewamp_speed); if (frame_render < 1) frame_render = 1; }
     apu_clock_rest = 0.0;
     cpu_clock_rest = 0.0;
 
@@ -526,7 +528,7 @@ void NSFPlayer::SetPlayFreq (double r)
         return;
 
       if (time_in_ms + nsf->GetFadeTime () >= nsf->GetLength ())
-        fader.FadeStart (rate, nsf->GetFadeTime ());
+        fader.FadeStart (rate, (int)(nsf->GetFadeTime () / (rewamp_speed > 0.0 ? rewamp_speed : 1.0))); /* REWAMP: le fondu est un temps de MORCEAU, FadeStart compte en sortie */
     }
   }
 
@@ -570,11 +572,23 @@ void NSFPlayer::SetPlayFreq (double r)
         fader.Skip(); // execute CPU/APU ticks via rconv.Skip
       }
 
-      time_in_ms += (int)(1000 * length / rate * mult_speed / 256) ;
+      time_in_ms += (int)(1000.0 * (double)length / rate * mult_speed / 256 * rewamp_speed) /* REWAMP: double (1000*length debordait UINT32 au-dela de ~97 s de saut) et temps du MORCEAU */ ;
       CheckTerminal ();
       DetectLoop ();
     }
     return length;
+  }
+
+  // REWAMP: vitesse de lecture. La routine PLAY est appelee `speed` fois plus
+  // souvent (NES_CPU), le temps du lecteur (fondu, fin) avance x vitesse, et
+  // l'etat des voies est releve une fois par trame de MORCEAU.
+  void NSFPlayer::RewampSetSpeed (double speed)
+  {
+    if (!(speed > 0.0)) speed = 1.0;
+    rewamp_speed = speed;
+    cpu.SetPlaySpeed (speed);
+    frame_render = (int)((double)((int)(rate)/60) / speed);
+    if (frame_render < 1) frame_render = 1;
   }
 
   void NSFPlayer::FadeOut (int fade_in_ms)
@@ -944,7 +958,7 @@ void NSFPlayer::SetPlayFreq (double r)
         //TODO:  MODIZER changes end / YOYOFR
     }
 
-    time_in_ms += (int)(1000 * length / rate * mult_speed / 256);
+    time_in_ms += (int)(1000.0 * (double)length / rate * mult_speed / 256 * rewamp_speed) /* REWAMP: double (1000*length debordait UINT32 au-dela de ~97 s de saut) et temps du MORCEAU */;
 
     CheckTerminal ();
     DetectLoop ();

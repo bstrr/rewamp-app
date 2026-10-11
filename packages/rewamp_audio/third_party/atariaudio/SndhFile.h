@@ -38,6 +38,11 @@ public:
 	int		GetDefaultSubsong() const { return m_defaultSubSong; }
 	bool	GetSubsongInfo(int subSongId, SubSongInfo& out) const;
 	bool	InitSubSong(int subSongId);
+	// rewamp: native playback speed — the driver tick comes 1/speed as far
+	// apart; the YM2149, the STE DAC and the MFP timers (which also make
+	// SOUND: SID voices, digidrums) keep their clock, so pitch and timbre
+	// do not move. 1 = upstream, bit for bit.
+	void	RewampSetSpeed(double speed) { m_rewampSpeed = speed > 0.0 ? speed : 1.0; }
 
 	/*
 	 * Main audio rendering function.
@@ -78,6 +83,8 @@ private:
 	int		m_innerSamplePos;
 	int		m_frame;
 	int		m_frameCount;
+	double	m_rewampSpeed = 1.0;
+	double	m_rewampTickFrac = 0.0;
 	int		m_loopCount;
 	uint32_t m_hostReplayRate;
 

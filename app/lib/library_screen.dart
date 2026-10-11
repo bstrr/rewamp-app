@@ -8,6 +8,7 @@ import 'hover_grow.dart';
 import 'local_badge.dart';
 import 'artwork_image.dart';
 import 'local_db.dart';
+import 'user_settings.dart';
 import 'rewamp_db.dart'
     show OnPlayAlbum, OnPlayLocalAlbum, RewampDb, SearchResult, Playlist;
 import 'browse_screen.dart' show PlaylistTracksScreen;
@@ -54,6 +55,10 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   List<LibraryItem> _recent = [];
+  /// Tout ce que la bibliothèque tient, avant le masquage éventuel des
+  /// entrées qui ne sont pas sur cet appareil (UserSettings.libraryHideElsewhere).
+  List<LibraryItem> _all = [];
+  int _mineCount = 0;
   /// Entrées locales dont le fichier n'est pas ICI — voir library_presence.
   Set<String> _missing = const {};
   int _playlistCount  = 0;
@@ -72,13 +77,38 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void initState() {
     super.initState();
     LocalDb.instance.addListener(_onDbChanged);
+    UserSettings.instance.addListener(_onSettings);
     _load();
   }
 
   @override
   void dispose() {
     LocalDb.instance.removeListener(_onDbChanged);
+    UserSettings.instance.removeListener(_onSettings);
     super.dispose();
+  }
+
+  // L'écran reste monté sous les autres: une bascule faite dans Morceaux ou
+  // Albums doit se voir ici au retour (récents ET compteurs).
+  bool _hideElsewhere = UserSettings.instance.libraryHideElsewhere;
+  void _onSettings() {
+    final h = UserSettings.instance.libraryHideElsewhere;
+    if (h == _hideElsewhere || !mounted) return;
+    setState(() { _hideElsewhere = h; _applyView(); });
+  }
+
+  /// Récents et compteurs depuis [_all], moins ce qui n'est pas ici quand le
+  /// masquage est actif — les compteurs disent ce que l'écran derrière montre.
+  void _applyView() {
+    final shown = _hideElsewhere
+        ? [for (final i in _all) if (!_missing.contains(i.refId)) i]
+        : _all;
+    _recent        = shown;
+    _playlistCount =
+        _mineCount + shown.where((i) => i.type == 'playlist').length;
+    _artistCount   = shown.where((i) => i.type == 'artist').length;
+    _albumCount    = shown.where((i) => i.type == 'album').length;
+    _trackCount    = shown.where((i) => i.type == 'track').length;
   }
 
   void _onDbChanged() => _load();
@@ -103,15 +133,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final missing = await missingLocalLibraryRefs(all);
     if (!mounted) return;
     setState(() {
-      _error         = null;
-      _recent        = all;
-      _missing       = missing;
-      _playlistCount =
-          mine.length + all.where((i) => i.type == 'playlist').length;
-      _artistCount   = all.where((i) => i.type == 'artist').length;
-      _albumCount    = all.where((i) => i.type == 'album').length;
-      _trackCount    = all.where((i) => i.type == 'track').length;
-      _loading       = false;
+      _error     = null;
+      _all       = all;
+      _mineCount = mine.length;
+      _missing   = missing;
+      _applyView();
+      _loading   = false;
     });
   }
 
@@ -144,7 +171,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final cs   = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.navLibrary)),
+      appBar: AppBar(
+        title: Text(l10n.navLibrary),
+        actions: [
+          // Seulement quand il y a quelque chose à masquer — ou que c'est déjà
+          // masqué, sinon on ne pourrait plus le défaire.
+          if (_missing.isNotEmpty || _hideElsewhere)
+            IconButton(
+              isSelected: _hideElsewhere,
+              icon: const Icon(Icons.devices_other),
+              selectedIcon: const Icon(Icons.phonelink_off),
+              tooltip: l10n.libraryHideElsewhere,
+              onPressed: () => UserSettings.instance.libraryHideElsewhere =
+                  !_hideElsewhere,
+            ),
+        ],
+      ),
       body: _error != null
           ? _ErrorRetry(message: _error!, onRetry: () {
               setState(() { _error = null; _loading = true; });

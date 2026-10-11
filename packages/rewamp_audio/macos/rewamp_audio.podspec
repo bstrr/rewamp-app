@@ -735,6 +735,8 @@ Pod::Spec.new do |s|
       # link stubs for the force-loaded-but-unused subsystems (boost::filesystem,
       # libcurl, AYM dumpers). See rewamp_zxtune_stubs.cpp.
       printf '%s\n#include "../../../src/rewamp_zxtune_stubs.cpp"\n' "$DEFS" > "$WRAP/zz_rewamp_zxtune_stubs.cpp"
+      # SAM Coupé .cop en code Z80 brut (z80ex + Devices::SAA de zxtune).
+      printf '%s\n#include "../../../src/rewamp_plugin_samcop.cpp"\n' "$DEFS" > "$WRAP/zz_rewamp_samcop_plugin.cpp"
       # libchpconv: .chp (Amstrad CPC ChipTracker) → YM3 (plain C).
       printf '#include "../../../third_party/libchpconv/chp2ym.c"\n' > "$WRAP/zz_chp2ym.c"
     SH
@@ -1178,6 +1180,39 @@ Pod::Spec.new do |s|
         printf '#include "../../../src/tiatracker/%s.cpp"\n' "$n" > "$WRAP/${n}.cpp"
       done
       printf '#include "../../../src/rewamp_plugin_tiatracker.cpp"\n' > "$WRAP/zz_rewamp_tiatracker_plugin.cpp"
+    SH
+  end
+
+  # --- NoiseTracker GS 1.x: Apple IIGS « FTA MODULEFILE » ------------------------
+  # Enabled by default; opt out with REWAMP_WITH_NTGS=0. Our own player, written
+  # from the disassembly of the original program (docs/re/noisetracker_gs/
+  # NTGS_SPEC.md) — one C file, no library, no search path.
+  if ENV['REWAMP_WITH_NTGS'] != '0'
+    preprocessor << 'REWAMP_WITH_NTGS=1'
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      WRAP="$CLASSES/ntgs_cores"
+      rm -rf "$WRAP"; mkdir -p "$WRAP"
+      printf '#include "../../../src/rewamp_plugin_ntgs.c"\n' > "$WRAP/zz_rewamp_ntgs_plugin.c"
+    SH
+  end
+
+  # --- Ron Klaren: Amiga .rk (NostalgicPlayer port) ----------------------------
+  # Enabled by default; opt out with REWAMP_WITH_RONKLAREN=0. C++ port of
+  # NostalgicPlayer's Ron Klaren player (MIT, Thomas Neumann) under
+  # third_party/ronklaren, everything in `namespace ronklaren`, plus a 4-voice
+  # Paula written in the plugin. No search path: the plugin includes
+  # "../third_party/ronklaren/RonKlarenWorker.h" relative to itself.
+  if ENV['REWAMP_WITH_RONKLAREN'] != '0'
+    preprocessor << 'REWAMP_WITH_RONKLAREN=1'
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      WRAP="$CLASSES/ronklaren_cores"
+      rm -rf "$WRAP"; mkdir -p "$WRAP"
+      printf '#include "../../../third_party/ronklaren/RonKlarenWorker.cpp"\n' > "$WRAP/RonKlarenWorker.cpp"
+      printf '#include "../../../src/rewamp_plugin_ronklaren.cpp"\n' > "$WRAP/zz_rewamp_ronklaren_plugin.cpp"
     SH
   end
 

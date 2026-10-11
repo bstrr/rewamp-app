@@ -64,6 +64,9 @@ namespace xgm
     Fader fader;
 
     NES_CPU cpu;
+    // REWAMP: vitesse de lecture (temps du MORCEAU = sortie x vitesse).
+    double rewamp_speed;
+    void RewampSetSpeed(double speed); // REWAMP: CPU (periode PLAY) + temps + releves
     NES_MEM mem;
     NES_BANK bank;
     NSF2_Vectors nsf2_vectors;

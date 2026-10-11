@@ -81,16 +81,22 @@ static inline int rewamp_psf_fade_active(void) {
     return g_force_loop_mode == 0 && g_crossfade_seconds <= 0.0;
 }
 
-static inline void rewamp_psf_fade_apply(float* out, uint64_t frames,
-                                         int channels, uint64_t basePos,
-                                         uint64_t totalFrames,
-                                         uint64_t fadeFrames) {
+/* Vitesse de lecture native: `basePos`, `totalFrames` et `fadeFrames` sont
+ * en temps du MORCEAU, et la trame de sortie i y tombe à basePos + i×speed —
+ * la rampe finit donc pile à la fin du morceau quelle que soit la vitesse.
+ * speed = 1: rewamp_psf_fade_apply, à l'identique. */
+static inline void rewamp_psf_fade_apply_speed(float* out, uint64_t frames,
+                                               int channels, uint64_t basePos,
+                                               uint64_t totalFrames,
+                                               uint64_t fadeFrames, double speed) {
     if (!out || fadeFrames == 0 || frames == 0 || channels <= 0) return;
     if (!rewamp_psf_fade_active()) return;
+    if (speed <= 0.0) speed = 1.0;
     const uint64_t start = totalFrames - fadeFrames;   /* début du fondu */
-    if (basePos + frames <= start) return;             /* encore en pleine musique */
+    const uint64_t span = speed == 1.0 ? frames : (uint64_t)((double)frames * speed);
+    if (basePos + span <= start) return;               /* encore en pleine musique */
     for (uint64_t i = 0; i < frames; i++) {
-        const uint64_t pos = basePos + i;
+        const uint64_t pos = basePos + (speed == 1.0 ? i : (uint64_t)((double)i * speed));
         if (pos < start) continue;
         const double gain = rewamp_psf_fade_gain_at(pos, totalFrames, fadeFrames);
         float* f = out + i * (uint64_t)channels;
@@ -100,8 +106,16 @@ static inline void rewamp_psf_fade_apply(float* out, uint64_t frames,
     rewamp_channel_data_fade_recent(
         (int)frames,
         (float)rewamp_psf_fade_gain_at(basePos, totalFrames, fadeFrames),
-        (float)rewamp_psf_fade_gain_at(basePos + frames - 1, totalFrames,
-                                       fadeFrames));
+        (float)rewamp_psf_fade_gain_at(basePos + (span ? span - 1 : 0),
+                                       totalFrames, fadeFrames));
+}
+
+static inline void rewamp_psf_fade_apply(float* out, uint64_t frames,
+                                         int channels, uint64_t basePos,
+                                         uint64_t totalFrames,
+                                         uint64_t fadeFrames) {
+    rewamp_psf_fade_apply_speed(out, frames, channels, basePos, totalFrames,
+                                fadeFrames, 1.0);
 }
 
 #ifdef __cplusplus

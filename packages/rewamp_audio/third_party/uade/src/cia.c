@@ -98,15 +98,55 @@ static void RethinkICRB(void)
 
 static int lastdiv10;
 
+/* rewamp: native playback speed. The E clock (one CIA tick per DIV10
+ * cycles) runs `speed` times faster while Paula keeps the CPU clock, so a
+ * CIA-timed replay speeds up without changing pitch. Cycles are counted in
+ * sub-cycles (cia_mul per cycle) and a tick lasts cia_div of them: at 1x,
+ * mul = 1 and div = DIV10, i.e. upstream bit for bit. The requested speed
+ * (written by the host thread) is adopted HERE, on the emulation thread,
+ * after the elapsed time has been counted at the old rate; every caller of
+ * CIA_update() reschedules with CIA_calctimers() right after. */
+extern volatile double uade_rewamp_speed;
+static double cia_speed = 1.0;
+static long cia_mul = 1;
+static long cia_div = DIV10;
+
+static int cia_cycles(long long sub)
+{
+    long long c = (sub + cia_mul - 1) / cia_mul;
+    return c > 0x7fffffffLL ? 0x7fffffff : (int)c;
+}
+
+static void cia_adopt_speed(void)
+{
+    double s = uade_rewamp_speed;
+    if (s == cia_speed) return;
+    long nmul = (s == 1.0) ? 1 : 4096;
+    long ndiv = (s == 1.0) ? DIV10 : (long)(DIV10 * 4096 / s + 0.5);
+    /* the remainders move to the new units, in proportion */
+    div10     = (int)((long long)div10     * ndiv / cia_div);
+    lastdiv10 = (int)((long long)lastdiv10 * ndiv / cia_div);
+    cia_mul = nmul; cia_div = ndiv; cia_speed = s;
+}
+
 static void CIA_update(void)
 {
-    unsigned long int ccount = cycles - eventtab[ev_cia].oldcycles + lastdiv10;
-    unsigned long int ciaclocks = ccount / DIV10;
+    /* Upstream adds the remainder of the update BEFORE last (lastdiv10)
+     * while CIA_calctimers() schedules with the current one (div10): at 1x
+     * that can only lose a tick, never gain one. Scaled, the schedule is
+     * rounded UP to a whole cycle (< cia_mul sub-cycles late), so the
+     * current remainder must be used or the lag + the rounding can count
+     * one tick too many - which the asserts below turn into an abort.
+     * With div10: ticks = n + 1 + floor(late / cia_div) = n + 1, since
+     * late < cia_mul < cia_div for any speed below 5. */
+    unsigned long int ccount = (cycles - eventtab[ev_cia].oldcycles) * cia_mul
+			       + (cia_mul == 1 ? lastdiv10 : div10);
+    unsigned long int ciaclocks = ccount / cia_div;
 
     int aovfla = 0, aovflb = 0, bovfla = 0, bovflb = 0;
 
     lastdiv10 = div10;
-    div10 = ccount % DIV10;
+    div10 = ccount % cia_div;
 
     /* CIA A timers */
     if ((ciaacra & 0x21) == 0x01) {
@@ -161,6 +201,7 @@ static void CIA_update(void)
 	ciabtb = ciablb;
 	if (ciabcrb & 0x8) ciabcrb &= ~1;
     }
+    cia_adopt_speed();
 }
 
 static void CIA_calctimers(void)
@@ -170,7 +211,7 @@ static void CIA_calctimers(void)
     eventtab[ev_cia].oldcycles = cycles;
 
     if ((ciaacra & 0x21) == 0x01) {
-	ciaatimea = (DIV10-div10) + DIV10*ciaata;
+	ciaatimea = cia_cycles((long long)(cia_div-div10) + (long long)cia_div*ciaata);
     }
     if ((ciaacrb & 0x61) == 0x41) {
 	/* Timer B will not get any pulses if Timer A is off. */
@@ -179,16 +220,16 @@ static void CIA_calctimers(void)
 	     * one pulse, it will not underflow. */
 	    if (ciaatb == 0 || (ciaacra & 0x8) == 0) {
 		/* Otherwise, we can determine the time of the underflow. */
-		ciaatimeb = ciaatimea + ciaala * DIV10 * ciaatb;
+		ciaatimeb = ciaatimea + cia_cycles((long long)ciaala * cia_div * ciaatb);
 	    }
 	}
     }
     if ((ciaacrb & 0x61) == 0x01) {
-	ciaatimeb = (DIV10-div10) + DIV10*ciaatb;
+	ciaatimeb = cia_cycles((long long)(cia_div-div10) + (long long)cia_div*ciaatb);
     }
 
     if ((ciabcra & 0x21) == 0x01) {
-	ciabtimea = (DIV10-div10) + DIV10*ciabta;
+	ciabtimea = cia_cycles((long long)(cia_div-div10) + (long long)cia_div*ciabta);
     }
     if ((ciabcrb & 0x61) == 0x41) {
 	/* Timer B will not get any pulses if Timer A is off. */
@@ -197,12 +238,12 @@ static void CIA_calctimers(void)
 	     * one pulse, it will not underflow. */
 	    if (ciabtb == 0 || (ciabcra & 0x8) == 0) {
 		/* Otherwise, we can determine the time of the underflow. */
-		ciabtimeb = ciabtimea + ciabla * DIV10 * ciabtb;
+		ciabtimeb = ciabtimea + cia_cycles((long long)ciabla * cia_div * ciabtb);
 	    }
 	}
     }
     if ((ciabcrb & 0x61) == 0x01) {
-	ciabtimeb = (DIV10-div10) + DIV10*ciabtb;
+	ciabtimeb = cia_cycles((long long)(cia_div-div10) + (long long)cia_div*ciabtb);
     }
     eventtab[ev_cia].active = (ciaatimea != -1 || ciaatimeb != -1
 			       || ciabtimea != -1 || ciabtimeb != -1);
@@ -618,6 +659,8 @@ void CIA_reset(void)
     ciaala = ciaalb = ciabla = ciablb = ciaata = ciaatb = ciabta = ciabtb = 0xFFFF;
     div10 = 0;
     lastdiv10 = 0;
+    cia_speed = 1.0; cia_mul = 1; cia_div = DIV10;
+    cia_adopt_speed();
     CIA_calctimers();
     ciabpra = 0x8C;
 

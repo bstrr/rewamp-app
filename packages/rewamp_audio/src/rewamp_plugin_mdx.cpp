@@ -121,7 +121,10 @@ struct RewampDecoder {
     void*     parser;      // the async parser instance (a singleton, in truth)
     uint64_t  totalFrames; // single-pass length; 0 = unknown
     uint64_t  framePos;
-    int64_t   audioClockUs; // how far do_pcm8() has rendered
+    int64_t   audioClockUs; // how far do_pcm8() has rendered, in SONG time
+    double    speed;        // native playback speed, 0 = 1x
+    double    clockFrac;    // sub-microsecond remainder of audioClockUs
+    double    posFrac;      // sub-frame remainder of framePos
     int       finished;
     char      path[4096];
 };
@@ -152,9 +155,20 @@ static int mdx_advance_tick(RewampDecoder* dec) {
     // catches up. (Upstream's mdx_parse_mml_ym2151 does exactly this with two
     // timevals; elapsed_time is in microseconds despite its "mili-second"
     // comment — mdx_get_length divides it by 1000 to get ms.)
+    // Native speed: each do_pcm8() still renders 1 ms of AUDIO (the chips keep
+    // their clock, so the pitch does not move) but covers speed × 1 ms of the
+    // song. A seek's discard-render runs at 1×.
+    const double sp = (s_discard || dec->speed <= 0.0) ? 1.0 : dec->speed;
     while (dec->audioClockUs < dec->mdx->elapsed_time) {
         do_pcm8(0);
-        dec->audioClockUs += MDX_TICK_US;
+        if (sp == 1.0) {
+            dec->audioClockUs += MDX_TICK_US;
+        } else {
+            dec->clockFrac += MDX_TICK_US * sp;
+            int64_t whole = (int64_t)dec->clockFrac;
+            dec->clockFrac -= (double)whole;
+            dec->audioClockUs += whole;
+        }
     }
     return 1;
 }
@@ -236,7 +250,11 @@ static uint64_t mdx_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     }
 
     uint64_t got = fifo_pop(out, (size_t)frameCount);
-    dec->framePos += got;
+    // framePos is SONG time: speed × the frames handed out.
+    dec->posFrac += (double)got * (dec->speed > 0.0 ? dec->speed : 1.0);
+    uint64_t whole = (uint64_t)dec->posFrac;
+    dec->posFrac -= (double)whole;
+    dec->framePos += whole;
     return got;
 }
 
@@ -267,6 +285,14 @@ static void mdx_seek_impl(RewampDecoder* dec, uint64_t frameIndex) {
     s_discard = 0;
     fifo_reset();
     dec->framePos = frameIndex;
+    dec->posFrac = 0.0;
+}
+
+// Native speed (see mdx_advance_tick).
+static int mdx_set_speed(RewampDecoder* dec, double speed) {
+    if (!dec || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    return 1;
 }
 
 static uint64_t mdx_length(RewampDecoder* dec) {
@@ -295,6 +321,14 @@ static const RewampPluginVTable kMdxVTable = {
     mdx_seek_impl,
     mdx_length,
     mdx_close_impl,
+    NULL,             /* configure_loop */
+    0,                /* supportsNativeFadeout */
+    NULL,             /* engine_id */
+    NULL,             /* param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL,             /* probe_path */
+    0,                /* noPrefixProbe */
+    mdx_set_speed,    /* vitesse native */
 };
 
 extern "C" const RewampPluginVTable* rewamp_mdx_plugin(void) { return &kMdxVTable; }

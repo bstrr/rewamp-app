@@ -170,12 +170,20 @@ __inline static void volume(SGCSEQ *THIS_, Uint32 v)
 	}
 }
 
+/* rewamp: native playback speed (see m_hes.c) - the frame that calls the
+ * player lasts 1/speed as many Z80 cycles. */
+extern double nez_rewamp_speed;
 static void vsync_setup(SGCSEQ *THIS_)
 {
 	Int32 cycles;
 	THIS_->cpfrem += THIS_->cpf;
 	cycles = THIS_->cpfrem >> SHIFT_CPS;
 	THIS_->cpfrem &= (1 << SHIFT_CPS) - 1;
+	if (nez_rewamp_speed != 1.0)
+	{
+		cycles = (Int32)((double)cycles / nez_rewamp_speed + 0.5);
+		if (cycles < 1) cycles = 1;
+	}
 	kmevent_settimer(&THIS_->kme, THIS_->vsync_id, cycles);
 }
 

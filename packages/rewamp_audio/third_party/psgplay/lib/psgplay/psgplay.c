@@ -570,6 +570,15 @@ struct psgplay *psgplay_init(const void *data, size_t size,
 		.arg = pp
 	};
 
+	{
+		/* rewamp: the replay timer; an SNDH without a timer tag is
+		 * played at 50 Hz on timer C, the SNDH convention */
+		struct sndh_timer timer;
+		pp->rewamp_replay_timer =
+			!sndh_tag_timer(&timer, data, size) ? 'C' :
+			timer.type == SNDH_TIMER_V ? 'V' : (int)timer.type;
+	}
+
 	pp->record.play = RECORD_PLAY_DEFAULT;
 	pp->downsample.stereo_frequency = stereo_frequency;
 	/* rewamp: champ par champ, pas `pp->machine = (struct machine) { ... }`.
@@ -712,6 +721,15 @@ ssize_t psgplay_read_digital(struct psgplay *pp,
 		return -EINVAL;
 
 	return psgplay_read_digital__(pp, buffer, count);
+}
+
+bool psgplay_rewamp_speed(struct psgplay *pp, double speed)
+{
+	if (!pp || pp->rewamp_replay_timer < 'A' || pp->rewamp_replay_timer > 'D')
+		return false;
+	cf68901_rewamp_speed(&pp->machine.mfp.cf68901,
+		pp->rewamp_replay_timer, speed);
+	return true;
 }
 
 void psgplay_free(struct psgplay *pp)

@@ -505,6 +505,16 @@ static void xmp_pattern_cursor(RewampDecoder* dec, int* order, int* row) {
     if (row)   *row   = dec ? dec->curRow   : -1;
 }
 
+/* Vitesse NATIVE: le facteur de tempo RELATIF de libxmp (relatif au facteur
+ * propre du module) — les lignes défilent plus vite, la hauteur ne bouge pas.
+ * Son seek et sa durée viennent du balayage fait à l'ouverture, à 1×: déjà en
+ * temps du MORCEAU. libxmp refuse un tick qui déborderait son tampon (les
+ * vitesses les plus lentes): on rend 0, la source rééchantillonne. */
+static int xmp_plugin_set_speed(RewampDecoder* dec, double speed) {
+    if (dec == NULL || dec->ctx == NULL || speed <= 0.0) return 0;
+    return xmp_set_tempo_factor_relative(dec->ctx, 1.0 / speed) == 0 ? 1 : 0;
+}
+
 static const RewampPluginVTable g_xmp_vtable = {
     "libxmp",
     xmp_plugin_probe,
@@ -526,6 +536,7 @@ static const RewampPluginVTable g_xmp_vtable = {
     1,                          /* noPrefixProbe: the content test decides, and
                                  * probing the Amiga prefix token would parse
                                  * the whole file a second time for nothing. */
+    xmp_plugin_set_speed,       /* vitesse native (tempo relatif) */
 };
 
 const RewampPluginVTable* rewamp_xmp_plugin(void) {

@@ -21,6 +21,10 @@
 
 #define ASAP_RING_SIZE (SOUND_BUFFER_SIZE_SAMPLE * 4 * 2)
 
+/* Défini par le patch rewamp 0002 d'asap.c (patches/asap/): pas dans asap.h,
+ * que sync_asap.sh recopie tel quel depuis l'amont. */
+void ASAP_RewampSetSpeed(ASAP *self, double speed, int songDurationMs, int songPosMs);
+
 struct RewampDecoder {
     ASAP*    asap;
     int      voices;        /* 4 (mono POKEY) or 8 (stereo/dual POKEY) */
@@ -30,6 +34,8 @@ struct RewampDecoder {
     int64_t  lastMuteMask;  /* applied generic_mute_mask snapshot */
     int16_t* pcm;           /* int16 scratch */
     int      pcmFrames;
+    double   speed;         /* vitesse native (0 = 1×) */
+    double   songMs;        /* position dans le MORCEAU (fin, seek) */
 };
 
 /* Extensions ASAP owns (Modizer's SUPPORTED_FILETYPE_ASAP). NB: '.mpt' here is
@@ -241,6 +247,7 @@ static uint64_t asap_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
                                        wantBytes, ASAPSampleFormat_S16_L_E);
     const int frames = gotBytes / (dec->outChannels * (int)sizeof(int16_t));
     if (frames <= 0) return 0;
+    dec->songMs += frames * 1000.0 / ASAP_SAMPLE_RATE * (dec->speed > 0.0 ? dec->speed : 1.0);
 
     const float scale = 1.0f / 32768.0f;
     for (int i = 0; i < frames * dec->outChannels; i++)
@@ -258,8 +265,40 @@ static uint64_t asap_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
 
 static void asap_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->asap) return;
-    const int ms = (int)(frameIndex * 1000ull / ASAP_SAMPLE_RATE);
-    ASAP_Seek(dec->asap, ms);
+    const double sp = dec->speed > 0.0 ? dec->speed : 1.0;
+    const double songMs = (double)frameIndex * 1000.0 / ASAP_SAMPLE_RATE;
+    /* ASAP_Seek compte en SORTIE depuis le début (rejoue à la vitesse en
+     * vigueur): cible du MORCEAU ÷ vitesse. Un retour en arrière relance le
+     * morceau, qui repose la fin à 1× ⇒ on la repose après. */
+    ASAP_Seek(dec->asap, (int)(songMs / sp + 0.5));
+    dec->songMs = songMs;
+    if (sp != 1.0) ASAP_RewampSetSpeed(dec->asap, sp, dec->durationMs, (int)songMs);
+}
+
+/* Vitesse NATIVE (patch REWAMP d'asap.c): la routine de jeu est appelée tous
+ * les 114 × fastplay ÷ vitesse cycles, la POKEY garde son horloge — tempo
+ * changé, hauteur conservée. La fin (comptée en sortie par ASAP) est reposée
+ * d'après le reste du morceau. */
+static int asap_set_speed(RewampDecoder* dec, double speed) {
+    /* RALENTIR seulement. Le 6502 tourne à son horloge réelle et la routine
+     * de jeu en consomme une bonne part par trame: à 2× il faudrait deux
+     * exécutions COMPLÈTES par trame, impossible dès qu'elle pèse plus d'une
+     * demi-trame (les appels sont alors différés, le tempo ne double pas).
+     * Mesuré sur 16 SAP de types B/C (registres POKEY relevés en temps du
+     * morceau): 0,2× et 0,5× ⇒ 90-100 %, 2× ⇒ 30-100 %, 3× ⇒ 16-100 %.
+     * Au-dessus de 1×, on refuse: la source rééchantillonne (hauteur
+     * comprise), ce qui vaut mieux qu'une accélération irrégulière. */
+    if (dec && dec->asap && speed > 1.0) {
+        if (dec->speed > 0.0 && dec->speed != 1.0) {
+            dec->speed = 1.0;
+            ASAP_RewampSetSpeed(dec->asap, 1.0, dec->durationMs, (int)dec->songMs);
+        }
+        return 0;
+    }
+    if (!dec || !dec->asap || speed < 0.2 || speed > 3.0) return 0;
+    dec->speed = speed;
+    ASAP_RewampSetSpeed(dec->asap, speed, dec->durationMs, (int)dec->songMs);
+    return 1;
 }
 
 static uint64_t asap_length(RewampDecoder* dec) {
@@ -282,6 +321,10 @@ static const RewampPluginVTable kAsapVTable = {
     asap_seek,
     asap_length,
     asap_close,
+    NULL, 0, NULL, NULL,          /* configure_loop … param_changed */
+    NULL, NULL, NULL, NULL, NULL, /* pattern view */
+    NULL, 0,                      /* probe_path, noPrefixProbe */
+    asap_set_speed,               /* vitesse native (appel de la routine) */
 };
 
 const RewampPluginVTable* rewamp_asap_plugin(void) { return &kAsapVTable; }

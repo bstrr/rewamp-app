@@ -346,7 +346,9 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
       //  - everything else: the native container probe (NSF/GBS header).
       List<SubsongInfo> subs;
       final ext = _extOf(localPath);
-      if (_kSidExts.contains(ext)) {
+      // Un `.sid` SidMon 1 (Amiga, sans magie PSID/RSID) est à UADE: sa liste
+      // vient de la songdb, pas du STIL C64 (UadeInfoService.isSidMon1At).
+      if (_kSidExts.contains(ext) && !UadeInfoService.isSidMon1At(localPath)) {
         subs = await _sidSubsongs(localPath);
       } else if (UadeInfoService.isUadeFileAt(localPath)) {
         final info = await UadeInfoService.instance.forPath(localPath);

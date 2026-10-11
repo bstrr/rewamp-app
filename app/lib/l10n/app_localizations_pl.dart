@@ -856,6 +856,17 @@ class AppLocalizationsPl extends AppLocalizations {
   String get engineDescOrganya => 'Cave Story .org — własny silnik Pixela';
 
   @override
+  String get engineDescNtgs =>
+      'Apple IIGS (Ensoniq 5503) — moduły NoiseTracker GS';
+
+  @override
+  String get engineDescRonKlaren => 'Amiga — moduły Ron Klaren (.rk)';
+
+  @override
+  String get engineDescSamCop =>
+      'SAM Coupé — programy Z80 sterujące układem SAA1099 (.cop)';
+
+  @override
   String get engineDescPxtone => 'Tracker Pixela — .ptcop/.pttune';
 
   @override
@@ -1394,6 +1405,19 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get voicesTitle => 'Głosy';
+
+  @override
+  String get voicesSpeed => 'Prędkość';
+
+  @override
+  String get voicesSpeedNormal => 'Normalna prędkość';
+
+  @override
+  String get voicesSpeedNative => 'Tempo silnika — wysokość bez zmian';
+
+  @override
+  String get voicesSpeedResampled =>
+      'Przepróbkowane — zmienia się też wysokość';
 
   @override
   String get voicesNone => 'Brak głosów dla tego utworu.';
@@ -2552,6 +2576,9 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get libraryOnAnotherDevice => 'Na innym urządzeniu';
+
+  @override
+  String get libraryHideElsewhere => 'Ukryj elementy spoza tego urządzenia';
 
   @override
   String get localLibraryEmpty =>
@@ -4197,56 +4224,48 @@ class AppLocalizationsPl extends AppLocalizations {
   String get releaseNotesTitle => 'Nowości';
 
   @override
-  String get releaseNotesV8Windows =>
-      'Rewamp działa teraz w systemie Windows, ze wszystkimi silnikami i wizualizacjami, łącznie z projectM.';
+  String get releaseNotesV9Speed =>
+      'Szybkość odtwarzania od 0,2× do 3× w panelu Głosy. Większość silników zmienia tempo, zachowując wysokość dźwięku; pozostałe przepróbkowują.';
 
   @override
-  String get releaseNotesV8Linux =>
-      'Linux: wizualizacje działają teraz także pod X11 (tryb gry Steam Deck), opcja „Zawsze na wierzchu” wraca tam, a zamknięcie okna nie powoduje już awarii aplikacji.';
+  String get releaseNotesV9Windows =>
+      'Windows: klawisze multimedialne i systemowe sterowanie multimediami (okienko głośności, pasek zadań) sterują odtwarzaniem, a wizualizacja pełnoekranowa wypełnia teraz cały ekran.';
 
   @override
-  String get releaseNotesV8Formats =>
-      'Odtwarzane są teraz pliki Game Boy .gbr i DefleMask .dmf.';
+  String get releaseNotesV9Formats =>
+      'Nowe odtwarzacze: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) i programy .cop z SAM Coupé.';
 
   @override
-  String get releaseNotesV8Smooth =>
-      'Płynniejszy odtwarzacz i wizualizacje: ekran nie jest już przerysowywany w całości przy każdej zmianie pozycji.';
+  String get releaseNotesV9Amiga =>
+      'Amiga i Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory i niektóre moduły Maximum Effect są teraz odtwarzane.';
 
   @override
-  String get releaseNotesV8Scrolling =>
-      'Zbyt długi tytuł przewija się teraz w pętli, w jednym kierunku, zamiast tam i z powrotem.';
+  String get releaseNotesV9MoonBlaster =>
+      'MSX MoonBlaster: utwory wczytują swój zestaw sampli zamiast odtwarzać szum, a pliki w trybie edycji odtwarzają się poprawnie.';
 
   @override
-  String get releaseNotesV8MouseDrag =>
-      'Komputery: poziome rzędy można przewijać, klikając i przeciągając myszą.';
+  String get releaseNotesV9HideElsewhere =>
+      'Biblioteka: „Ukryj elementy spoza tego urządzenia” ukrywa lokalne pozycje, których plik jest na innym urządzeniu.';
 
   @override
-  String get releaseNotesV8Presets =>
-      'projectM: pakiety presetów instalują się nawet dziewięć razy szybciej, a duże foldery presetów nie są już obcinane.';
+  String get releaseNotesV9ArtworkFullscreen =>
+      'Długie naciśnięcie okładki w odtwarzaczu pokazuje ją na pełnym ekranie.';
 
   @override
-  String get releaseNotesV8Pause =>
-      'Naprawiono: wstrzymanie mogło przełączyć na następny utwór.';
+  String get releaseNotesV9Viz =>
+      'Wizualizacje: domyślnie oscyloskop dla każdego głosu (widmo liniowe dla formatów strumieniowych), siatka i nazwy głosów przełączane z poziomu oscyloskopu oraz stabilniejszy oscyloskop stereo.';
 
   @override
-  String get releaseNotesV8Psf =>
-      'Albumy PSF (PlayStation, Nintendo DS…) dostarczane jako jedno archiwum rozwijają się teraz w utwory, także po dodaniu do kolejki.';
+  String get releaseNotesV9PsfTrack =>
+      'Naprawiono: dotknięcie utworu niektórych albumów PSF mogło odtworzyć inny.';
 
   @override
-  String get releaseNotesV8ArtistTracks =>
-      'Strony wykonawców: lista utworów znów pokazuje utwory, a nie archiwa całych albumów.';
+  String get releaseNotesV9Playlists =>
+      'Folder z kilkoma playlistami tworzy teraz jeden album ze wszystkimi ich utworami, bez duplikatów.';
 
   @override
-  String get releaseNotesV8VizFixes =>
-      'Wizualizacje: głosy Nintendo 64 są poprawnie wyświetlane i wyciszane, pianino dopasowuje kadr do każdego utworu, a tło z okładką już nie znika.';
-
-  @override
-  String get releaseNotesV8ProjectMFixes =>
-      'projectM: presety podążają za rzeczywistą liczbą klatek (niektóre reagowały ospale), a dwa presety, które nigdy się nie pojawiały, są już dostępne.';
-
-  @override
-  String get releaseNotesV8Covers =>
-      'Okładki wczytują się znacznie szybciej: siatka albumów wypełnia się od razu, a nie po jednej okładce co półtorej sekundy.';
+  String get releaseNotesV9AmigaInfo =>
+      'Utwory z Amigi bez znanej długości lub autora ponownie pytają serwer po tygodniu, zamiast nigdy.';
 
   @override
   String get releaseNotesDataReset =>

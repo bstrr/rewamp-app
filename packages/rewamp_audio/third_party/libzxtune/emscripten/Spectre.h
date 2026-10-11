@@ -74,6 +74,7 @@ public:
 	int get_current_position();
 	int get_max_position();
 	void seek_position(int ms);
+	bool set_speed(double speed);   // REWAMP: vitesse de lecture (tempo, hauteur conservee)
 	
 	int getSampleRate();
     

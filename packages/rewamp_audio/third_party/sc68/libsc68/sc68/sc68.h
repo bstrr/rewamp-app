@@ -471,6 +471,10 @@ SC68_API
  */
 int sc68_process(sc68_t * sc68, void * buf, int * n);
 
+/** rewamp: native playback speed (0.2..3) for YM music; -1 otherwise. */
+SC68_API
+int sc68_rewamp_speed(sc68_t * sc68, double speed);
+
 SC68_API
 /**
  * Set/Get current track.

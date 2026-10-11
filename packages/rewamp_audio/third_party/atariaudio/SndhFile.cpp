@@ -278,7 +278,18 @@ int	SndhFile::AudioRender(int16_t* buffer, int count, uint32_t* pSampleViewInfo)
 		if (m_innerSamplePos <= 0)
 		{
 			m_atariMachine.Jsr(SNDH_UPLOAD_ADDR + 8, 0);
-			m_innerSamplePos = m_samplePerTick;
+			if (m_rewampSpeed == 1.0)
+			{
+				m_innerSamplePos = m_samplePerTick;
+				m_rewampTickFrac = 0.0;
+			}
+			else
+			{
+				const double exact = (double)m_samplePerTick / m_rewampSpeed + m_rewampTickFrac;
+				m_innerSamplePos = (int)exact;
+				m_rewampTickFrac = exact - (double)m_innerSamplePos;
+				if (m_innerSamplePos < 1) m_innerSamplePos = 1;
+			}
 			m_frame++;
 			if (m_frame >= m_frameCount)
 			{

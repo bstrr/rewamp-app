@@ -64,7 +64,13 @@ public:
   // init
   // call this instead of a constructor
   void Init(sU32 a_tickspersec=1000) { m_tpc=a_tickspersec; m_base.valid=0; m_era=v2redux::Era::Auto(); m_seed=0;
-                                       m_chanmask=0xffffffff; for (sInt i=0;i<16;i++) m_noteon[i]=0; }
+                                       m_chanmask=0xffffffff; for (sInt i=0;i<16;i++) m_noteon[i]=0;
+                                       m_speed=1.0; }
+
+  // rewamp: native playback speed — the gap between two sequencer events
+  // lasts 1/speed as many samples, the synth keeps its pitch. The gap under
+  // way is rescaled now. Play() seeks in 1x song time.
+  void SetSpeed(double a_speed);
 
 
   // era compat: declare which v2m FORMAT VERSION the song was originally
@@ -298,6 +304,7 @@ private:
 	PlayerState m_state;
 	sU32        m_samplerate;
 	sS32				m_timeoffset;
+	double      m_speed;      // rewamp: native playback speed (1 = upstream)
 	sU8         m_midibuf[4096];
 	sF32        m_fadeval;
 	sF32        m_fadedelta;

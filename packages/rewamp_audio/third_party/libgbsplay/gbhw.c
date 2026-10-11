@@ -1219,12 +1219,17 @@ cycles_t gbhw_step(struct gbhw *gbhw, long time_to_work)
 
 	time_to_work *= msec_cycles;
 	
+	/* REWAMP: vitesse de lecture (voir struct gbhw). */
+	const double rw_sp = gbhw->rewamp_speed > 0.0 ? gbhw->rewamp_speed : 1.0;
+
 	while (cycles_total < time_to_work) {
 		long maxcycles = time_to_work - cycles_total;
 		cycles_t cycles = 0;
 
-		if (gbhw->vblankctr > 0 && gbhw->vblankctr < maxcycles) maxcycles = gbhw->vblankctr;
-		if (gbhw->timerctr > 0 && gbhw->timerctr < maxcycles) maxcycles = gbhw->timerctr;
+		/* REWAMP: en cycles CPU, la prochaine interruption tombe a ctr / vitesse
+		 * (arrondi superieur: a 1x, exactement le calcul d'origine). */
+		if (gbhw->vblankctr > 0) { long v = (long)ceil((double)gbhw->vblankctr / rw_sp); if (v < maxcycles) maxcycles = v; }
+		if (gbhw->timerctr > 0)  { long t = (long)ceil((double)gbhw->timerctr / rw_sp);  if (t < maxcycles) maxcycles = t; }
 
 		gbhw->io_written = 0;
 		while (cycles < maxcycles && !gbhw->io_written) {
@@ -1244,7 +1249,12 @@ cycles_t gbhw_step(struct gbhw *gbhw, long time_to_work)
 			if (gbhw->stepcallback)
 			   gbhw->stepcallback(gbhw->sum_cycles, gbhw->ch, gbhw->stepcallback_priv);
 		}
-		gbhw->vblankctr -= cycles;
+		{	/* REWAMP: les interruptions avancent de cycles x vitesse */
+			double dv = (double)cycles * rw_sp + gbhw->rewamp_frac_v;
+			long iv = (long)dv;
+			gbhw->rewamp_frac_v = dv - (double)iv;
+			gbhw->vblankctr -= iv;
+		}
 		if (gbhw->vblankctr <= 0) {
 			gbhw->vblankctr += vblanktc;
 			gbhw->ioregs[REG_IF] |= 0x01;
@@ -1252,7 +1262,12 @@ cycles_t gbhw_step(struct gbhw *gbhw, long time_to_work)
 		}
 
 		if (gbhw->ioregs[REG_TAC] & 4) {
-			if (gbhw->timerctr > 0) gbhw->timerctr -= cycles;
+			if (gbhw->timerctr > 0) {	/* REWAMP: cycles x vitesse */
+				double dt = (double)cycles * rw_sp + gbhw->rewamp_frac_t;
+				long it = (long)dt;
+				gbhw->rewamp_frac_t = dt - (double)it;
+				gbhw->timerctr -= it;
+			}
 			while (gbhw->timerctr <= 0) {
 				gbhw->timerctr += gbhw->timertc;
 				gbhw->ioregs[REG_TIMA]++;

@@ -127,6 +127,13 @@ REWAMP_EXPORT void rewamp_set_crossfade_seconds(double seconds);
  * Dart's own end-of-duration logic keeps ruling, unchanged. Reset by every
  * load and handoff — re-post after each track change and duration update. */
 REWAMP_EXPORT void rewamp_set_track_end_seconds(double seconds);
+// Vitesse de lecture, 0,2 à 3 (1 = normale). Le mécanisme PROPRE de l'engine
+// quand il en a un (tempo d'un tracker, minutage d'un émulateur: la hauteur ne
+// bouge pas), sinon un rééchantillonnage générique (vitesse ET hauteur). La
+// position et la durée restent en temps du MORCEAU.
+REWAMP_EXPORT void rewamp_set_playback_speed(double speed);
+// Mode de la vitesse en vigueur: 0 = 1×, 1 = mécanisme de l'engine, 2 = générique.
+REWAMP_EXPORT int  rewamp_get_playback_speed_mode(void);
 /* Monotonic count of AUDIBLE track boundaries crossed (gapless handoffs).
  * Dart polls it each tick; a change means the ear just moved to the staged
  * track — flip title/metadata and advance the queue WITHOUT reloading. Never

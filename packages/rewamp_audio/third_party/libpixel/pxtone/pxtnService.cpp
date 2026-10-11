@@ -1307,6 +1307,22 @@ int32_t sample_at(const pxtnService * const pxVomit, int32_t meas_num) {
 }
 
 
+// rewamp: native playback speed. The event clock is _moo_smp_count /
+// _moo_clock_rate: rescale every sample counter with the rate so the
+// position in CLOCKS does not move.
+void pxtnService::rewamp_set_speed(double speed) {
+    if( speed <= 0 ) speed = 1.0;
+    if( speed == _moo_speed ) return;
+    const double r = _moo_speed / speed;
+    _moo_speed = speed;
+    if( !_moo_clock_rate ) return;
+    _moo_clock_rate = (float)( _moo_clock_rate * r );
+    _moo_smp_count  = (int32_t)( _moo_smp_count  * r );
+    _moo_smp_end    = (int32_t)( _moo_smp_end    * r );
+    _moo_smp_repeat = (int32_t)( _moo_smp_repeat * r );
+    _moo_smp_start  = (int32_t)( _moo_smp_start  * r );
+}
+
 bool pxtnService::prepareVomitPxtone(int start_pos) {
     pxtnVOMITPREPARATION prep = {0};
     prep.flags           |= pxtnVOMITPREPFLAG_loop;

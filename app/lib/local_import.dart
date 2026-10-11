@@ -279,7 +279,31 @@ String? localAudioFormatOf(String path) {
   if (prefix.isNotEmpty && RewampDb.kExtractedAudioExts.contains(prefix)) {
     return prefix;
   }
+  // Un format reconnu au CONTENU seulement: NoiseTracker GS (Apple IIGS), dont
+  // les rips n'ont le plus souvent pas d'extension (« Blood Money », « M »).
+  // Sans ça le fichier était copié comme un COMPAGNON. Jamais la seconde
+  // chance du moteur ici: vgmstream revendique n'importe quelle extension et
+  // ferait des pistes de tous les compagnons — la magie, elle, ne ment pas.
+  if (hasNtgsMagic(path)) return 'ntgs';
   return null;
+}
+
+/// Vrai quand [path] commence par l'en-tête d'un module NoiseTracker GS 1.x:
+/// deux octets, puis « FTA MODULEFILE ». Lecture de 16 octets, synchrone.
+bool hasNtgsMagic(String path) {
+  RandomAccessFile? f;
+  try {
+    f = File(path).openSync();
+    final h = f.readSync(16);
+    return h.length == 16 &&
+        String.fromCharCodes(h.sublist(2)) == 'FTA MODULEFILE';
+  } catch (_) {
+    return false;
+  } finally {
+    try {
+      f?.closeSync();
+    } catch (_) {}
+  }
 }
 
 /// Destination sans écrasement: un fichier déjà là de MÊME taille est réputé
@@ -547,14 +571,42 @@ Future<LocalImportM3uPlan> applyM3uAlbums(
   final claimed = <String>{};        // clés (dossier + nom) nommées par un M3U
   final ruledDirs = <String>{};      // dossiers dont un M3U d'album fait la loi
 
+  // UN album par DOSSIER, sur la FUSION de ses playlists. Un rip peut en
+  // livrer plusieurs qui ne listent pas les mêmes fichiers (Memories Off 2nd,
+  // jw_dsf: `!playlist(InGame).m3u` = versions « a », `MusicPlayer` =
+  // versions « b », `!tags.m3u` = tout): chaque M3U faisait son album, nommé
+  // d'après le FICHIER (« !playlist(InGame) »), les pistes communes n'allaient
+  // qu'au premier et les positions des deux albums s'entremêlaient. Voir
+  // RewampDb.mergeM3uTexts.
+  final byDir = <String, List<String>>{};
   for (final m3u in m3uPaths) {
+    byDir.putIfAbsent(p.normalize(p.dirname(m3u)), () => []).add(m3u);
+  }
+  for (final entry in byDir.entries) {
+    final dir = entry.key;
     try {
-      final content = await RewampDb.readM3uText(File(m3u));
-      final subs = RewampDb.parseM3uToSubsongs(content, p.dirname(m3u));
-      if (subs.isEmpty) continue;
-      if ({for (final s in subs) s.filePath}.length < 2) continue;
-      final dir = p.dirname(m3u);
-      final name = _m3uAlbumName(content, m3u, dir);
+      final paths = [...entry.value]..sort(RewampDb.comparePlaylistNames);
+      // Seuls les M3U d'ALBUM entrent dans la fusion: celui qui ne désigne
+      // qu'UN fichier décrit ses sous-chansons (voir plus haut) et n'en est
+      // pas un — fusionné, il ferait d'un dossier de .gbs un album.
+      final albumPaths = <String>[];
+      final texts = <String>[];
+      for (final m3u in paths) {
+        final content = await RewampDb.readM3uText(File(m3u));
+        final own = RewampDb.parseM3uToSubsongs(content, dir);
+        if ({for (final s in own) s.filePath}.length < 2) continue;
+        albumPaths.add(m3u);
+        texts.add(content);
+      }
+      if (texts.isEmpty) continue;
+      final content = RewampDb.mergeM3uTexts(texts);
+      final subs = RewampDb.parseM3uToSubsongs(content, dir);
+      // Plusieurs playlists: aucune ne nomme l'album à elle seule — le nom
+      // vient de l'en-tête FUSIONNÉ (`@ALBUM` d'un !tags.m3u compris), sinon
+      // du dossier (chemin fictif « playlist.m3u » ⇒ repli sur le dossier).
+      final name = _m3uAlbumName(content,
+          albumPaths.length == 1 ? albumPaths.first : p.join(dir, 'playlist.m3u'),
+          dir);
       final artist = _m3uGlobalTag(content, 'ARTIST');
       var pos = 0;
       LocalImportPendingTrack? first;
@@ -587,7 +639,7 @@ Future<LocalImportM3uPlan> applyM3uAlbums(
     for (final t in tracks)
       // Démotion: dans un dossier régi par un M3U d'album, ce qu'il ne nomme
       // pas n'est pas une piste.
-      if (!ruledDirs.contains(p.dirname(t.filePath)) ||
+      if (!ruledDirs.contains(p.normalize(p.dirname(t.filePath))) ||
           claimed.contains(keyOf(p.dirname(t.filePath), p.basename(t.filePath))))
         t,
     ...promoted,

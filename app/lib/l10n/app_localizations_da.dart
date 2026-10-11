@@ -835,6 +835,17 @@ class AppLocalizationsDa extends AppLocalizations {
   String get engineDescOrganya => 'Cave Story .org — Pixels egen motor';
 
   @override
+  String get engineDescNtgs =>
+      'Apple IIGS (Ensoniq 5503) — NoiseTracker GS-moduler';
+
+  @override
+  String get engineDescRonKlaren => 'Amiga — Ron Klaren-moduler (.rk)';
+
+  @override
+  String get engineDescSamCop =>
+      'SAM Coupé — Z80-programmer, der styrer SAA1099 (.cop)';
+
+  @override
   String get engineDescPxtone => 'Pixels tracker — .ptcop/.pttune';
 
   @override
@@ -1341,6 +1352,18 @@ class AppLocalizationsDa extends AppLocalizations {
 
   @override
   String get voicesTitle => 'Stemmer';
+
+  @override
+  String get voicesSpeed => 'Hastighed';
+
+  @override
+  String get voicesSpeedNormal => 'Normal hastighed';
+
+  @override
+  String get voicesSpeedNative => 'Motorens tempo — tonehøjden uændret';
+
+  @override
+  String get voicesSpeedResampled => 'Omsamplet — tonehøjden ændres også';
 
   @override
   String get voicesNone => 'Ingen stemmer for dette nummer.';
@@ -2472,6 +2495,9 @@ class AppLocalizationsDa extends AppLocalizations {
 
   @override
   String get libraryOnAnotherDevice => 'På en anden enhed';
+
+  @override
+  String get libraryHideElsewhere => 'Skjul det, der ikke er på denne enhed';
 
   @override
   String get localLibraryEmpty =>
@@ -4086,56 +4112,48 @@ class AppLocalizationsDa extends AppLocalizations {
   String get releaseNotesTitle => 'Nyheder';
 
   @override
-  String get releaseNotesV8Windows =>
-      'Rewamp kører nu på Windows, med alle motorer og visualiseringerne, projectM inklusive.';
+  String get releaseNotesV9Speed =>
+      'Afspilningshastighed fra 0,2× til 3× i panelet Stemmer. De fleste motorer ændrer tempoet og bevarer tonehøjden; de øvrige resampler.';
 
   @override
-  String get releaseNotesV8Linux =>
-      'Linux: visualiseringerne virker nu også under X11 (Steam Decks spiltilstand), »Altid øverst« er tilbage dér, og at lukke vinduet får ikke længere appen til at gå ned.';
+  String get releaseNotesV9Windows =>
+      'Windows: medietasterne og systemets mediekontroller (lydstyrkevinduet, proceslinjen) styrer afspilningen, og visualiseringen i fuld skærm fylder nu hele skærmen.';
 
   @override
-  String get releaseNotesV8Formats =>
-      'Game Boy-filer (.gbr) og DefleMask-filer (.dmf) afspilles nu.';
+  String get releaseNotesV9Formats =>
+      'Nye afspillere: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) og .cop-programmer til SAM Coupé.';
 
   @override
-  String get releaseNotesV8Smooth =>
-      'Mere flydende afspiller og visualiseringer: skærmen tegnes ikke længere helt om ved hver positionsopdatering.';
+  String get releaseNotesV9Amiga =>
+      'Amiga og Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory og visse Maximum Effect-moduler afspilles nu.';
 
   @override
-  String get releaseNotesV8Scrolling =>
-      'En titel, der er for lang til sin plads, ruller nu i en løkke i én retning i stedet for frem og tilbage.';
+  String get releaseNotesV9MoonBlaster =>
+      'MSX MoonBlaster: numre indlæser deres samplesæt i stedet for at spille støj, og filer i redigeringstilstand afspilles korrekt.';
 
   @override
-  String get releaseNotesV8MouseDrag =>
-      'Computere: de vandrette rækker ruller ved at klikke og trække med musen.';
+  String get releaseNotesV9HideElsewhere =>
+      'Bibliotek: »Skjul det, der ikke er på denne enhed« skjuler lokale poster, hvis fil ligger på en anden enhed.';
 
   @override
-  String get releaseNotesV8Presets =>
-      'projectM: pakker med forudindstillinger installeres op til ni gange hurtigere, og store mapper med forudindstillinger bliver ikke længere afkortet.';
+  String get releaseNotesV9ArtworkFullscreen =>
+      'Et langt tryk på coveret i afspilleren viser det i fuld skærm.';
 
   @override
-  String get releaseNotesV8Pause =>
-      'Rettet: pause kunne springe til næste nummer.';
+  String get releaseNotesV9Viz =>
+      'Visualiseringer: oscilloskop pr. stemme som standard (linjespektrum til streamede formater), gitter og stemmenavne kan slås til og fra fra oscilloskopet, og et mere stabilt stereo-oscilloskop.';
 
   @override
-  String get releaseNotesV8Psf =>
-      'PSF-album (PlayStation, Nintendo DS…) leveret som ét arkiv foldes nu ud i deres numre, også når de føjes til køen.';
+  String get releaseNotesV9PsfTrack =>
+      'Rettet: at trykke på et nummer i visse PSF-album kunne afspille et andet.';
 
   @override
-  String get releaseNotesV8ArtistTracks =>
-      'Kunstnersider: nummerlisten viser igen numre og ikke arkiver med hele album.';
+  String get releaseNotesV9Playlists =>
+      'En mappe med flere playlister danner nu ét album med alle deres numre, uden dubletter.';
 
   @override
-  String get releaseNotesV8VizFixes =>
-      'Visualiseringer: Nintendo 64-stemmer vises og slås korrekt fra, klaveret tilpasser sit udsnit til hvert nummer, og coverbaggrunden forsvinder ikke længere.';
-
-  @override
-  String get releaseNotesV8ProjectMFixes =>
-      'projectM: forudindstillingerne følger den reelle billedfrekvens (nogle reagerede trægt), og to forudindstillinger, der aldrig dukkede op, er der nu.';
-
-  @override
-  String get releaseNotesV8Covers =>
-      'Covers indlæses meget hurtigere: et gitter af album fyldes på én gang i stedet for ét cover hvert halvandet sekund.';
+  String get releaseNotesV9AmigaInfo =>
+      'Amiga-numre uden kendt længde eller ophavsperson spørger serveren igen efter en uge i stedet for aldrig.';
 
   @override
   String get releaseNotesDataReset =>

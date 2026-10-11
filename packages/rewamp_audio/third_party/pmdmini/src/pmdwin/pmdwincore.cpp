@@ -7749,6 +7749,11 @@ void WINAPI PMDWIN::fadeout2(int32_t speed)
 //=============================================================================
 //	PCM データ（wave データ）の取得
 //=============================================================================
+// rewamp: native playback speed. The OPNA timers (which call the driver)
+// advance by `us` of chip time while only us/speed of audio is rendered: the
+// tempo follows, the chips keep their pitch. 1.0 = upstream, bit for bit.
+double pmd_rewamp_speed = 1.0;
+
 void WINAPI PMDWIN::getpcmdata(int16_t *buf, int32_t nsamples)
 {
 	int32_t	copysamples = 0;				// コピー済みのサンプル数
@@ -7779,7 +7784,8 @@ void WINAPI PMDWIN::getpcmdata(int16_t *buf, int32_t nsamples)
 
 
             us = opna->GetNextEvent();
-            us2 = (int32_t)((double)us * open_work.rate / 1000000.0);
+            us2 = (int32_t)((double)us * open_work.rate / 1000000.0
+                            / (pmd_rewamp_speed == 1.0 ? 1.0 : pmd_rewamp_speed));
             
             if (buf) opna->Count(us);
 

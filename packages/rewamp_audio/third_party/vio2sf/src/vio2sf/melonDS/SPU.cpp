@@ -1047,7 +1047,15 @@ void SPU::Mix(u32 spucycles)
     if (BlipTimer >= 512 * 128)
         BufferAudio();
 
-    NDS.ScheduleEvent(Event_SPU, true, MixInterval, 0, MixInterval >> 1);
+    u32 delay = MixInterval;
+    if (RewampSpeed != 1.0)
+    {
+        const double d = MixInterval * RewampSpeed + RewampFrac;
+        delay = (u32)d;
+        RewampFrac = d - delay;
+        if (!delay) delay = 1;
+    }
+    NDS.ScheduleEvent(Event_SPU, true, delay, 0, MixInterval >> 1);
 }
 
 void SPU::BufferAudio()
