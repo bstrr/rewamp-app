@@ -210,8 +210,12 @@ rewamp_option(REWAMP_WITH_FURNACE  "Build the Furnace (DivEngine) tracker plugin
 # Default OFF until the 237-file engine build is validated; enabled per-platform.
 # Windows: validé le 2026-10-03 (MSVC, deux retouches de l'arbre vendoré — voir
 # docs/BUILD_WINDOWS.md §6.5 — et aucun doublon de symbole de plus au lien).
+# Linux: activé le 2026-10-12 (le SAM Coupé .cop, compilé DANS la lib zxtune,
+# suit le même drapeau). ⚠️ Un dossier de build configuré AVANT garde l'ancien
+# OFF en cache (option() n'écrase pas une entrée existante): le vider, ou
+# `grep '^REWAMP_WITH_ZXTUNE' app/build/linux/<arch>/<mode>/CMakeCache.txt`.
 # Android le force dans android/CMakeLists.txt, Apple par les podspecs.
-if(WIN32)
+if(WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID))
   rewamp_option(REWAMP_WITH_ZXTUNE "Build the libzxtune ZX Spectrum/AY chiptune plugin" ON)
 else()
   rewamp_option(REWAMP_WITH_ZXTUNE "Build the libzxtune ZX Spectrum/AY chiptune plugin" OFF)
