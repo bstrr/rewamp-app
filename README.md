@@ -14,7 +14,7 @@ Several playback engines customization are reusing the work I've done previously
 
 ## Main features
 
-- **1247 file extensions, 42 decoding engines** — Amiga MOD, C64 SID, NSF, SPC,
+- **1248 file extensions, 45 decoding engines** — Amiga MOD, C64 SID, NSF, SPC,
   GBS, PSF, VGM, SNDH, ZX Spectrum AY, PC-98, X68000, game streams (Wwise,
   FSB…). Real chip emulation, not renderings: a 6502 runs the NSF driver, a
   68000 runs the Amiga replayers.
@@ -22,13 +22,20 @@ Several playback engines customization are reusing the work I've done previously
   into its tracks, named with what the file itself carries — NSFe track
   labels, [HVSC](https://www.hvsc.c64.org/)'s STIL, the
   [UADE](https://zakalwe.fi/uade/) song database — rather than numbers.
-- **Six visualizers**: stereo oscilloscope, per-voice oscilloscope, spectrum,
-  live notation, the tracker's own pattern grid, and
+- **Seven visualizers**: stereo oscilloscope, per-voice oscilloscope, spectrum,
+  live notation, a piano keyboard, the tracker's own pattern grid, and
   [Milkdrop](https://www.geisswerks.com/milkdrop/) presets through
   [projectM](https://github.com/projectM-visualizer/projectm).
   All GPU-rendered, and fed with what you are *hearing*.
 - **Per-voice control**: mute or solo a single chip channel while it plays, and
   watch each one's waveform and note.
+- **Playback speed from 0.2× to 3×.** Most engines change the *tempo* and keep
+  the pitch — the speed-up happens in the song's own sequencer or in the
+  emulated machine, not in the audio stream; the others resample.
+- Gapless playback, with an optional crossfade.
+- **System media controls everywhere**: Now Playing on iOS and macOS, the media
+  notification on Android, MPRIS on Linux, the media overlay and media keys on
+  Windows.
 - Queue with shuffle and repeat, playlists, favourites, listening statistics,
   and a library that survives a reinstall.
 - **Optional online catalogue** — browse and stream a large preservation
@@ -46,7 +53,7 @@ Several playback engines customization are reusing the work I've done previously
 | **Android** | 8.0 (API 26) | Primary target — beta on the Play internal track |
 | **macOS** | 13.0 (Ventura) | Primary target — beta as a notarized DMG |
 | **Linux** | glibc 2.35 (Ubuntu 22.04, Debian 12) | Released as an AppImage, x86_64 and aarch64 — see [Releases](https://github.com/yoyofr/rewamp-app/releases) |
-| **Windows** | — | Planned |
+| **Windows** | 10, x64 | Released as a portable zip — see [Releases](https://github.com/yoyofr/rewamp-app/releases) |
 
 Android ships **64-bit only** (`arm64-v8a`, `x86_64`). A 32-bit build links and
 runs but silently loses the formats whose codec goes through
@@ -65,6 +72,13 @@ fails anyway: `./Rewamp-*.AppImage --appimage-extract && ./squashfs-root/AppRun`
 PulseAudio/PipeWire: `libpulse0` must be installed, or everything runs and
 nothing plays. On an X11 session the visualizers use a CPU read-back path,
 slower than the Wayland one but complete.
+
+The Windows zip needs no installer: unpack it anywhere and run `rewamp.exe`
+(the Visual C++ runtime travels with it). It is not code-signed yet, so
+SmartScreen warns on the first launch. Every engine is built, and the
+visualizers and projectM run on a bundled [ANGLE](https://chromium.googlesource.com/angle/angle)
+over OpenGL. Demoscene production videos are not available there yet: the
+embedded web view has no Windows implementation.
 
 ## Tech architecture
 
@@ -88,7 +102,8 @@ sound**, joined by FFI.
 - **Visualizers are native GL** (GLES 3.0) shared across platforms:
   [ANGLE](https://chromium.googlesource.com/angle/angle) over
   Metal on macOS/iOS behind a Flutter
-  texture, a `SurfaceView` on Android.
+  texture, a `SurfaceView` on Android, an EGLImage shared with GTK on Linux
+  (a CPU read-back path under X11), and our own ANGLE build on Windows.
 - **The engine is built twice from one source set** —
   [CocoaPods](https://cocoapods.org/) podspecs on Apple,
   [CMake](https://cmake.org/) for Android, Linux and Windows. Keeping the two in step is a
@@ -99,9 +114,11 @@ sound**, joined by FFI.
 
 ## Building from source
 
-Flutter **3.41 or newer** (Dart 3; the Linux CI builds with 3.47.5). Then,
-per platform: Xcode for macOS/iOS, the Android SDK + NDK for Android, and on
-Linux:
+Flutter **3.41 or newer** (Dart 3; the Linux CI builds with 3.47.5, the
+Windows CI with 3.47.6). Then, per platform: Xcode for macOS/iOS, the Android
+SDK + NDK for Android, Visual Studio 2022 or newer with the *Desktop
+development with C++* workload for Windows (CMake and Ninja come with it), and
+on Linux:
 
 ```bash
 sudo apt install clang cmake ninja-build pkg-config \
@@ -128,6 +145,12 @@ git clone --recurse-submodules https://github.com/yoyofr/rewamp-app.git
 cd rewamp-app
 ```
 
+**On Windows, switch Git to LF first** — `git config --global core.autocrlf
+false`, *before* cloning. With Git for Windows' default (`true`) the patch
+files of step 2 are checked out with CRLF line endings and
+`sync_vgmstream.sh` fails with a conflict, which looks like a stale patch and
+is not.
+
 Three decoders are git submodules pinned to genuine upstream commits
 ([libopenmpt](https://lib.openmpt.org/libopenmpt/),
 [vgmstream](https://vgmstream.org/),
@@ -147,6 +170,10 @@ cd packages/rewamp_audio
 ./scripts/sync_libvgm.sh
 ```
 
+(On Windows, run them from Git Bash.) A later `git submodule update` resets
+the submodules to upstream and erases the patches: run the three scripts
+again after it.
+
 Skipping this compiles fine and misbehaves quietly — no Wwise Vorbis in
 vgmstream, XM modules with a broken 16-bit tempo, missing per-voice capture in
 libvgm. The other vendored engines are committed already patched; only these
@@ -160,9 +187,9 @@ three need the step.
 
 ### 4. Prebuilt libraries
 
-**Apple only.** None of these are committed (they are large binaries), and each
-release script checks for them because the failure otherwise surfaces as an
-unrelated link error:
+**Apple and Windows.** None of these are committed (they are large binaries).
+On Apple each release script checks for them, because the failure otherwise
+surfaces as an unrelated link error:
 
 ```bash
 cd packages/rewamp_audio
@@ -173,6 +200,21 @@ cd packages/rewamp_audio
 
 Rebuild the libopenmpt/vgmstream ones after any patch change: a plain
 `flutter build` links the previous `.a` and will not see it.
+
+On Windows, once per checkout, from a PowerShell prompt (both go through the
+vcpkg that ships with Visual Studio — nothing to install, network required):
+
+```powershell
+powershell -File packages/rewamp_audio/scripts/build_angle_windows.ps1   # GLES for the visualizers
+powershell -File packages/rewamp_audio/scripts/build_ffmpeg_windows.ps1  # minimal FFmpeg for vgmstream
+```
+
+Without them the CMake configuration stops on purpose; set
+`REWAMP_WINDOWS_VIZ=0` or `REWAMP_ALLOW_NO_FFMPEG=1` to build without the
+visualizers or without FFmpeg. One more Windows trap: a plugin fetches
+CppWinRT through NuGet, and a `%APPDATA%\NuGet\NuGet.Config` that declares
+no package source fails with `primarySources` while blaming the package — add
+`https://api.nuget.org/v3/index.json` as a source.
 
 Android and Linux build every decoder from source through CMake — nothing to
 prebuild.
@@ -217,6 +259,9 @@ out:
 REWAMP_WITH_OPENMPT=0 flutter build macos
 ```
 
+The environment variable works the same way for the CMake builds (Android,
+Linux, Windows); a `-D` on the CMake command line takes precedence.
+
 ### Known gap
 
 The prebuilt **ffmpeg-kit** slices for Android are not redistributed here.
@@ -226,6 +271,33 @@ goes through it; everything else is unaffected. Drop your own under
 or point CMake at a build with `REWAMP_FFMPEG_DIR` (environment or `-D`). On
 Linux the system FFmpeg is found through `pkg-config` instead, and the
 AppImage carries its own minimal build (`scripts/appimage/build_ffmpeg_minimal.sh`).
+On Windows, `build_ffmpeg_windows.ps1` (step 4) builds it.
+
+## Statistics
+
+Lines of code (`cloc`, comments and blank lines excluded), Rewamp's own code
+apart from the engines and libraries it bundles. Recomputed at every snapshot.
+
+<!-- CODE STATS START -->
+```
+[ LANGUAGES BREAKDOWN — lines of code ]
+
+                    Rewamp      Bundled        Total
+C                   10,406    1,797,777    1,808,183
+C/C++ Header         1,816    1,325,734    1,327,550
+C++                 21,140      979,692    1,000,832
+Dart                80,513            0       80,513
+Assembly                 0       36,451       36,451
+Objective-C++          763        3,044        3,807
+GLSL                   362          989        1,351
+Swift                  460            0          460
+Kotlin                 453            0          453
+Objective-C             26            0           26
+Others               8,544      262,158      270,702
+
+TOTAL              124,483    4,405,845    4,530,328
+```
+<!-- CODE STATS END -->
 
 ## Licence
 
