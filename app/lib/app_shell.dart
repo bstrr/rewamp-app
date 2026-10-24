@@ -7,7 +7,7 @@ import 'dart:ui';
 import 'dart:io';
 import 'dart:typed_data' show Uint8List;
 
-import 'package:flutter/foundation.dart' show kDebugMode, kReleaseMode;
+import 'package:flutter/foundation.dart' show kDebugMode, kReleaseMode, listEquals;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:rewamp_audio/rewamp_audio.dart';
@@ -17,6 +17,7 @@ import 'onboarding.dart';
 import 'l10n.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'local_tab_screen.dart';
+import 'drop_order.dart';
 import 'local_open.dart';
 import 'preset_manager.dart';
 import 'preset_screen.dart';
@@ -496,16 +497,15 @@ class _AppShellState extends State<AppShell>
     listenForOpenedFiles();
     // Play path for the competition screen's entries (podium badges land there).
     globalOnPlayOnlineSong = _downloadAndPlayOnline;
-    // Welcome carousel (beta warning + a short tour), once per build. After the
+    // Welcome carousel (welcome page + a short tour), once per install. After the
     // first frame so it lands on top of the shell rather than racing it, and
     // after the launch intro has had its moment.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future<void>.delayed(const Duration(milliseconds: 900));
-      // Shown even when the app was launched BY a file. Skipping it there was
-      // tried and reverted: it is a beta warning about data that may be wiped,
-      // so it has to be SEEN, and gating it on "the next ordinary launch"
-      // means someone who only ever double-clicks modules never gets one. It
-      // does not block playback — the track is already playing behind it.
+      // Shown even when the app was launched BY a file: gating it on "the next
+      // ordinary launch" means someone who only ever double-clicks modules
+      // never gets one. It does not block playback — the track is already
+      // playing behind it.
       if (mounted) await Onboarding.maybeShow(context);
     });
     final audio = RewampAudio();
@@ -920,6 +920,8 @@ class _AppShellState extends State<AppShell>
     audio.setEngineParam('adplug', 'surround',     s.adplugSurround ? 1 : 0);
     audio.setEngineParam(
         'vgm', 'japanese_tags', s.vgmJapaneseTags ? 1 : 0);
+    audio.setEngineParam(
+        'vgm', 'loop_fade_secs', s.vgmLoopFadeSeconds.toDouble());
     audio.setEngineParam('vgm', 'ym2612_core',     s.vgmYm2612Core.toDouble());
     audio.setEngineParam('vgm', 'ymf262_core',     s.vgmYmf262Core.toDouble());
     audio.setEngineParam('vgm', 'ym3812_core',     s.vgmYm3812Core.toDouble());
@@ -1157,7 +1159,17 @@ class _AppShellState extends State<AppShell>
       (FileSystemEntity.isDirectorySync(it.path) ? keep : opened).add(bm);
     }
     try {
-      await _openLocalPaths([for (final f in items) f.path]);
+      final received = [for (final f in items) f.path];
+      final ordered  = displayOrderForDrop(received);
+      // Ordre reçu du presse-papiers vs ordre rejoué: c'est ce qui sépare
+      // « Finder livre dans le désordre » d'un désordre fait APRÈS nous.
+      if (kDebugMode) {
+        debugPrint('[drop] received: ${received.map(p.basename).join(' | ')}');
+        if (!listEquals(received, ordered)) {
+          debugPrint('[drop] reordered: ${ordered.map(p.basename).join(' | ')}');
+        }
+      }
+      await _openLocalPaths(ordered);
     } finally {
       for (final bm in opened) {
         await DesktopDrop.instance
@@ -4358,6 +4370,24 @@ class _AppShellState extends State<AppShell>
   }
 
   void _openSubsongList(SearchResult container) {
+    // L'origine manque souvent au conteneur: une relance depuis « écoutés
+    // récemment » rebâtit la file depuis des lignes `tracks` dont toutes ne
+    // portent pas `collection_slug` (il n'est écrit que quand on le connaît),
+    // et le lecteur en tire son conteneur — « Gunship 2000 » arrivait sans
+    // « sc68 », par le rail comme par le nom du fichier dans le lecteur. Le
+    // chemin sur disque la porte toujours pour un téléchargement (même source
+    // que le contexte d'album du lecteur); comblée ICI, l'entonnoir de tous
+    // les accès à l'écran.
+    final lp = container.localPath ??
+        (identical(container, _playingContainer) ? _controller.filePath : null);
+    if (lp != null && (container.collection.isEmpty ||
+        (container.platform?.isEmpty ?? true))) {
+      final (col, plat) = _albumContextFromPath(lp, container.formatExt);
+      container = container.copyWith(
+        collection: container.collection.isEmpty ? col : null,
+        platform: (container.platform?.isEmpty ?? true) ? plat : null,
+      );
+    }
     _pushOnTab(
       // songId is non-null but empty for a purely local container.
       'subsongs:${container.songId.isNotEmpty ? container.songId : (container.localPath ?? container.title ?? '')}',

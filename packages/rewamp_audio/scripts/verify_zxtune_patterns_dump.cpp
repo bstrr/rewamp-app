@@ -12,8 +12,8 @@ extern "C" {
 #ifdef USE_ZXTUNE
 extern "C" const RewampPluginVTable* rewamp_zxtune_plugin(void);
 static const RewampPluginVTable* plug() { return rewamp_zxtune_plugin(); }
-extern "C" int rewamp_ext_in_list(const char* e, const char* const* l) {
-    if (!e) return 0; for (; *l; ++l) if (!strcasecmp(e, *l)) return 1; return 0; }
+// rewamp_ext_in_list et les globaux de boucle forcée viennent de
+// verify_pt3_patterns_stubs.c, lié par les deux branches.
 #else
 extern "C" const RewampPluginVTable* rewamp_libpt3_plugin(void);
 static const RewampPluginVTable* plug() { return rewamp_libpt3_plugin(); }

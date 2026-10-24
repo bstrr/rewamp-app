@@ -185,13 +185,19 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     });
   }
 
+  /// Mode de `search_music` sous filtre texte — voir `PodiumListScreen._fuzzy`:
+  /// EXACT = préfixe par mot (« blu » trouve « Blue »), FLOU = trigrammes, qui
+  /// rate les chaînes courtes. Exact d'abord, flou en repli quand l'exact ne
+  /// rend rien; remis à faux à chaque rechargement.
+  bool _fuzzy = false;
+
   // Fetches a page of results. Uses search_music when a text filter is active,
   // browse_music otherwise — caller passes the same _activeFilter snapshot.
   Future<List<SearchResult>> _fetch(String? filter, int offset) {
     if (filter != null) {
       return RewampDb.search(
         filter,
-        fuzzy:        true,
+        fuzzy:        _fuzzy,
         collection:   widget.collection,
         artistName:   widget.artistName,
         platform:     widget.platform,
@@ -218,11 +224,17 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
 
   Future<void> _reload() async {
     final filter = _activeFilter;
+    _fuzzy = false;
     setState(() { _loading = true; _error = null; });
     _notifier.value = [];
     try {
-      final res = await _fetch(filter, 0);
+      var res = await _fetch(filter, 0);
       if (!mounted) return;
+      if (res.isEmpty && filter != null && filter == _activeFilter) {
+        _fuzzy = true;
+        res = await _fetch(filter, 0);
+        if (!mounted || filter != _activeFilter) return;
+      }
       _notifier.value = res;
       _total   = res.isEmpty ? 0 : res.first.totalCount;
       _offset  = res.length;

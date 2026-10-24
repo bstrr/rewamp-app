@@ -19,6 +19,10 @@ typedef enum {
     REWAMP_ERROR_LOAD_FAILED = -2,
     REWAMP_ERROR_NOT_INITIALIZED = -3,
     REWAMP_ERROR_NO_SOUND = -4,
+    /* Un chargement est EN VOL sur un autre fil (rewamp_load_file tourne hors
+     * du fil UI): la commande est refusée plutôt que de toucher un décodeur
+     * en cours d'ouverture. Dart la rejoue après le chargement s'il y a lieu. */
+    REWAMP_ERROR_BUSY = -5,
 } RewampResult;
 
 REWAMP_EXPORT RewampResult rewamp_init(void);
@@ -38,6 +42,14 @@ double                     rewamp_get_engine_param(const char* engine,
                                                    const char* key,
                                                    double defval);
 
+/* ⚠️ BLOQUANT jusqu'au premier bloc audio du décodeur (une init de player
+ * UADE peut prendre des secondes). Dart l'appelle depuis un isolate de
+ * travail, jamais sur le fil UI (chien de garde iOS). Pendant qu'il tourne,
+ * toute commande venue d'un AUTRE fil (play/pause/stop/seek/volume/unload/
+ * set_next_file/track_end) rend REWAMP_ERROR_BUSY ou ne fait rien, et les
+ * sondes qui ouvrent un décodeur (rewamp_probe_subsong_count) ATTENDENT sa fin
+ * — un seul décodeur à la fois, les moteurs singleton l'exigent. Un second
+ * rewamp_load_file concurrent rend REWAMP_ERROR_BUSY. */
 REWAMP_EXPORT RewampResult rewamp_load_file(const char* path);
 REWAMP_EXPORT void         rewamp_unload(void);
 
@@ -97,6 +109,11 @@ REWAMP_EXPORT void rewamp_set_forced_loop(int mode, int count,
 // — tells Dart whether it needs to run its own generic loop/fadeout logic
 // for this file, or whether the plugin's native library already handles it.
 REWAMP_EXPORT int rewamp_has_native_loop_support(void);
+
+// Seconds of end fade the CURRENTLY loaded file's plugin appended after the
+// file's nominal length on its own (libvgm on a looping VGM), else 0. Its
+// length() already includes it; a catalogue duration does not.
+REWAMP_EXPORT double rewamp_track_end_fade_seconds(void);
 
 /* ── Gapless playback ────────────────────────────────────────────────────────
  * Stage the NEXT queue entry: when the current decoder reaches its end, the

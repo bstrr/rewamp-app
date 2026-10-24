@@ -10,6 +10,7 @@ import 'artwork_image.dart';
 import 'artwork_palette.dart';
 import 'scrolling_text.dart';
 import 'transport_buttons.dart';
+import 'loading_ring.dart';
 
 class MiniPlayer extends StatefulWidget {
   final PlayerController controller;
@@ -350,10 +351,14 @@ class _MiniPlayerBar extends StatelessWidget {
                           IconButton(
                             key: const ValueKey('mp-play'),
                             iconSize: _kPlayIconSize,
-                            icon: Icon(
-                              controller.isPlaying
-                                  ? Icons.pause
-                                  : Icons.play_arrow,
+                            icon: LoadingRing(
+                              loading: controller.loadingTrack,
+                              size: _kPlayIconSize,
+                              child: Icon(
+                                controller.isPlaying
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
+                              ),
                             ),
                             onPressed: () {
                               logTransport(

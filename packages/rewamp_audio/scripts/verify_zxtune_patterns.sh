@@ -61,7 +61,10 @@ incs=(-I"$zx/include" -I"$zx/src" -I"$zx/3rdparty" -I"$zx" -I"$zx/3rdparty/z80ex
 echo "compilation de zxtune…" >&2
 # Les sources C doivent passer par le compilateur C (chp2ym.c et le jeu curaté
 # en contiennent), d'où la passe séparée.
-for c in "$pkg/src/rewamp_channel_data.c" "$pkg/third_party/libchpconv/chp2ym.c"; do
+# Les stubs (rewamp_ext_in_list, globaux de boucle forcée) sont du C à
+# linkage C: passés au pilote c++ ils seraient manglés et le lien échouerait.
+for c in "$pkg/src/rewamp_channel_data.c" "$pkg/third_party/libchpconv/chp2ym.c" \
+         "$here/verify_zxtune_patterns_stubs.c"; do
   cc -std=gnu11 -O1 -w "${defs[@]}" "${incs[@]}" -c "$c" -o "$tmp/zxc_$(basename "$c").o"
 done
 cobjs=()

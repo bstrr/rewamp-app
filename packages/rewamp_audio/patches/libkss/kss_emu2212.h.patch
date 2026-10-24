@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/modules/emu2212/kss_emu2212.h	2026-07-06 09:48:52
-+++ modules/emu2212/kss_emu2212.h	2026-07-06 09:44:22
+--- third_party/libkss/upstream/modules/emu2212/kss_emu2212.h	2026-10-22 00:44:15
++++ third_party/libkss/modules/emu2212/kss_emu2212.h	2026-10-22 00:47:34
 @@ -1,5 +1,5 @@
 -#ifndef _EMU2212_H_
 -#define _EMU2212_H_
@@ -25,7 +25,7 @@
  
    uint32_t clk, rate ,base_incr, quality ;
  
-@@ -48,21 +48,21 @@
+@@ -48,23 +48,23 @@
  
    int16_t ch_out[5] ;
  
@@ -45,6 +45,8 @@
 -uint32_t SCC_read(SCC *scc, uint32_t adr) ;
 -uint32_t SCC_setMask(SCC *scc, uint32_t adr) ;
 -uint32_t SCC_toggleMask(SCC *scc, uint32_t adr) ;
+-int SCC_save_state(SCC *, uint8_t *out) ; /* save state to out; out=NULL -> required size */
+-void SCC_load_state(SCC *, const uint8_t *in, int size) ;
 +SCCKSS *SCCKSS_new(uint32_t c, uint32_t r) ;
 +void SCCKSS_reset(SCCKSS *scc) ;
 +void SCCKSS_set_rate(SCCKSS *scc, uint32_t r);
@@ -57,6 +59,8 @@
 +uint32_t SCCKSS_read(SCCKSS *scc, uint32_t adr) ;
 +uint32_t SCCKSS_setMask(SCCKSS *scc, uint32_t adr) ;
 +uint32_t SCCKSS_toggleMask(SCCKSS *scc, uint32_t adr) ;
++int SCCKSS_save_state(SCCKSS *, uint8_t *out) ; /* save state to out; out=NULL -> required size */
++void SCCKSS_load_state(SCCKSS *, const uint8_t *in, int size) ;
  
  #ifdef __cplusplus
  }

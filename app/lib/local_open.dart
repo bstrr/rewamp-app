@@ -1,7 +1,7 @@
 import 'picker_memory.dart';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 
 import 'package:path/path.dart' as p;
 
@@ -44,7 +44,7 @@ const kMultiTrackExts = {
   'sap',              // Atari 8-bit
   'kss', 'mgs', 'bgm', 'mpk', 'mbm', 'opx', 'mus',
   'hes', 'sgc',
-  'ay', 'vtx', 'pt3', 'stc', 'chp',
+  'ay', 'vtx', 'pt3', 'mt3', 'stc', 'chp',
   // SAM Coupé `.cop`: un programme Z80 brut porte jusqu'à 17 morceaux (greffon
   // samcop); un module E-Tracker n'en a qu'un et la sonde n'y revendique rien.
   'cop',
@@ -726,7 +726,15 @@ Future<List<TrackRecord>> _tracksForLocalPathInner(
     }
     // Expand each module into its subsongs so the queue plays EVERY subsong,
     // not just the first of each multi-subsong module (TFMX/NSF/…).
-    return expandLocalModules(fileRecs, controller);
+    final expanded = await expandLocalModules(fileRecs, controller);
+    // Toute la liste en base, pas seulement ce qui sera joué: l'écran d'album
+    // de l'archive et la relance depuis les récents la relisent là.
+    try {
+      await LocalDb.instance.materializeOpenedArchiveTracks(expanded);
+    } catch (e) {
+      debugPrint('[local_open] archive tracks not recorded: $e');
+    }
+    return expanded;
   }
 
   // Playlist file: expand the M3U/M3U8 and queue everything it references

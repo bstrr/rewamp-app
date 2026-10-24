@@ -8,7 +8,7 @@ index b13143453..235e99d88 100644
  	if(fileHeader.tempo)
 -		Order().SetDefaultTempo(Clamp(TEMPO(fileHeader.tempo, 0), ModSpecs::xmEx.GetTempoMin(), ModSpecs::xmEx.GetTempoMax()));
 +	{
-+		// rewamp: keep the FULL 16-bit tempo range. XMPlay accepts any 16-bit
++		// rewamp: keep the FULL 16-bit tempo range. FT2 accepts any 16-bit
 +		// BPM (this file's own saver notes it below), and sample-precise
 +		// tempo tricks rely on it — "Haesslich" declares 39293 BPM, which the
 +		// ModSpecs clamp (max 1000) silently rewrote into a wrong-speed song.

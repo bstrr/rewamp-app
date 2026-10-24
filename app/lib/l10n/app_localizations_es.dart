@@ -2499,6 +2499,13 @@ class AppLocalizationsEs extends AppLocalizations {
       'Prefiere los campos japoneses (título, juego, artista) de las etiquetas VGM cuando existen.';
 
   @override
+  String get settingsVgmLoopFade => 'Fundido final en pistas con bucle';
+
+  @override
+  String get settingsVgmLoopFadeHelp =>
+      'El formato VGM no prevé fundido: una pista con bucle lo reproduce dos veces y luego se desvanece durante este tiempo. Desactivado = corte seco. Las pistas sin bucle terminan tal cual.';
+
+  @override
   String get localImportFolder => 'Importar una carpeta';
 
   @override
@@ -3886,6 +3893,120 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
+  String get podiumBrowserTitle => 'Podios';
+
+  @override
+  String get podiumHubBias => 'Cada pieza cuenta una vez, por su mejor puesto.';
+
+  @override
+  String get podiumRecentWinners => 'Ganadores recientes';
+
+  @override
+  String get podiumRecentWinnersSubtitle =>
+      'Oros de los dos últimos años, compos más recientes primero';
+
+  @override
+  String get podiumViaSelf => 'Compos de música';
+
+  @override
+  String get podiumViaSelfSubtitle => 'La propia pieza compitió';
+
+  @override
+  String get podiumViaProduction => 'Bandas sonoras de demos';
+
+  @override
+  String get podiumViaProductionSubtitle =>
+      'La demo o el juego que musicaliza quedó clasificado';
+
+  @override
+  String get podiumByKind => 'Por tipo de compo';
+
+  @override
+  String get podiumByEra => 'Por época';
+
+  @override
+  String get podiumByParty => 'Por party';
+
+  @override
+  String get podiumByPartySubtitle =>
+      'Series de parties ordenadas por medallas';
+
+  @override
+  String get podiumTopArtists => 'Artistas más premiados';
+
+  @override
+  String get podiumAll => 'Todos los podios';
+
+  @override
+  String get podiumAllSubtitle =>
+      'Compos más recientes primero, luego por puesto';
+
+  @override
+  String get podiumChipVia => 'Naturaleza';
+
+  @override
+  String get podiumChipKind => 'Tipo de compo';
+
+  @override
+  String get podiumChipSeries => 'Party';
+
+  @override
+  String get podiumChipEra => 'Época';
+
+  @override
+  String get compoKindTracked => 'Tracked';
+
+  @override
+  String get compoKindChip => 'Chip';
+
+  @override
+  String get compoKindStreaming => 'Streaming';
+
+  @override
+  String get compoKindExecutable => 'Ejecutable';
+
+  @override
+  String get compoKindOldskool => 'Oldskool';
+
+  @override
+  String get compoKindCombined => 'Combinada';
+
+  @override
+  String get compoKindSoundtrack => 'Banda sonora';
+
+  @override
+  String get compoKindTrackedHint => 'Módulos tracker: MOD, XM, IT…';
+
+  @override
+  String get compoKindChipHint => 'Música chip: SID, AY, NES, Game Boy…';
+
+  @override
+  String get compoKindStreamingHint => 'Audio en streaming: MP3, OGG, WAV…';
+
+  @override
+  String get compoKindExecutableHint =>
+      'Música generada por un programa diminuto';
+
+  @override
+  String get compoKindOldskoolHint =>
+      'Hardware de época o tracked, sin streaming';
+
+  @override
+  String get compoKindCombinedHint => 'Compo sin restricción de formato';
+
+  @override
+  String get compoKindSoundtrackHint =>
+      'Música de una demo o un juego clasificado';
+
+  @override
+  String podiumDecadeLabel(String decade) {
+    return 'Años $decade';
+  }
+
+  @override
+  String get podiumSortPodium => 'Compos más recientes primero';
+
+  @override
   String get competitionEmpty => 'Esta competición no tiene entradas';
 
   @override
@@ -3913,11 +4034,11 @@ class AppLocalizationsEs extends AppLocalizations {
   String get onboardingStart => 'Empezar';
 
   @override
-  String get onboardingBetaTitle => 'Versión beta';
+  String get onboardingWelcomeTitle => 'Bienvenido a Rewamp';
 
   @override
-  String get onboardingBetaBody =>
-      'Rewamp aún está en construcción. Los datos locales — biblioteca, listas, favoritos, estadísticas — podrían borrarse antes de la versión 1.0. Tus descargas no corren peligro, pero guarda en otro sitio lo que te importe.';
+  String get onboardingWelcomeBody =>
+      'Un reproductor de chiptunes, módulos tracker y música de videojuegos: Amiga, Atari, C64, consolas, arcade y PC. Escucha desde los grandes archivos en línea o abre tus propios archivos.';
 
   @override
   String onboardingVersion(String version, String build) {
@@ -3950,7 +4071,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get onboardingReplaySubtitle =>
-      'Ver de nuevo el aviso beta y el recorrido';
+      'Ver de nuevo la presentación y el recorrido';
 
   @override
   String get settingsPatternTitle => 'Patrones';
@@ -4137,52 +4258,56 @@ class AppLocalizationsEs extends AppLocalizations {
   String get releaseNotesTitle => 'Novedades';
 
   @override
-  String get releaseNotesV9Speed =>
-      'Velocidad de reproducción de 0,2× a 3×, en el panel Voces. La mayoría de los motores cambian el tempo y conservan el tono; los demás remuestrean.';
+  String get releaseNotesV10Loading =>
+      'Abrir una pista lenta ya no congela la app: un anillo fino alrededor de reproducir/pausa indica que aún se está cargando.';
 
   @override
-  String get releaseNotesV9Windows =>
-      'Windows: las teclas multimedia y los controles multimedia del sistema (ventana de volumen, barra de tareas) controlan la reproducción, y el visualizador a pantalla completa ocupa ahora toda la pantalla.';
+  String get releaseNotesV10Piano =>
+      'Visualizador de piano: las piezas con muchas voces o instrumentos simultáneos se reparten en más teclados.';
 
   @override
-  String get releaseNotesV9Formats =>
-      'Nuevos reproductores: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) y los programas .cop de SAM Coupé.';
+  String get releaseNotesV10Amiga =>
+      'Amiga: StoneTracker, SUNtronic (rips TSM) y más módulos de Soundtracker 2.6 ya se reproducen, y las piezas de SoundPlayer suenan en iOS.';
 
   @override
-  String get releaseNotesV9Amiga =>
-      'Amiga y Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory y algunos módulos de Maximum Effect ya se reproducen.';
+  String get releaseNotesV10ZxSpectrum =>
+      'ZX Spectrum: los archivos .mt3 de zxart se reproducen, y en Linux se incluyen los formatos de ZXTune y los programas .cop de SAM Coupé.';
 
   @override
-  String get releaseNotesV9MoonBlaster =>
-      'MSX MoonBlaster: las canciones cargan su kit de muestras en lugar de sonar a ruido, y los archivos en modo edición se reproducen correctamente.';
+  String get releaseNotesV10OpenWith =>
+      'macOS e iOS: todos los formatos compatibles aparecen ahora en «Abrir con».';
 
   @override
-  String get releaseNotesV9HideElsewhere =>
-      'Biblioteca: «Ocultar lo que no está en este dispositivo» oculta las entradas locales cuyo archivo está en otro dispositivo.';
+  String get releaseNotesV10MtcCrash =>
+      'Corregido: algunos archivos .mtc que mezclan PT3 con TFM o PSG cerraban la app.';
 
   @override
-  String get releaseNotesV9ArtworkFullscreen =>
-      'Una pulsación larga en la carátula del reproductor la muestra a pantalla completa.';
+  String get releaseNotesV10Podiums =>
+      'Nuevo explorador «Podios»: los ganadores de las competiciones de la demoscene por party, año o tipo de compo, con un palmarés.';
 
   @override
-  String get releaseNotesV9Viz =>
-      'Visualizadores: osciloscopio por voz por defecto (espectro de línea para formatos en streaming), cuadrícula y nombres de voces ajustables desde el osciloscopio, y un osciloscopio estéreo más estable.';
+  String get releaseNotesV10Arcade =>
+      'Arcade: la música Ensoniq ES5505/ES5506 (Taito F3…) se reproduce, los VGM de Apple IIGS ya no cierran la app y los motores están al día (se añade FM-Kingtracker .fmk).';
 
   @override
-  String get releaseNotesV9PsfTrack =>
-      'Corregido: tocar una pista de algunos álbumes PSF podía reproducir otra.';
+  String get releaseNotesV10InfoPanel =>
+      'Panel de información: formato, motor, canales y puntos de bucle primero, y los nombres de los campos destacan.';
 
   @override
-  String get releaseNotesV9Playlists =>
-      'Una carpeta con varias listas de reproducción forma ahora un único álbum con todas sus pistas, sin duplicados.';
+  String get releaseNotesV10LocalAlbums =>
+      'Las pantallas de álbum y de subcanciones muestran la colección; un archivo soltado lista todas sus pistas, indica «local» y ya no aparece dos veces al sustituirlo.';
 
   @override
-  String get releaseNotesV9AmigaInfo =>
-      'Las canciones de Amiga sin duración ni autor conocidos vuelven a consultar al servidor al cabo de una semana, en lugar de nunca.';
+  String get releaseNotesV10Crossfade =>
+      'Corregido: con el fundido encadenado, una pista más corta que el fundido no se oía.';
+
+  @override
+  String get releaseNotesV10Artwork =>
+      'Corregido: una carátula sustituida en el servidor se muestra en todas partes tras «Volver a descargar el archivo».';
 
   @override
   String get releaseNotesDataReset =>
-      'Los datos locales se han restablecido para esta beta. La biblioteca y las listas se reconstruyen desde la cuenta; las descargas hay que rehacerlas.';
+      'Los datos locales se han restablecido para esta versión. La biblioteca y las listas se reconstruyen desde la cuenta; las descargas hay que rehacerlas.';
 
   @override
   String get releaseNotesDismiss => 'Continuar';

@@ -1,7 +1,16 @@
 # rewamp patches to libsidplayfp / libresidfp
 
-All patches applied on top of the vendored copies in this directory.
-**Re-apply every section marked MUST RE-APPLY after any upstream update.**
+Vendored: libsidplayfp **3.1.1** + libresidfp **1.2.3** (see
+`patches/sidplayfp/UPSTREAM_VERSION`). The source modifications are real patch
+files in `patches/sidplayfp/<lib>/<path>.patch`, applied over pristine copies
+(`upstream/<lib>/<path>`) by `scripts/sync_sidplayfp.sh`; re-vendoring a newer
+upstream is `./scripts/sync_sidplayfp.sh <sid-ref> <rfp-ref>`. This file explains
+WHY each patch exists; the patch files are the source of truth for WHAT.
+
+Patched files: libresidfp `SID.h` (4-voice capture, seek filter skip, playback
+speed), `Filter.h` + `ExternalFilter.h/.cpp` (digi voice `sid_v4`);
+libsidplayfp `Event.h` (§1), SIDLite `SID.cpp` + `WavGen.cpp/.h` + `Filter.cpp`
+(capture). Since 3.x, `SidConfig::playback` is gone: stereo is `initMixer(true)`.
 
 ---
 

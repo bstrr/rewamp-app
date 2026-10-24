@@ -43,6 +43,8 @@ extern "C" int    g_force_loop_count;
 extern "C" int    g_force_fadeout_enabled;
 extern "C" double g_force_fadeout_seconds;
 extern "C" int    g_force_loop_native_veto;
+extern "C" double g_crossfade_seconds;     /* rewamp_datasource.c */
+extern "C" double g_track_end_fade_secs;   /* rewamp_audio.c */
 
 /* For vgmGetVoicesNb / vgmDataVoice_Available we define them inline here. */
 
@@ -61,8 +63,10 @@ static uint8_t vgm_voice_available(uint8_t type) {
         case DEVID_K051649: case DEVID_K054539: case DEVID_C6280:   case DEVID_C140:
         case DEVID_C219:    case DEVID_K053260: case DEVID_POKEY:   case DEVID_QSOUND:
         case DEVID_SCSP:    case DEVID_WSWAN:   case DEVID_VBOY_VSU:case DEVID_SAA1099:
-        case DEVID_ES5503:  case DEVID_X1_010:  case DEVID_C352:
+        case DEVID_ES5503:  case DEVID_ES5506:  case DEVID_X1_010:  case DEVID_C352:
         case DEVID_GA20:    case DEVID_MIKEY:
+        /* ZSG-2 + TMS57002 (Taito Zoom, VGM 1.73), from the user's fork. */
+        case DEVID_ZSG2:
             return 1;
         default:
             return 0;
@@ -121,10 +125,13 @@ static uint8_t vgm_voices_nb(uint8_t type) {
         case DEVID_VBOY_VSU:return 6;
         case DEVID_SAA1099: return 6;
         case DEVID_ES5503:  return 32;
+        case DEVID_ES5506:  return 32;   /* ES5505/ES5506, 32 voices */
         case DEVID_X1_010:  return 16;
         case DEVID_C352:    return 32;
         case DEVID_GA20:    return 4;
         case DEVID_MIKEY:   return 4;
+        /* 48 voices; 33-48 muted through chnMute[1] (RWUSER_CHN_MUTE_HI). */
+        case DEVID_ZSG2:    return 48;
         default:            return 0;
     }
 }
@@ -149,6 +156,7 @@ struct VgmDecoder {
     uint32_t     sampleRate;
     std::vector<VgmChipSlot> chips;
     int64_t      lastMuteMask;    /* applied generic_mute_mask snapshot */
+    bool         defaultFade = false; /* fondu de fin vgmplay posé (vgm_open) */
 };
 
 static const uint32_t kSampleRate    = 44100;
@@ -263,6 +271,8 @@ static int vgm_voice_detailed_name(uint8_t type, int ch, char* out, size_t len) 
         case DEVID_K051649: snprintf(out, len, "SCC %d", ch + 1); return 1;
         case DEVID_ES5503:
         case DEVID_X1_010:  snprintf(out, len, "Wave %d", ch + 1); return 1;
+        case DEVID_ES5506:
+        case DEVID_ZSG2:    snprintf(out, len, "Voice %d", ch + 1); return 1;
         case DEVID_32X_PWM: snprintf(out, len, "PWM %s", ch == 0 ? "L" : "R"); return 1;
         case DEVID_GB_DMG: {
             static const char* const gb[4] =
@@ -400,8 +410,22 @@ static void vgm_setup_channels(VgmDecoder* dec) {
     {
         const char* const* tags = plr->GetTags();
         for (const char* const* t = tags; t && *t; t += 2) {
-            if (t[1] && t[1][0])
-                rewamp_track_message_append("%s: %s\n", t[0], t[1]);
+            if (!t[1] || !t[1][0]) continue;
+            /* Le commentaire GD3 est un PARAGRAPHE (souvent plusieurs
+             * lignes): à la ligne après la clé, et un séparateur après lui
+             * pour qu'il ne se confonde pas avec la ligne suivante. Les
+             * fins de ligne finales sont retirées, sinon le séparateur
+             * flotte après un blanc. */
+            if (strcmp(t[0], "COMMENT") == 0) {
+                int n = (int)strlen(t[1]);
+                while (n > 0 && (t[1][n - 1] == '\n' || t[1][n - 1] == '\r'))
+                    n--;
+                if (n == 0) continue;
+                rewamp_track_message_append(
+                    "%s:\n%.*s\n────────────────────────\n", t[0], n, t[1]);
+                continue;
+            }
+            rewamp_track_message_append("%s: %s\n", t[0], t[1]);
         }
         /* Tags STRUCTURÉS pour l'affichage (le TITRE du morceau vient du
          * GD3, pas du nom de fichier — « 01 Raizing Logo.vgz » s'appelle
@@ -427,6 +451,24 @@ static void vgm_setup_channels(VgmDecoder* dec) {
             }
         }
         rewamp_track_tag_set(title, artist, game);
+    }
+
+    /* Info panel: le point de boucle. GetTotalTicks() est UNE passe du
+     * fichier, boucle comprise; GetLoopTicks() la boucle seule (0 = pas de
+     * boucle) — l'intro est la différence. Le tick VGM EST l'échantillon à
+     * 44100 Hz (l'offset de boucle de l'en-tête se compte ainsi): on donne
+     * alors les échantillons; S98/GYM ont leur propre cadence, temps seul. */
+    {
+        const UINT32 total = plr->GetTotalTicks();
+        const UINT32 loop  = plr->GetLoopTicks();
+        if (loop > 0 && loop <= total) {
+            const UINT32 start = total - loop;
+            const bool samples = plr->Tick2Second(44100) == 1.0;
+            rewamp_track_message_append_loop(
+                plr->Tick2Second(start), plr->Tick2Second(loop),
+                samples ? (long long)start : -1,
+                samples ? (long long)loop  : -1);
+        }
     }
 }
 
@@ -589,6 +631,27 @@ static RewampDecoder* vgm_open(const char* path, RewampAudioFormat* outFmt) {
          * ce qui est exactement ce qu'on veut). */
         const PlayerBase* pb = dec->player.GetPlayer();
         if (pb != NULL && pb->GetLoopTicks() == 0) g_force_loop_native_veto = 1;
+    } else {
+        /* Le format VGM ne prévoit pas de fondu: c'est le LECTEUR qui finit un
+         * morceau qui boucle. Usage de vgmplay (VGMPlay.ini): 2 passes de
+         * boucle (le défaut de PlayerA, gardé) puis un fondu — 8 s chez
+         * vgmplay, 5 s chez nous par défaut, réglable 0-16 s (Réglages →
+         * Moteurs → libvgm). Sans fondu, PlayerA appelle FadeOut() avec 0
+         * échantillon: coupure NETTE en plein volume à la fin de la 2e passe.
+         * Un fichier SANS boucle finit tel quel (PLREVT_LOOP n'est jamais
+         * levé, vgmplay ne le fond pas non plus). Crossfade actif: pas de
+         * fondu moteur, le recouvrement fait déjà la descente (même règle que
+         * gme et la rampe PSF). */
+        const double fadeSecs = rewamp_get_engine_param("vgm", "loop_fade_secs", 5.0);
+        const PlayerBase* pb = dec->player.GetPlayer();
+        if (fadeSecs > 0.0 && g_crossfade_seconds <= 0.0 &&
+            pb != NULL && pb->GetLoopTicks() != 0) {
+            PlayerA::Config cfg = dec->player.GetConfiguration();
+            cfg.fadeSmpls = (UINT32)(fadeSecs * kSampleRate);
+            dec->player.SetConfiguration(cfg);
+            dec->defaultFade = true;
+            g_track_end_fade_secs = fadeSecs;
+        }
     }
 
     /* Start playback (initialises chip emulators, populates device list) */
@@ -643,7 +706,13 @@ static void vgm_apply_mute(VgmDecoder* dec) {
         PLR_MUTE_OPTS mo;
         if (plr->GetDeviceMuting(c.devId, mo) & 0x80) continue;
         uint32_t m0 = 0, m1 = 0;
-        for (int i = 0; i < c.count && i < 32; i++) {
+        /* Up to 64 voices: chnMute[0] carries 0-31 and chnMute[1] either the
+         * LINKED device (SSG of an OPN, OPL3 of an OPL4) or, for a device
+         * without one, its voices 32-63 (ZSG-2, RWUSER_CHN_MUTE_HI in the
+         * libvgm patches). The loop used to stop at 32: OPL4 FM 9-18 and
+         * ZSG-2 voices 33-48 could not be muted. */
+        for (int i = 0; i < c.count && i < 64; i++) {
+            if (c.startVoice + i >= 64) break;   /* generic_mute_mask is 64 bits */
             if (!((generic_mute_mask >> (c.startVoice + i)) & 1)) continue;
             int ch = i;
             if (c.type == DEVID_YM2203) {
@@ -663,8 +732,10 @@ static void vgm_apply_mute(VgmDecoder* dec) {
             } else if (c.type == DEVID_YMF278B) {
                 if (ch < 24) m0 |= 1u << ch;              /* PCM          */
                 else         m1 |= 1u << (ch - 24);       /* OPL3 (linked) */
-            } else {
+            } else if (ch < 32) {
                 m0 |= 1u << ch;
+            } else {
+                m1 |= 1u << (ch - 32);                    /* ZSG-2 33-48  */
             }
         }
         if (c.type == DEVID_YMF262) {
@@ -762,6 +833,7 @@ static uint64_t vgm_length(RewampDecoder* rdec) {
      * duration matches what will really play, fade included. */
     UINT8 flags = PLAYTIME_LOOP_INCL;
     if (g_force_loop_mode == 1 && g_force_fadeout_enabled) flags |= PLAYTIME_WITH_FADE;
+    if (dec->defaultFade) flags |= PLAYTIME_WITH_FADE;
     double totalSecs = dec->player.GetTotalTime(flags);
     if (totalSecs <= 0.0) return 0;
     return (uint64_t)(totalSecs * kSampleRate + 0.5);

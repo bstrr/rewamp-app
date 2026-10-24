@@ -90,6 +90,18 @@ void        rewamp_track_message_clear(void);
 void        rewamp_track_message_append(const char* fmt, ...);
 REWAMP_EXPORT const char* rewamp_track_message(void);
 
+/* Point de boucle du morceau, en deux lignes du panneau ⓘ: « Loop start »
+ * (fin de l'intro) et « Loop length » (une passe de la boucle), en temps
+ * m:ss.mmm suivi des ÉCHANTILLONS quand le format les compte — un VGM ou un
+ * flux vgmstream boucle à l'échantillon près, et c'est ce nombre-là qu'on
+ * compare à l'outil qui a écrit le fichier. [startSample]/[lengthSample] en
+ * échantillons à [sampleRate] (< 0 ⇒ temps seul, depuis les secondes). Rien
+ * n'est écrit pour une longueur de boucle nulle. Une seule mise en forme pour
+ * tous les moteurs. */
+void        rewamp_track_message_append_loop(double startSecs, double lengthSecs,
+                                             long long startSample,
+                                             long long lengthSample);
+
 /* Shift-JIS (CP932) → UTF-8, best effort — several Japanese chip formats
  * (PxTone, MDX, …) store their tags in it, and publishing them raw shows
  * mojibake in the info panel. Pure-ASCII input passes through unchanged; on

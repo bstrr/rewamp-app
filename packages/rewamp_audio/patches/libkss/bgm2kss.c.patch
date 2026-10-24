@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/kss/bgm2kss.c	2026-07-06 09:48:52
-+++ src/kss/bgm2kss.c	2026-07-06 09:44:22
+--- third_party/libkss/upstream/src/kss/bgm2kss.c	2026-10-22 00:44:15
++++ third_party/libkss/src/kss/bgm2kss.c	2026-10-22 00:44:21
 @@ -14,7 +14,7 @@
      0xCD, 0x20, 0x60,       /* CALL	6020H */
      0x3E, 0x3F,             /* LD	A,3FH */

@@ -399,6 +399,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     // on annonce la liste comme complète.
     if (offset == 0 &&
         (widget.albumId == null || widget.albumId!.isEmpty)) {
+      // Fichiers sur CE disque: le mode local entier (lecture des vrais
+      // chemins, tailles, « local », pas de bouton de téléchargement). Sans
+      // ça un zip déposé remplissait la liste depuis la base mais restait
+      // traité comme un album à télécharger — le repli de `_init` n'est
+      // tenté que sur une liste VIDE.
+      if (await _tryLoadLocalAlbum()) return;
+      if (!mounted) return;
       final local = await LocalDb.instance
           .tracksForAlbum(albumName: widget.albumName);
       if (!mounted) return;
@@ -1390,6 +1397,41 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     );
   }
 
+  /// Les fichiers sont-ils un TÉLÉCHARGEMENT de l'app (sous `online/`) ? Faux
+  /// pour un album local (zip déposé, import): ni re-télécharger ni
+  /// « supprimer les fichiers » n'y ont de sens — même règle que l'écran des
+  /// sous-chansons (`_deletablePath`). Hors mode local, la question est celle
+  /// du catalogue et la réponse reste oui.
+  bool get _isAppDownload {
+    if (!_localAlbum) return true;
+    final mark = '${Platform.pathSeparator}online${Platform.pathSeparator}';
+    return _localTracks.any((t) => t.filePath.contains(mark));
+  }
+
+  /// « Collection · Plateforme · Année ». La collection vient des détails
+  /// serveur, sinon de l'écran qui a ouvert l'album, sinon des lignes locales;
+  /// un album sans aucune identité catalogue est « local ».
+  String _metaLine(AlbumDetails? d) {
+    String? slug = d?.collection;
+    if (slug == null || slug.isEmpty) slug = widget.collectionSlug;
+    if ((slug == null || slug.isEmpty) && _localTracks.isNotEmpty) {
+      slug = _localTracks
+          .map((t) => t.collectionSlug)
+          .firstWhere((c) => c != null && c.isNotEmpty, orElse: () => null);
+    }
+    final isLocal = widget.albumId == null &&
+        _localAlbum &&
+        _localTracks.every((t) => catalogueSongId(t.onlineId) == null);
+    final collection = RewampDb.displayCollection(slug,
+        isLocal: isLocal, localLabel: context.l10n.playerSourceLocal);
+    final platform = d?.platform ?? widget.platformName;
+    return [
+      if (collection != null) collection,
+      if (platform != null && platform.isNotEmpty) platform,
+      if (d?.year != null) d!.year.toString(),
+    ].join(' · ');
+  }
+
   Widget _buildMeta(ColorScheme cs) {
     final l10n = context.l10n;
     final d    = _details;
@@ -1419,18 +1461,19 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                 Text(l10n.albumLoadingInfo),
               ]),
             )
-          else if (d != null) ...[
-            // Platform / year — shown as coloured subtitle next to title.
-            if (d.platform != null || d.year != null) ...[
+          else ...[
+            // Collection / platform / year — shown as coloured subtitle next
+            // to title. Also for an album without server details (imported
+            // files: collection « local »).
+            if (_metaLine(d).isNotEmpty) ...[
               Text(
-                [
-                  if (d.platform != null) d.platform!,
-                  if (d.year     != null) d.year.toString(),
-                ].join(' · '),
+                _metaLine(d),
                 style: tt.bodyMedium?.copyWith(color: cs.primary),
               ),
               const SizedBox(height: 4),
             ],
+          ],
+          if (!_detailsLoading && d != null) ...[
 
             // Note de l'album (migrations serveur 207/208). 2,5 = la moyenne du
             // catalogue, pas « la moitié » — et `null` n'est PAS zéro: zéro
@@ -1649,9 +1692,10 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                       : (tracks, {required atEnd, silent = false}) =>
                           widget.onAlbumQueueAdd!(tracks, atEnd: true),
                   fetchTracks: () async => List<SearchResult>.from(_tracks),
-                  onRedownload: _albumDownloaded
+                  onRedownload: _albumDownloaded && _isAppDownload
                       ? () => _downloadAlbumOnly(force: true)
                       : null,
+                  canDeleteFiles: _isAppDownload,
                   // Album files just deleted: leave this (now stale) screen.
                   onDeleted: () {
                     if (mounted) Navigator.of(context).maybePop();

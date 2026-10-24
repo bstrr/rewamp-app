@@ -39,21 +39,20 @@
 #if __cplusplus >= 201703L
 #  define LIKELY    [[ likely ]]
 #  define UNLIKELY  [[ unlikely ]]
+#  define MAYBE_UNUSED [[ maybe_unused ]]
 #  ifndef HAVE_CXX17
 #    define HAVE_CXX17
 #  endif
 #else
 #  define LIKELY
 #  define UNLIKELY
+#  define MAYBE_UNUSED
 #endif
 
 #if __cplusplus >= 201402L
-#  define MAYBE_UNUSED [[ maybe_unused ]]
 #  ifndef HAVE_CXX14
 #    define HAVE_CXX14
 #  endif
-#else
-#  define MAYBE_UNUSED
 #endif
 
 #if __cplusplus >= 201103L
@@ -89,7 +88,7 @@ extern "C"
 #ifndef __VERSION_CC__
 extern const char* residfp_version_string;
 #else
-const char* residfp_version_string = "0.9.1";
+const char* residfp_version_string = "1.2.3";
 #endif
 }
 

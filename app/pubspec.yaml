@@ -4,7 +4,7 @@ publish_to: 'none'
 # The part after "+" is the build number. TestFlight and the Play Console both
 # refuse an upload whose build number is not strictly greater than the last one
 # they accepted — bump it on EVERY upload, even when 0.1.0 does not move.
-version: 0.8.0+17
+version: 1.0.0+18
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -37,7 +37,7 @@ dependencies:
                                  # iOS+Android+macOS; playback stays in the C engine
   audio_session: ^0.2.4         # audio_service dep; explicit for session config
   permission_handler: ^12.0.3    # Android 13+ POST_NOTIFICATIONS for media controls
-  flutter_secure_storage: ^10.3.1 # account UUID lives in the Keychain (iOS/macOS)
+  flutter_secure_storage: ^11.2.0 # account UUID lives in the Keychain (iOS/macOS)
                                  # / EncryptedSharedPreferences (Android): it IS
                                  # the account (bearer token), never in the clear
   url_launcher: ^6.3.2           # credits&licenses: open a project page in the
@@ -50,16 +50,14 @@ dependencies:
                                  # fullscreen in-app player); iOS+Android+macOS
   webview_flutter_android: ^4.0.0   # direct import: gesture-free media playback
   webview_flutter_wkwebview: ^3.15.0 # direct import: creation params (autoplay)
-  # ⚠️ ÉPINGLÉ en 0.7.x, pas un oubli de montée. La 0.8.x décide d'appliquer
-  # le Kotlin Gradle Plugin sur la seule VERSION MAJEURE d'AGP
-  # (`if (agpMajor < 9)`), alors que ce qui compte est `android.builtInKotlin`
-  # — que le template Flutter pose à FALSE dans android/gradle.properties.
-  # Sur AGP 9 + builtInKotlin=false, elle saute donc KGP en croyant qu'AGP le
-  # fournit, et son bloc `kotlin { }` ne référence plus rien:
-  # « Could not find method kotlin() ». À relever quand on migrera pour de bon
-  # vers le Kotlin intégré (retirer KGP de settings.gradle.kts ET du module
-  # app: AGP 9 échoue durement si kotlin-android est appliqué en même temps).
-  desktop_drop: ^0.7.1
+  # ⚠️ PLANCHER 0.8.4. Les 0.8.0-0.8.3 décidaient d'appliquer le Kotlin
+  # Gradle Plugin sur la seule VERSION MAJEURE d'AGP, alors que ce qui compte
+  # est `android.builtInKotlin` — que le template Flutter pose à FALSE dans
+  # android/gradle.properties: sur AGP 9 elles sautaient KGP et le build
+  # Android mourait (« Could not find method kotlin() »). La 0.8.4 lit la
+  # propriété. La 0.9 réécrit l'API (onDrop/DropFileItem/appleBookmark, accès
+  # borné au rappel) et exige Flutter ≥ 3.47.7: migration à part.
+  desktop_drop: ^0.8.4
   # ⚠️ Plancher 4.3.3: la version où les shaders ont été réécrits pour
   # Impeller sur ANGLE (Windows). En dessous, la première image attend ~25 s
   # et la lentille perd sa réfraction — voir docs/BUILD_WINDOWS.md §5.10.
@@ -155,6 +153,7 @@ flutter:
     # level down and silently vanish from the bundle without this line.
     - assets/uade/players/AYPlayers/
     - assets/uade/players/ENV/EaglePlayer/
+    - assets/uade/players/LIBS/
     - assets/uade/players/S/
     # sc68 loose 68k replay routines (Modizer Resources/sc68/Replay). 55 of
     # the 99 are ALSO gzip-embedded in the lib (USE_REPLAY68); the other 44

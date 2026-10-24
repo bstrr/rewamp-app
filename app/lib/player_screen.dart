@@ -17,6 +17,7 @@ import 'favorite_color.dart';
 import 'fullscreen_progress_line.dart';
 import 'package:flutter/services.dart' show HapticFeedback, MethodChannel;
 import 'competition_screen.dart' show podiumColor;
+import 'info_text_keys.dart';
 import 'l10n.dart';
 import 'podium_badge.dart';
 import 'player_controller.dart' show PlayerController, QueueEntry;
@@ -41,6 +42,7 @@ import 'orientation_lock.dart';
 import 'production_screen.dart' show openProductionOn;
 import 'm3u_info.dart' show M3uField, M3uInfo, splitM3uArtists;
 import 'rewamp_db.dart' show DownloadInfo, ProductionRef, RewampDb;
+import 'local_import.dart' show localAudioFormatOf;
 import 'uade_info.dart';
 import 'sap_info.dart';
 import 'track_info_flash.dart';
@@ -48,6 +50,7 @@ import 'track_options_sheet.dart';
 import 'video_screen.dart';
 import 'transport_buttons.dart';
 import 'voices_sheet.dart';
+import 'loading_ring.dart';
 
 // TODO(artwork-bg): when the C backend exposes vizSetArtworkTexture(pixels,w,h,opacity),
 // pass the current artwork bitmap here so the GL renderer composites it as a
@@ -1392,11 +1395,20 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// Prev / play-pause / next over the fullscreen visualizer: a translucent
   /// pill so it stays legible over a bright preset.
   Widget _fsTransportBar(PlayerController ctrl) {
-    Widget btn(IconData icon, VoidCallback? onPressed, double size) => IconButton(
+    Widget btn(IconData icon, VoidCallback? onPressed, double size,
+            {bool ring = false}) =>
+        IconButton(
           iconSize: size,
           padding: const EdgeInsets.symmetric(horizontal: 6),
           constraints: const BoxConstraints(),
-          icon: OutlinedGlyph(icon: icon, size: size, enabled: onPressed != null),
+          icon: ring
+              ? LoadingRing(
+                  loading: ctrl.loadingTrack,
+                  size: size,
+                  outlined: true,
+                  child: OutlinedGlyph(
+                      icon: icon, size: size, enabled: onPressed != null))
+              : OutlinedGlyph(icon: icon, size: size, enabled: onPressed != null),
           onPressed: onPressed,
         );
     // AnimatedBuilder: PlayerScreen does NOT rebuild when the controller ticks -
@@ -1410,7 +1422,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Widget _fsTransportBody(
-      PlayerController ctrl, Widget Function(IconData, VoidCallback?, double) btn) {
+      PlayerController ctrl,
+      Widget Function(IconData, VoidCallback?, double, {bool ring}) btn) {
     // NO backdrop. Legibility comes from a black outline around each glyph, the
     // same trick the text over the visualizer uses (a stroked copy behind, the
     // filled one in front): it stays readable over a white preset without
@@ -1428,7 +1441,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ctrl.hasFile
                     ? () => _tapTransport(ctrl, ctrl.isPlaying ? 'pause' : 'lecture')
                     : null,
-                40),
+                40,
+                ring: true),
             btn(Icons.fast_forward,
                 ctrl.canGoNext ? () => _tapTransport(ctrl, 'suivant') : null, 30),
           ],
@@ -1801,8 +1815,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                   tooltip: l10n.playerTrackInfo,
                   // Also enabled when only server tags are known — the sheet
                   // renders them as clickable chips above the (possibly
-                  // empty-state) native info text.
-                  onPressed: ctrl.audio.trackMessage.isNotEmpty ||
+                  // empty-state) native info text. Un fichier chargé a
+                  // toujours au moins l'en-tête format / moteur / voies.
+                  onPressed: (ctrl.filePath ?? '').isNotEmpty ||
+                          ctrl.audio.trackMessage.isNotEmpty ||
                           _isSidFile(ctrl) ||
                           ctrl.backend == 'asap' ||
                           ctrl.songTags.isNotEmpty
@@ -1846,7 +1862,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// is localized.
   static Future<String> _buildInfoText(
       PlayerController ctrl, AppLocalizations l10n) async {
-    var text = ctrl.audio.trackMessage;
+    var text = _withTechHeader(ctrl, ctrl.audio.trackMessage);
 
     // SID: append the cached STIL entry for the current subsong (fetched and
     // cached per HVSC MD5 by app_shell's _applyLocalSidMeta).
@@ -2012,6 +2028,49 @@ class _PlayerScreenState extends State<PlayerScreen>
     text += await _filesSection(ctrl);
 
     return text.trim().isEmpty ? l10n.playerNoTrackInfo : text;
+  }
+
+  /// En-tête technique du panneau: format, moteur, voies — EN TÊTE, avant les
+  /// tags. Le moteur sait souvent mieux que nous (« Format: ProTracker M.K. »,
+  /// « Channels: 2 @ 44100 Hz » d'un flux vgmstream): sa ligne `Format:` /
+  /// `Channels:` est alors REMONTÉE ici plutôt que doublée. Sinon le format est
+  /// l'extension (préfixe Amiga compris: `mdat.NOM` → MDAT) et les voies celles
+  /// que le greffon expose, réparties par puce quand il les nomme.
+  static String _withTechHeader(PlayerController ctrl, String body) {
+    final path = ctrl.filePath;
+    if (path == null || path.isEmpty) return body;
+    final lines = body.split('\n');
+    String? pull(String key) {
+      final i = lines.indexWhere((l) => l.startsWith('$key: '));
+      if (i < 0) return null;
+      return lines.removeAt(i).substring(key.length + 2).trim();
+    }
+
+    final a = ctrl.audio;
+    final format = pull('Format') ??
+        (localAudioFormatOf(path) ??
+                p.extension(path).replaceFirst('.', ''))
+            .toUpperCase();
+    var channels = pull('Channels');
+    if (channels == null) {
+      final n = a.voiceCountRaw;
+      if (n > 0) {
+        final chips = <String>[
+          for (var c = 0; c < a.chipCount; c++)
+            if (a.chipName(c).isNotEmpty && a.chipName(c) != '—')
+              '${a.chipName(c)} ×${a.chipVoiceCount(c)}',
+        ];
+        channels = chips.isEmpty ? '$n' : '$n (${chips.join(', ')})';
+      }
+    }
+    final head = [
+      if (format.isNotEmpty) 'Format: $format',
+      if (ctrl.backend.isNotEmpty) 'Engine: ${ctrl.backend}',
+      if (channels != null && channels.isNotEmpty) 'Channels: $channels',
+    ];
+    if (head.isEmpty) return body;
+    final rest = lines.join('\n').trimLeft();
+    return '${head.join('\n')}\n${rest.isEmpty ? '' : '\n$rest'}';
   }
 
   /// Ce que le M3U VOISIN dit de l'album — album, artistes, éditeur, année,
@@ -2640,7 +2699,11 @@ class _PlayerScreenState extends State<PlayerScreen>
         IconButton(
           key: const ValueKey('ps-play'),
           iconSize: 52,
-          icon: Icon(ctrl.isPlaying ? Icons.pause : Icons.play_arrow),
+          icon: LoadingRing(
+            loading: ctrl.loadingTrack,
+            size: 52,
+            child: Icon(ctrl.isPlaying ? Icons.pause : Icons.play_arrow),
+          ),
           onPressed: ctrl.hasFile
               ? () => _tapTransport(ctrl, ctrl.isPlaying ? 'pause' : 'lecture')
               : null,
@@ -4213,11 +4276,11 @@ class _TrackInfoSheetBodyState extends State<_TrackInfoSheetBody> {
   Widget _buildText(BuildContext context) {
     const base = TextStyle(
         fontFamily: 'monospace', fontSize: 12, height: 1.35);
-    if (!_isOpenmpt || _activeInstr.isEmpty) {
-      return SelectableText(_text, style: base);
-    }
     final primary = Theme.of(context).colorScheme.primary;
     final hi = base.copyWith(color: primary, fontWeight: FontWeight.bold);
+    // Intitulés « Clé: » en avant (voir info_text_keys.dart).
+    final keyStyle = base.copyWith(color: primary, fontWeight: FontWeight.w700);
+    final highlight = _isOpenmpt && _activeInstr.isNotEmpty;
     // Fixed-width leading gutter so the dot never shifts the text: a text
     // bullet would fall back to a non-monospace glyph of a different advance
     // and push the line right. Every list line reserves the same gutter; only
@@ -4244,13 +4307,16 @@ class _TrackInfoSheetBodyState extends State<_TrackInfoSheetBody> {
 
     final spans = <InlineSpan>[];
     var inList = false;
-    for (final line in _text.split('\n')) {
+    final lines = _text.split('\n');
+    final keyLens = infoKeyLengths(_text);
+    for (var li = 0; li < lines.length; li++) {
+      final line = lines[li];
       if (line == 'Instruments:' || line == 'Samples:') {
         inList = true;
       } else if (line.isEmpty) {
         inList = false;
       }
-      if (inList) {
+      if (highlight && inList) {
         final m = RegExp(r'^(\d+):').firstMatch(line);
         if (m != null) {
           final active = _activeInstr.contains(int.parse(m.group(1)!));
@@ -4259,7 +4325,15 @@ class _TrackInfoSheetBodyState extends State<_TrackInfoSheetBody> {
           continue;
         }
       }
-      spans.add(TextSpan(text: '$line\n', style: base));
+      final k = keyLens[li];
+      // Pas de « \n » après la DERNIÈRE ligne: le texte brut n'en avait pas.
+      final nl = li == lines.length - 1 ? '' : '\n';
+      if (k > 0) {
+        spans.add(TextSpan(text: line.substring(0, k), style: keyStyle));
+        spans.add(TextSpan(text: '${line.substring(k)}$nl', style: base));
+      } else {
+        spans.add(TextSpan(text: '$line$nl', style: base));
+      }
     }
     return SelectableText.rich(TextSpan(children: spans));
   }

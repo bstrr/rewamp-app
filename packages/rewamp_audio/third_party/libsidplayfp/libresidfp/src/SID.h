@@ -24,12 +24,16 @@
 #define SIDFP_H
 
 #include <memory>
+
+#include <cassert>
 #include <cstdint>
 
 #include "residfp/residfp_defs.h"
 #include "siddefs-fp.h"
 #include "ExternalFilter.h"
+#include "Filter.h"
 #include "Voice.h"
+#include "State.h"
 
 namespace reSIDfp
 {
@@ -48,7 +52,7 @@ private:
     const char* message;
 
 public:
-    SIDError(const char* msg) :
+    explicit SIDError(const char* msg) :
         message(msg) {}
     const char* getMessage() const { return message; }
 };
@@ -58,6 +62,8 @@ public:
  */
 class SID
 {
+    friend class State;
+
 private:
     /// Currently active filter
     Filter* filter;
@@ -92,14 +98,25 @@ private:
     /// Time until #voiceSync must be run.
     unsigned int nextVoiceSync;
 
+    unsigned int offset_6581;
+
     /// Currently active chip model.
     ChipModel model;
 
     /// Currently selected combined waveforms strength.
     CombinedWaveforms cws;
 
+    // Dac leakage
+    double dacLeakage;
+
     /// Last written value
-    unsigned char busValue;
+    uint8_t busValue;
+
+    /// Paddle coordinates.
+    //@{
+    uint8_t paddleX = 0xff;
+    uint8_t paddleY = 0xff;
+    //@}
 
     /**
      * Emulated nonlinearity of the envelope DAC.
@@ -115,13 +132,16 @@ private:
      */
     float oscDAC[4096];
 
+    /// Parameters for save state
+    Params* p;
+
 private:
     /**
      * Age the bus value and zero it if it's TTL has expired.
      *
      * @param n the number of cycles
      */
-    void ageBusValue(unsigned int n);
+    void ageBusValue(int n);
 
     /**
      * Calculate the numebr of cycles according to current parameters
@@ -130,6 +150,34 @@ private:
      * @param sync whether to do the actual voice synchronization
      */
     void voiceSync(bool sync);
+
+    /// clock waveform generators
+    inline void clockWaveGen()
+    {
+        voice[0].wave()->clock();
+        voice[1].wave()->clock();
+        voice[2].wave()->clock();
+    }
+
+    /// clock envelope generators
+    inline void clockEnvGen()
+    {
+        voice[0].envelope()->clock();
+        voice[1].envelope()->clock();
+        voice[2].envelope()->clock();
+    }
+
+    /// clock internal and external filters
+    inline int32_t clockFilt()
+    {
+        uint16_t filtOutput = filter->clock(voice[0], voice[1], voice[2]);
+        int32_t exFiltInput = static_cast<int32_t>(filtOutput) + INT16_MIN;
+        return externalFilter.clock(exFiltInput);
+    }
+
+private:
+    SID(const SID&) = delete;
+    SID& operator=(const SID&) = delete;
 
 public:
     SID();
@@ -172,6 +220,14 @@ public:
     void input(int value);
 
     /**
+     * Read registers without altering state.
+     *
+     * @param offset SID register to read
+     * @return value read from chip
+     */
+    uint8_t peek(int offset) const;
+
+    /**
      * Read registers.
      *
      * Reading a write only register returns the last char written to any SID register.
@@ -191,7 +247,7 @@ public:
      * @param offset SID register to read
      * @return value read from chip
      */
-    unsigned char read(int offset);
+    uint8_t read(int offset);
 
     /**
      * Write registers.
@@ -199,7 +255,7 @@ public:
      * @param offset chip register to write
      * @param value value to write
      */
-    void write(int offset, unsigned char value);
+    void write(int offset, uint8_t value);
 
     /**
      * Setting of SID sampling parameters.
@@ -232,18 +288,36 @@ public:
     );
 
     /**
-     * Clock SID forward using chosen output sampling algorithm.
+     * Clock SID forward using chosen output resampling algorithm.
      *
      * @param cycles c64 clocks to clock
      * @param buf audio output buffer
      * @return number of samples produced
      */
-    int clock(unsigned int cycles, short* buf);
+    int clock(unsigned int cycles, int16_t* buf);
+
+    /**
+     * Clock SID forward using chosen output resampling algorithm.
+     *
+     * @param buf audio output buffer
+     * @param bufSize the buffer size
+     * @return number of c64 clocks run
+     */
+    int clock(int16_t* buf, int bufSize);
+
+    /**
+     * Clock SID forward with no audio production.
+     * Only the digital parts are emulated,
+     * the analog stage is ignored.
+     *
+     * @param cycles c64 clocks to clock.
+     */
+    void clockDigital(unsigned int cycles);
 
     /**
      * Clock SID forward with no audio production.
      *
-     * _Warning_:
+     * @note:
      * You can't mix this method of clocking with the audio-producing
      * clock() because components that don't affect OSC3/ENV3 are not
      * emulated.
@@ -264,7 +338,7 @@ public:
     *
     * @see Filter6581::setFilterRange(double)
     */
-    void setFilter6581Range ( double adjustment );
+    void setFilter6581Range(double adjustment);
 
     /**
      * Set filter curve parameter for 8580 model.
@@ -279,6 +353,31 @@ public:
      * @param enable false to turn off filter emulation
      */
     void enableFilter(bool enable);
+
+    /**
+     * Enable/disable old caps (2200pF) for 6581 model.
+     */
+    void enableOld6581caps(bool enable);
+
+    /**
+     * Set paddle coordinates.
+     */
+    void setPaddle(uint8_t x, uint8_t y);
+
+    /*
+     * Set the DAC leakage level.
+     */
+    void setDacLeakage(double level);
+
+    /*
+     * Set the 6581 wave offset.
+     */
+    void setOffset6581(double offset);
+
+    /*
+     * Set the DC-Blocker resistance.
+     */
+    void setDCBRes(double res);
 };
 
 } // namespace reSIDfp
@@ -287,14 +386,13 @@ public:
 
 #include <algorithm>
 
-#include "Filter.h"
 #include "resample/Resampler.h"
 
 namespace reSIDfp
 {
 
 RESIDFP_INLINE
-void SID::ageBusValue(unsigned int n)
+void SID::ageBusValue(int n)
 {
     if (likely(busValueTtl != 0))
     {
@@ -308,30 +406,30 @@ void SID::ageBusValue(unsigned int n)
     }
 }
 
+} // namespace reSIDfp
+
 //TODO:  MODIZER changes start / YOYOFR
-static float sid_v1;
-static float sid_v2;
-static float sid_v3;
 extern "C" int sid_v4;
-
-
 extern "C" {
 #include "../../../../../src/ModizerVoicesData.h"
-extern char mSIDSeekInProgress;
-extern void* m_sid_chipId[MAXSID_CHIPS];
-extern int m_sid_chipNb;
 }
 //TODO:  MODIZER changes end / YOYOFR
 
+namespace reSIDfp
+{
 
 RESIDFP_INLINE
-int SID::clock(unsigned int cycles, short* buf)
+int SID::clock(unsigned int cycles, int16_t* buf)
 {
+    assert(buf);
+
     ageBusValue(cycles);
     int s = 0;
-    
+
     //TODO:  MODIZER changes start / YOYOFR
-    int sid_idx=0;//chipId*4;
+    // Oscilloscope slot of this chip: 4 per chip (3 voices + digi), chips
+    // numbered in order of first clock.
+    int sid_idx=0;
     while (sid_idx<MAXSID_CHIPS) {
         if (m_sid_chipId[sid_idx]==NULL) {
             m_sid_chipId[sid_idx]=(void*)this;
@@ -340,9 +438,8 @@ int SID::clock(unsigned int cycles, short* buf)
         if (m_sid_chipId[sid_idx]==(void*)this) break;
         sid_idx++;
     }
-    sid_idx=sid_idx%m_sid_chipNb;
-    int64_t smplIncr=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
-    sid_idx=sid_idx*4;
+    sid_idx=(sid_idx%m_sid_chipNb)*4;
+    const int64_t smplIncr=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
     //TODO:  MODIZER changes end / YOYOFR
 
     while (cycles != 0)
@@ -353,59 +450,39 @@ int SID::clock(unsigned int cycles, short* buf)
         {
             for (unsigned int i = 0; i < delta_t; i++)
             {
-                
+                //TODO:  MODIZER changes start / YOYOFR
+                // Playback speed (patch from Modizer): the SID itself is
+                // clocked mdz_ratio_fp_inc/65536 times per C64 cycle.
                 if (mdz_ratio_fp_inc==0) mdz_ratio_fp_cnt+=65536;
                 else mdz_ratio_fp_cnt+=mdz_ratio_fp_inc;
-                
+
                 while (mdz_ratio_fp_cnt>=65536) {
                     mdz_ratio_fp_cnt-=65536;
-                    
-                    // clock waveform generators
-                    voice[0].wave()->clock();
-                    voice[1].wave()->clock();
-                    voice[2].wave()->clock();
-                    
-                    // clock envelope generators
-                    voice[0].envelope()->clock();
-                    voice[1].envelope()->clock();
-                    voice[2].envelope()->clock();
-                    
-                    //YOYOFR
-                    sid_v1 = voice[0].output();
-                    sid_v2 = voice[1].output();
-                    sid_v3 = voice[2].output();
-                    //YOYOFR
-                    
-                    // During fast-forward seek, skip the expensive analog filter
-                    // and resampler pipelines entirely — only oscillator and
-                    // envelope state need to advance for musical correctness.
-                    const int sidOutput = mSIDSeekInProgress ? 0 : static_cast<int>(filter->clock(voice[0], voice[1], voice[2]));
-                    const int c64Output = mSIDSeekInProgress ? 0 : externalFilter.clock(sidOutput + INT16_MIN);
-//                                        if (unlikely(resampler->input(c64Output)))
-//                                        {
-//                                            buf[s++] = resampler->getOutput(scaleFactor);
-//                                        }
 
+                    clockWaveGen();
+                    clockEnvGen();
+
+                    const float sid_v1 = voice[0].output();
+                    const float sid_v2 = voice[1].output();
+                    const float sid_v3 = voice[2].output();
+
+                    // During fast-forward seek, skip the expensive analog filter
+                    // and resampler pipelines entirely: only oscillator and
+                    // envelope state need to advance for musical correctness.
                     if (!mSIDSeekInProgress) {
-                        if (unlikely(resampler->input(c64Output)))
+                        int32_t output = clockFilt();
+                        if (unlikely(resampler->input(output)))
                         {
                             buf[s++] = resampler->getOutput(scaleFactor);
-                            for (int j=0;j<4;j++) {
-                                m_voice_buff[sid_idx+0][(m_voice_current_ptr[sid_idx+0]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v1*127));
-                                m_voice_buff[sid_idx+1][(m_voice_current_ptr[sid_idx+1]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v2*127));
-                                m_voice_buff[sid_idx+2][(m_voice_current_ptr[sid_idx+2]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v3*127));
-                                m_voice_buff[sid_idx+3][(m_voice_current_ptr[sid_idx+3]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((sid_v4>>7));
-
-                                m_voice_current_ptr[sid_idx+j]+=smplIncr;
-                            }
-                            //TODO:  MODIZER changes end / YOYOFR
+                            m_voice_buff[sid_idx+0][(m_voice_current_ptr[sid_idx+0]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v1*127));
+                            m_voice_buff[sid_idx+1][(m_voice_current_ptr[sid_idx+1]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v2*127));
+                            m_voice_buff[sid_idx+2][(m_voice_current_ptr[sid_idx+2]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v3*127));
+                            m_voice_buff[sid_idx+3][(m_voice_current_ptr[sid_idx+3]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((sid_v4>>7));
+                            for (int j=0;j<4;j++) m_voice_current_ptr[sid_idx+j]+=smplIncr;
                         }
                     } else {
                         if (unlikely(resampler->input(0))) {
-                            int cnt=0;
-                            //s++;
                             buf[s++]=0;
-                            //TODO:  MODIZER changes start / YOYOFR
                             for (int j=0;j<4;j++) {
                                 m_voice_buff[sid_idx+j][(m_voice_current_ptr[sid_idx+j]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=0;
                                 m_voice_current_ptr[sid_idx+j]+=smplIncr;
@@ -413,8 +490,8 @@ int SID::clock(unsigned int cycles, short* buf)
                         }
                     }
                 }
+                //TODO:  MODIZER changes end / YOYOFR
             }
-            //TODO:  MODIZER changes end / YOYOFR
 
             cycles -= delta_t;
             nextVoiceSync -= delta_t;
@@ -425,19 +502,66 @@ int SID::clock(unsigned int cycles, short* buf)
             voiceSync(true);
         }
     }
-    
+
     //YOYOFR
-        for (int j=0;j<3;j++) {
-            if (voice[j].wave()->readFreq()) {
-                vgm_last_note[sid_idx+j]=voice[j].wave()->readFreq();
-                vgm_last_vol[sid_idx+j]=voice[j].envelope()->readENV();
-            }
+    for (int j=0;j<3;j++) {
+        if (voice[j].wave()->readFreq()) {
+            vgm_last_note[sid_idx+j]=voice[j].wave()->readFreq();
+            vgm_last_vol[sid_idx+j]=voice[j].envelope()->readENV();
         }
+    }
     //YOYOFR
 
     return s;
 }
 
+RESIDFP_INLINE
+int SID::clock(int16_t* buf, int bufSize)
+{
+    assert(buf);
+    assert(bufSize > 0);
+
+    int cycles = 0;
+
+    for (int s = 0; s < bufSize;)
+    {
+        unsigned int delta_t = nextVoiceSync;
+
+        if (likely(delta_t > 0))
+        {
+            unsigned int i = 0;
+            do
+            {
+                i++;
+                clockWaveGen();
+                clockEnvGen();
+
+                int32_t output = clockFilt();
+                if (unlikely(resampler->input(output)))
+                {
+                    buf[s++] = resampler->getOutput(scaleFactor);
+                    if (unlikely(s == bufSize))
+                    {
+                        break;
+                    }
+                }
+            }
+            while (i < delta_t);
+
+            cycles += i;
+            nextVoiceSync -= i;
+        }
+
+        if (likely(nextVoiceSync == 0))
+        {
+            voiceSync(true);
+        }
+    }
+
+    ageBusValue(cycles);
+
+    return cycles;
+}
 
 } // namespace reSIDfp
 

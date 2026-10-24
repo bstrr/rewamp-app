@@ -169,7 +169,16 @@ static int8_t g_trigger_raw[RING_BUF_SAMPLES];
 /* ── API ─────────────────────────────────────────────────────────────────── */
 
 void rewamp_channel_data_init(void) {
-    memset(m_voice_buff, 0, sizeof(m_voice_buff));
+    /* Le puits partout, pas NULL: un cœur peut écrire AVANT le premier reset.
+     * libvgm fait tourner chaque puce pendant `Start()` (Resmpl_Init rend un
+     * premier bloc), donc avant que `vgm_setup_channels` n'alloue quoi que ce
+     * soit — et `m_voice_ChipID[]`, statique à zéro, désigne alors la puce 0
+     * pour tout le monde. Au PREMIER morceau après le lancement, un ES5506
+     * écrivait dans m_voice_buff[0] == NULL (mesuré: vasara_0.vgm, SEGV dans
+     * es550x_pcm_update). Ensuite c'était invisible: reset() pose déjà ce
+     * puits au-delà des voies allouées. */
+    for (int i = 0; i < SOUND_MAXVOICES_BUFFER_FX; i++)
+        m_voice_buff[i] = g_voice_sink;
     memset(m_voice_buff_accumul_temp, 0, sizeof(m_voice_buff_accumul_temp));
     memset(m_voice_buff_accumul_temp_cnt, 0, sizeof(m_voice_buff_accumul_temp_cnt));
     g_channel_count = 0;
@@ -681,6 +690,30 @@ void rewamp_track_message_append(const char* fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(g_track_message + used, REWAMP_TRACK_MSG_MAX - used, fmt, ap);
     va_end(ap);
+}
+
+static void rewamp_fmt_secs(char* out, size_t n, double secs) {
+    if (secs < 0) secs = 0;
+    long long ms = (long long)(secs * 1000.0 + 0.5);
+    long long h = ms / 3600000, m = (ms / 60000) % 60, s = (ms / 1000) % 60;
+    if (h > 0) snprintf(out, n, "%lld:%02lld:%02lld.%03lld", h, m, s, ms % 1000);
+    else       snprintf(out, n, "%lld:%02lld.%03lld", m, s, ms % 1000);
+}
+
+void rewamp_track_message_append_loop(double startSecs, double lengthSecs,
+                                      long long startSample,
+                                      long long lengthSample) {
+    if (!(lengthSecs > 0.0)) return;
+    char a[32], b[32];
+    rewamp_fmt_secs(a, sizeof a, startSecs);
+    rewamp_fmt_secs(b, sizeof b, lengthSecs);
+    if (startSample >= 0 && lengthSample > 0) {
+        rewamp_track_message_append("Loop start: %s (sample %lld)\n", a, startSample);
+        rewamp_track_message_append("Loop length: %s (%lld samples)\n", b, lengthSample);
+    } else {
+        rewamp_track_message_append("Loop start: %s\n", a);
+        rewamp_track_message_append("Loop length: %s\n", b);
+    }
 }
 
 /* ── ISO-8859-1 → UTF-8 ────────────────────────────────────────────────────── */

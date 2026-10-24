@@ -41,32 +41,40 @@ public:
     ReSIDfpBuilder(const char * const name);
     ~ReSIDfpBuilder();
 
-
     const char *getCredits() const;
 
     /// @name global settings
     /// Settings that affect all SIDs.
     //@{
     /**
-     * Set 6581 filter curve.
+     * Set 6581 filter curve type.
      *
-     * @param filterCurve from 0.0 (light) to 1.0 (dark) (default 0.5)
+     * @param filterCurve sets center frequency from 0.0 (dark) to 1.0 (bright). (default 0.5)
      */
     void filter6581Curve(double filterCurve);
 
     /**
-     * Set 6581 filter curve.
+     * Set 6581 filter offset and range.
      *
-     * @param filterCurve from 0.0 (dark) to 1.0 (light) (default 0.5)
+     * @param filterRange sets center frequency from 0.0 (dark) to 1.0 (bright).
+     *                    This also affects the range. (default 0.5)
      */
     void filter6581Range(double filterRange);
 
     /**
-     * Set 8580 filter curve.
+     * Set 8580 filter curve type.
      *
-     * @param filterCurve curve center frequency (default 12500)
+     * @param filterCurve sets center frequency from 0.0 (dark) to 1.0 (bright). (default 0.5)
      */
     void filter8580Curve(double filterCurve);
+
+    /**
+     * Enable/disable old caps for 6581 model.
+     *
+     * @param enable true to enable old 2200pF caps used on ASSY 326298
+     *               false to use the standard 470pF caps. (default off)
+     */
+    void enableOld6581caps(bool enable);
 
     /**
      * Set combined waveforms strength.
@@ -75,6 +83,34 @@ public:
      */
     void combinedWaveformsStrength(SidConfig::sid_cw_t cws);
     //@}
+
+    /**
+     * Set the DAC leakage level.
+     * Affects the envelope and waveforms.
+     *
+     * @param level the leakage level, between 0 (no leakage) and 1 (standard leakage) (default 1.0)
+     * @since 3.1
+     */
+    void dacLeakage(double level);
+
+    /**
+     * Set the 6581 wave offset.
+     * Affects the volume of digi samples.
+     *
+     * @param offset the waveform offset, between 0 (average digis) and 1 (loud digis) (default 1.0)
+     * @since 3.1
+     */
+    void offset6581(double offset);
+
+    /**
+     * Set the DC-Blocker resistance.
+     * Affects the highpass cutoff frequency.
+     *
+     * @param res the resistance value, between 0 (10KOhm => ~1.6Hz) and 1 (1KOhm => ~16Hz) (default 0.0)
+     * @since 3.1
+     */
+    void dcbRes(double res);
+
 private:
     struct config;
     config *m_config;

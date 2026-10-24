@@ -1,8 +1,8 @@
 diff --git a/emu/cores/multipcm.c b/emu/cores/multipcm.c
-index 1d159d2..ab5e593 100644
+index 596d592..83f6258 100644
 --- a/emu/cores/multipcm.c
 +++ b/emu/cores/multipcm.c
-@@ -48,6 +48,11 @@
+@@ -51,6 +51,11 @@
  #include "../EmuHelper.h"
  #include "multipcm.h"
  
@@ -14,7 +14,7 @@ index 1d159d2..ab5e593 100644
  static void MultiPCM_update(void *info, UINT32 samples, DEV_SMPL **outputs);
  static UINT8 device_start_multipcm(const DEV_GEN_CFG* cfg, DEV_INFO* retDevInf);
  static void device_stop_multipcm(void *info);
-@@ -824,6 +829,25 @@ static void MultiPCM_update(void *info, UINT32 samples, DEV_SMPL **outputs)
+@@ -850,6 +855,25 @@ static void MultiPCM_update(void *info, UINT32 samples, DEV_SMPL **outputs)
  		memset(outputs[1], 0, samples * sizeof(DEV_SMPL));
  		return;
  	}
@@ -40,10 +40,10 @@ index 1d159d2..ab5e593 100644
  
  	for (i = 0; i < samples; ++i)
  	{
-@@ -904,7 +928,41 @@ static void MultiPCM_update(void *info, UINT32 samples, DEV_SMPL **outputs)
- 
- 				smpl += (left_pan_table[vol] * sample) >> TL_SHIFT;
- 				smpr += (right_pan_table[vol] * sample) >> TL_SHIFT;
+@@ -937,7 +961,41 @@ static void MultiPCM_update(void *info, UINT32 samples, DEV_SMPL **outputs)
+ 				if (slot->dsp_send)
+ 					send += (((left_pan_table[vol & 0x7f] * sample) >> TL_SHIFT) * DSP_SEND_LEVEL[slot->dsp_send]) >> 5;
+ 				*/
 -			}
 +                
 +                //TODO:  MODIZER changes start / YOYOFR

@@ -1,5 +1,5 @@
---- third_party/libkss/upstream/modules/emu8950/emu8950.c	2026-07-09 18:43:32
-+++ third_party/libkss/modules/emu8950/emu8950.c	2026-09-05 09:34:32
+--- third_party/libkss/upstream/modules/emu8950/emu8950.c	2026-10-22 00:44:15
++++ third_party/libkss/modules/emu8950/emu8950.c	2026-10-22 00:47:34
 @@ -9,6 +9,11 @@
  #include <stdlib.h>
  #include <string.h>
@@ -23,7 +23,7 @@
  
  /* phase increment counter */
  #define DP_BITS 20
-@@ -186,8 +191,8 @@
+@@ -184,8 +189,8 @@
  static double windowed_sinc(double x) { return blackman(0.5 + 0.5 * x / (LW / 2)) * sinc(x); }
  
  /* f_inp: input frequency. f_out: output frequencey, ch: number of channels */
@@ -34,8 +34,17 @@
    int i;
  
    conv->ch = ch;
-@@ -220,7 +225,7 @@
-   return table[min(SINC_RESO * LW / 2 - 1, index)];
+@@ -215,7 +220,7 @@
+ }
+ 
+ /* p is the output phase in SINC_RESO units (0 <= p <= SINC_RESO). */
+-static INLINE int16_t rateconv_get(OPL_RateConv *conv, int ch, uint32_t p) {
++static INLINE int16_t rateconv_get(OPLKSS_RateConv *conv, int ch, uint32_t p) {
+   const int16_t *buf = conv->buf[ch] + conv->pos[ch];
+   const int16_t *coef = conv->sinc_table + p * LW;
+   int32_t sum = 0;
+@@ -226,7 +231,7 @@
+   return sum >> SINC_AMP_BITS;
  }
  
 -void OPL_RateConv_reset(OPL_RateConv *conv) {
@@ -43,26 +52,23 @@
    int i;
    conv->timer = 0;
    for (i = 0; i < conv->ch; i++) {
-@@ -229,7 +234,7 @@
+@@ -236,7 +241,7 @@
  }
  
  /* put original data to this converter at f_inp. */
 -void OPL_RateConv_putData(OPL_RateConv *conv, int ch, int16_t data) {
 +void OPLKSS_RateConv_putData(OPLKSS_RateConv *conv, int ch, int16_t data) {
    int16_t *buf = conv->buf[ch];
-   int i;
-   for (i = 0; i < LW - 1; i++) {
-@@ -240,7 +245,7 @@
+   int pos = conv->pos[ch];
+   buf[pos] = buf[pos + LW] = data;
+@@ -245,12 +250,12 @@
  
  /* get resampled data from this converter at f_out. */
  /* this function must be called f_out / f_inp times per one putData call. */
 -int16_t OPL_RateConv_getData(OPL_RateConv *conv, int ch) {
 +int16_t OPLKSS_RateConv_getData(OPLKSS_RateConv *conv, int ch) {
-   int16_t *buf = conv->buf[ch];
-   int32_t sum = 0;
-   int k;
-@@ -256,7 +261,7 @@
-   return sum >> SINC_AMP_BITS;
+   conv->timer += conv->timer_step;
+   return rateconv_get(conv, ch, (uint32_t)(((uint64_t)conv->timer + (1u << (31 - SINC_RESO_BITS))) >> (32 - SINC_RESO_BITS)));
  }
  
 -void OPL_RateConv_delete(OPL_RateConv *conv) {
@@ -70,7 +76,7 @@
    int i;
    for (i = 0; i < conv->ch; i++) {
      free(conv->buf[i]);
-@@ -378,16 +383,16 @@
+@@ -371,16 +376,16 @@
  #define CAR(o, x) (&(o)->slot[((x) << 1) | 1])
  #define BIT(s, b) (((s) >> (b)) & 1)
  
@@ -91,7 +97,7 @@
    switch (slot->eg_state) {
    case ATTACK:
      return "attack";
-@@ -404,7 +409,7 @@
+@@ -395,7 +400,7 @@
    }
  }
  
@@ -100,7 +106,7 @@
    char *name = _debug_eg_state_name(slot);
    _debug_print_patch(slot);
    printf("[slot#%d state:%s fnum:%03x rate:%d-%d]\n", slot->number, name, slot->blk_fnum, slot->eg_rate_h,
-@@ -413,7 +418,7 @@
+@@ -404,7 +409,7 @@
  }
  #endif
  
@@ -109,7 +115,7 @@
    switch (slot->eg_state) {
    case ATTACK:
      return slot->patch->AR;
-@@ -436,9 +441,9 @@
+@@ -427,9 +432,9 @@
    UPDATE_ALL = 255,
  };
  
@@ -121,7 +127,7 @@
  
    if (slot->update_requests & UPDATE_WS) {
      slot->wave_table = wave_table_map[slot->patch->WS & 3];
-@@ -474,7 +479,7 @@
+@@ -461,7 +466,7 @@
      }
    }
  
@@ -130,7 +136,7 @@
    if (slot->last_eg_state != slot->eg_state) {
      _debug_print_slot_info(slot);
      slot->last_eg_state = slot->eg_state;
-@@ -484,9 +489,9 @@
+@@ -471,9 +476,9 @@
    slot->update_requests = 0;
  }
  
@@ -142,18 +148,18 @@
    slot->number = number;
    slot->type = number % 2;
    slot->pg_keep = 0;
-@@ -505,8 +510,8 @@
-   slot->eg_out = EG_MUTE;
+@@ -495,8 +500,8 @@
+   slot->update_requests = 0;
  }
  
 -static INLINE void slotOn(OPL *opl, int i) {
 -  OPL_SLOT *slot = &opl->slot[i];
 +static INLINE void slotOn(OPLKSS *opl, int i) {
 +  OPLKSS_SLOT *slot = &opl->slot[i];
+   slot->rks = rks_table[opl->notesel][slot->blk_fnum >> 8][slot->patch->KR];
    if (min(15, slot->patch->AR + (slot->rks >> 2)) == 15) {
      slot->eg_state = DECAY;
-     slot->eg_out = 0;
-@@ -519,13 +524,13 @@
+@@ -510,13 +515,13 @@
    request_update(slot, UPDATE_EG);
  }
  
@@ -170,7 +176,7 @@
    const uint8_t r14 = opl->reg[0xbd];
    const uint8_t rhythm_mode = BIT(r14, 5);
    uint32_t new_slot_key_status = 0;
-@@ -575,9 +580,9 @@
+@@ -566,9 +571,9 @@
  }
  
  /* set f-Nnmber ( fnum : 10bit ) */
@@ -183,7 +189,7 @@
    car->fnum = fnum;
    car->blk_fnum = (car->blk_fnum & 0x1c00) | (fnum & 0x3ff);
    mod->fnum = fnum;
-@@ -587,9 +592,9 @@
+@@ -578,9 +583,9 @@
  }
  
  /* set block data (blk : 3bit ) */
@@ -196,7 +202,7 @@
    car->blk = blk;
    car->blk_fnum = ((blk & 7) << 10) | (car->blk_fnum & 0x3ff);
    mod->blk = blk;
-@@ -598,7 +603,7 @@
+@@ -589,7 +594,7 @@
    request_update(mod, UPDATE_EG | UPDATE_RKS | UPDATE_TLL);
  }
  
@@ -205,7 +211,7 @@
    const uint8_t new_rhythm_mode = (opl->reg[0xbd] >> 5) & 1;
  
    if (opl->rhythm_mode != new_rhythm_mode) {
-@@ -621,7 +626,7 @@
+@@ -612,7 +617,7 @@
    opl->rhythm_mode = new_rhythm_mode;
  }
  
@@ -214,7 +220,7 @@
    const uint32_t pm_inc = (opl->test_flag & 8) ? opl->pm_dphase << 10 : opl->pm_dphase;
    const uint32_t am_inc = (opl->test_flag & 8) ? 64 : 1;
    if (opl->test_flag & 2) {
-@@ -634,7 +639,7 @@
+@@ -625,7 +630,7 @@
    opl->lfo_am = am_table[(opl->am_phase >> 6) % sizeof(am_table)] >> (opl->am_mode ? 0 : 2);
  }
  
@@ -223,7 +229,7 @@
    int i;
    for (i = 0; i < cycle; i++) {
      if (opl->noise & 1) {
-@@ -644,7 +649,7 @@
+@@ -635,7 +640,7 @@
    }
  }
  
@@ -232,7 +238,7 @@
    const uint32_t pg_hh = opl->slot[SLOT_HH].pg_out;
    const uint32_t pg_cym = opl->slot[SLOT_CYM].pg_out;
  
-@@ -658,7 +663,7 @@
+@@ -649,7 +654,7 @@
    opl->short_noise = (h_bit2 ^ h_bit7) | (h_bit3 ^ c_bit5) | (c_bit3 ^ c_bit5);
  }
  
@@ -241,7 +247,7 @@
    int8_t pm = 0;
    if (slot->patch->PM) {
      pm = pm_table[(slot->fnum >> 7) & 7][pm_phase >> (PM_DP_BITS - PM_PG_BITS)];
-@@ -673,7 +678,7 @@
+@@ -664,7 +669,7 @@
    slot->pg_out = slot->pg_phase >> DP_BASE_BITS;
  }
  
@@ -250,7 +256,7 @@
    int index = (counter >> slot->eg_shift) & 7;
    switch (slot->eg_rate_h) {
    case 13:
-@@ -688,7 +693,7 @@
+@@ -679,7 +684,7 @@
    }
  }
  
@@ -259,7 +265,7 @@
    int index = (counter >> slot->eg_shift) & 7;
    switch (slot->eg_rate_h) {
    case 0:
-@@ -704,7 +709,7 @@
+@@ -695,7 +700,7 @@
    }
  }
  
@@ -268,7 +274,7 @@
  
    uint16_t mask = (1 << slot->eg_shift) - 1;
    uint8_t s;
-@@ -746,12 +751,12 @@
+@@ -737,12 +742,12 @@
    }
  }
  
@@ -283,7 +289,7 @@
      if (slot->update_requests) {
        commit_slot_update(slot, opl->notesel);
      }
-@@ -768,7 +773,7 @@
+@@ -759,7 +764,7 @@
    return ((i & 0x8000) ? ~res : res) << 1;
  }
  
@@ -292,7 +298,7 @@
    uint16_t att;
    if (slot->eg_out >= EG_MAX)
      return 0;
-@@ -777,8 +782,8 @@
+@@ -768,8 +773,8 @@
    return lookup_exp_table(h + att);
  }
  
@@ -303,7 +309,7 @@
  
    uint8_t am = slot->patch->AM ? opl->lfo_am : 0;
  
-@@ -788,8 +793,8 @@
+@@ -779,8 +784,8 @@
    return slot->output[0];
  }
  
@@ -314,7 +320,7 @@
  
    int16_t fm = slot->patch->FB > 0 ? (slot->output[1] + slot->output[0]) >> (9 - slot->patch->FB) : 0;
    uint8_t am = slot->patch->AM ? opl->lfo_am : 0;
-@@ -800,8 +805,8 @@
+@@ -791,8 +796,8 @@
    return slot->output[0];
  }
  
@@ -325,7 +331,7 @@
  
    return to_linear(slot->wave_table[slot->pg_out], slot, 0);
  }
-@@ -809,8 +814,8 @@
+@@ -800,8 +805,8 @@
  /* Specify phase offset directly based on 10-bit (1024-length) sine table */
  #define _PD(phase) ((PG_BITS < 10) ? (phase >> (10 - PG_BITS)) : (phase << (PG_BITS - 10)))
  
@@ -336,7 +342,7 @@
  
    uint32_t phase;
  
-@@ -822,16 +827,16 @@
+@@ -813,16 +818,16 @@
    return to_linear(slot->wave_table[phase], slot, 0);
  }
  
@@ -357,7 +363,7 @@
  
    uint32_t phase;
  
-@@ -846,32 +851,32 @@
+@@ -837,28 +842,28 @@
  #define _MO(x) (-(x) >> 1)
  #define _RO(x) (x)
  
@@ -369,15 +375,11 @@
    return calc_slot_car(opl, ch, calc_slot_mod(opl, ch));
  }
  
--static void latch_timer1(OPL *opl) {
-+static void latch_timer1(OPLKSS *opl) {
-   opl->timer1_counter = opl->reg[0x02] << 2;
- }
+-static void latch_timer1(OPL *opl) { opl->timer1_counter = opl->reg[0x02] << 2; }
++static void latch_timer1(OPLKSS *opl) { opl->timer1_counter = opl->reg[0x02] << 2; }
  
--static void latch_timer2(OPL *opl) {
-+static void latch_timer2(OPLKSS *opl) {
-   opl->timer2_counter = opl->reg[0x03] << 4;
- }
+-static void latch_timer2(OPL *opl) { opl->timer2_counter = opl->reg[0x03] << 4; }
++static void latch_timer2(OPLKSS *opl) { opl->timer2_counter = opl->reg[0x03] << 4; }
  
 -static void csm_key_on(OPL *opl) {
 +static void csm_key_on(OPLKSS *opl) {
@@ -396,8 +398,8 @@
    if (opl->csm_mode && 0 < opl->csm_key_count) {
      csm_key_off(opl);
    }
-@@ -903,7 +908,36 @@
- 
+@@ -889,7 +894,36 @@
+   }
  }
  
 -static void update_output(OPL *opl) {
@@ -434,7 +436,7 @@
    int16_t *out;
    int i;
  
-@@ -916,18 +950,18 @@
+@@ -902,18 +936,18 @@
  
    /* CH1-6 */
    for (i = 0; i < 6; i++) {
@@ -456,7 +458,7 @@
        out[9] = _RO(calc_fm(opl, 6));
      }
    }
-@@ -935,14 +969,14 @@
+@@ -921,14 +955,14 @@
  
    /* CH8 */
    if (!opl->rhythm_mode) {
@@ -474,7 +476,7 @@
        out[11] = _RO(calc_slot_snare(opl));
      }
    }
-@@ -950,52 +984,110 @@
+@@ -936,52 +970,110 @@
  
    /* CH9 */
    if (!opl->rhythm_mode) {
@@ -554,15 +556,15 @@
    out[0] = out[1] = 0;
    for (i = 0; i < 15; i++) {
 -    if (opl->pan[i] & 2)
--      out[0] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][0]);
+-      out[0] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][0] / 4096);
 -    if (opl->pan[i] & 1)
--      out[1] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][1]);
-+      if (!(generic_mute_mask&((int64_t)1<<(m_voicesForceOfs+i)))) { //YOYOFR
-+          if (opl->pan[i] & 2)
-+              out[0] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][0]);
-+          if (opl->pan[i] & 1)
-+              out[1] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][1]);
-+      }
+-      out[1] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][1] / 4096);
++    if (!(generic_mute_mask&((int64_t)1<<(m_voicesForceOfs+i)))) { //YOYOFR
++      if (opl->pan[i] & 2)
++        out[0] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][0] / 4096);
++      if (opl->pan[i] & 1)
++        out[1] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][1] / 4096);
++    }
    }
    if (opl->conv) {
 -    OPL_RateConv_putData(opl->conv, 0, out[0]);
@@ -600,7 +602,7 @@
  }
  
  /***********************************************************
-@@ -1004,14 +1096,14 @@
+@@ -990,14 +1082,14 @@
  
  ***********************************************************/
  
@@ -613,12 +615,12 @@
      initializeTables();
    }
  
--  opl = (OPL *)calloc(sizeof(OPL), 1);
-+  opl = (OPLKSS *)calloc(sizeof(OPLKSS), 1);
+-  opl = (OPL *)calloc(1, sizeof(OPL));
++  opl = (OPLKSS *)calloc(1, sizeof(OPLKSS));
    if (opl == NULL)
      return NULL;
  
-@@ -1027,24 +1119,24 @@
+@@ -1013,24 +1105,24 @@
    opl->timer2_func = NULL;
    opl->timer2_user_data = NULL;
  
@@ -646,10 +648,10 @@
 -static void reset_rate_conversion_params(OPL *opl) {
 +static void reset_rate_conversion_params(OPLKSS *opl) {
    const double f_out = opl->rate;
-   const double f_inp = opl->clk / 72;
+   const double f_inp = opl->clk / 72.0;
  
-@@ -1053,23 +1145,23 @@
-   opl->inp_step = ((uint32_t)f_out) << 8;
+@@ -1045,36 +1137,36 @@
+   opl->inp_recip = (uint32_t)((((uint64_t)1 << opl->inp_shift) - 1) / opl->inp_step + 1);
  
    if (opl->conv) {
 -    OPL_RateConv_delete(opl->conv);
@@ -668,8 +670,8 @@
    }
  }
  
--void refresh_adpcm_object(OPL *opl) {
-+void refresh_adpcm_object(OPLKSS *opl) {
+-static void refresh_adpcm_object(OPL *opl) {
++static void refresh_adpcm_object(OPLKSS *opl) {
    if (opl->chip_type == TYPE_Y8950) {
      if (opl->adpcm == NULL) {
 -      opl->adpcm = OPL_ADPCM_new(opl->clk);
@@ -677,7 +679,9 @@
      }
    } else {
      if (opl->adpcm != NULL) {
-@@ -1078,11 +1170,11 @@
+-      OPL_ADPCM_delete(opl->adpcm);
++      OPLKSS_ADPCM_delete(opl->adpcm);
+       opl->adpcm = NULL;
      }
    }
    if (opl->adpcm != NULL) {
@@ -691,7 +695,7 @@
    int i;
  
    if (!opl)
-@@ -1137,35 +1229,35 @@
+@@ -1136,30 +1228,30 @@
    refresh_adpcm_object(opl);
  }
  
@@ -726,8 +730,19 @@
  
 -void OPL_setPanFine(OPL *opl, uint32_t ch, float pan[2]) {
 +void OPLKSS_setPanFine(OPLKSS *opl, uint32_t ch, float pan[2]) {
-   opl->pan_fine[ch & 15][0] = pan[0];
-   opl->pan_fine[ch & 15][1] = pan[1];
+   opl->pan_fine[ch & 15][0] = (int32_t)floor(pan[0] * 4096.0 + 0.5);
+   opl->pan_fine[ch & 15][1] = (int32_t)floor(pan[1] * 4096.0 + 0.5);
+ }
+@@ -1167,14 +1259,14 @@
+ /* output phase of the rate converter: round(dn * SINC_RESO), where dn = (inp_step - out_time) / inp_step
+    (or 0 if out_time is 0) is the position of the output sample between the last two input samples.
+    It is derived from out_time every time, so that it never drifts. */
+-static INLINE uint32_t get_conv_phase(OPL *opl) {
++static INLINE uint32_t get_conv_phase(OPLKSS *opl) {
+   uint32_t d = opl->out_time ? opl->inp_step - opl->out_time : 0;
+   /* dn in 0.32 fixed point */
+   uint32_t dn = (uint32_t)(((uint64_t)d * opl->inp_recip) >> (opl->inp_shift - 32));
+   return (uint32_t)(((uint64_t)dn + (1u << (31 - SINC_RESO_BITS))) >> (32 - SINC_RESO_BITS));
  }
  
 -int16_t OPL_calc(OPL *opl) {
@@ -735,13 +750,7 @@
    while (opl->out_step > opl->out_time) {
      opl->out_time += opl->inp_step;
      update_output(opl);
-@@ -1173,12 +1265,12 @@
-   }
-   opl->out_time -= opl->out_step;
-   if (opl->conv) {
--    opl->mix_out[0] = OPL_RateConv_getData(opl->conv, 0);
-+    opl->mix_out[0] = OPLKSS_RateConv_getData(opl->conv, 0);
-   }
+@@ -1187,7 +1279,7 @@
    return opl->mix_out[0];
  }
  
@@ -750,17 +759,7 @@
    while (opl->out_step > opl->out_time) {
      opl->out_time += opl->inp_step;
      update_output(opl);
-@@ -1186,15 +1278,15 @@
-   }
-   opl->out_time -= opl->out_step;
-   if (opl->conv) {
--    out[0] = OPL_RateConv_getData(opl->conv, 0);
--    out[1] = OPL_RateConv_getData(opl->conv, 1);
-+    out[0] = OPLKSS_RateConv_getData(opl->conv, 0);
-+    out[1] = OPLKSS_RateConv_getData(opl->conv, 1);
-   } else {
-     out[0] = opl->mix_out[0];
-     out[1] = opl->mix_out[1];
+@@ -1204,7 +1296,7 @@
    }
  }
  
@@ -769,7 +768,7 @@
    uint32_t ret;
  
    if (opl) {
-@@ -1205,7 +1297,7 @@
+@@ -1215,7 +1307,7 @@
      return 0;
  }
  
@@ -778,7 +777,7 @@
    uint32_t ret;
  
    if (opl) {
-@@ -1216,7 +1308,7 @@
+@@ -1226,7 +1318,7 @@
      return 0;
  }
  
@@ -787,7 +786,7 @@
  
    int32_t s, c;
  
-@@ -1230,7 +1322,7 @@
+@@ -1240,7 +1332,7 @@
      opl->status = 0;
      opl->reg[0x04] &= 0x7f;
      if (opl->adpcm) {
@@ -796,7 +795,7 @@
      }
      return;
    }
-@@ -1258,7 +1350,7 @@
+@@ -1268,7 +1360,7 @@
      }
  
      if (opl->adpcm != NULL && opl->chip_type == TYPE_Y8950) {
@@ -805,7 +804,7 @@
      }
  
    } else if (0x20 <= reg && reg < 0x40) {
-@@ -1336,13 +1428,13 @@
+@@ -1346,13 +1438,13 @@
    }
  }
  
@@ -822,7 +821,7 @@
    }
  
    status &= ~(opl->reg[0x04] & 0x78); // IRQ MASK
-@@ -1353,12 +1445,12 @@
+@@ -1363,44 +1455,44 @@
    return status & 0x7f; // IRQ = 0
  }
  
@@ -837,6 +836,56 @@
 +      OPLKSS_ADPCM_writeROM(opl->adpcm, start, length, data);
      }
    }
+ }
+ 
+-int OPL_save_state(OPL *opl, uint8_t *out) {
+-  int n = (int)sizeof(OPL);
++int OPLKSS_save_state(OPLKSS *opl, uint8_t *out) {
++  int n = (int)sizeof(OPLKSS);
+   if (out)
+-    memcpy(out, opl, sizeof(OPL));
++    memcpy(out, opl, sizeof(OPLKSS));
+   /* The ADPCM engine (Y8950) is a separately malloc'd object, so its dynamic
+-   * state lives outside sizeof(OPL); append it. Its RAM/ROM sample buffers are
++   * state lives outside sizeof(OPLKSS); append it. Its RAM/ROM sample buffers are
+    * not included (loaded once, constant). */
+   if (opl->adpcm != NULL)
+-    n += OPL_ADPCM_save_state(opl->adpcm, out ? out + n : (uint8_t *)0);
++    n += OPLKSS_ADPCM_save_state(opl->adpcm, out ? out + n : (uint8_t *)0);
+   return n;
+ }
+ 
+-void OPL_load_state(OPL *opl, const uint8_t *in, int size) {
++void OPLKSS_load_state(OPLKSS *opl, const uint8_t *in, int size) {
+   /* Preserve THIS instance's own allocations / host bindings across the struct
+    * copy, so the blob carries no source-instance pointers. This makes the state
+-   * position-independent: it can be restored into a DIFFERENT OPL instance
++   * position-independent: it can be restored into a DIFFERENT OPLKSS instance
+    * (cross-instance copy), not only the one that produced it. */
+-  OPL_ADPCM *adpcm = opl->adpcm;
+-  OPL_RateConv *conv = opl->conv;
++  OPLKSS_ADPCM *adpcm = opl->adpcm;
++  OPLKSS_RateConv *conv = opl->conv;
+   void *t1u = opl->timer1_user_data, *t2u = opl->timer2_user_data;
+   void (*t1f)(void *) = opl->timer1_func;
+   void (*t2f)(void *) = opl->timer2_func;
+   int i;
+-  memcpy(opl, in, sizeof(OPL));
++  memcpy(opl, in, sizeof(OPLKSS));
+   opl->adpcm = adpcm;
+   opl->conv = conv;
+   /* reset SRC: its ring is stale after a load. Its phase is derived from out_time, so needs no re-alignment. */
+-  if (opl->conv) OPL_RateConv_reset(opl->conv);
++  if (opl->conv) OPLKSS_RateConv_reset(opl->conv);
+   opl->timer1_user_data = t1u;
+   opl->timer2_user_data = t2u;
+   opl->timer1_func = t1f;
+@@ -1410,5 +1502,5 @@
+   for (i = 0; i < 18; i++)
+     opl->slot[i].patch = &(opl->slot[i].__patch);
+   if (opl->adpcm != NULL)
+-    OPL_ADPCM_load_state(opl->adpcm, in + sizeof(OPL), size - (int)sizeof(OPL));
 -}
 \ No newline at end of file
++    OPLKSS_ADPCM_load_state(opl->adpcm, in + sizeof(OPLKSS), size - (int)sizeof(OPLKSS));
 +}

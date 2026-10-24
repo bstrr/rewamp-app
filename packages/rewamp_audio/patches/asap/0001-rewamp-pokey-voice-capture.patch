@@ -1,18 +1,18 @@
---- upstream/asap.c	2026-07-09 18:43:32
-+++ asap.c	2026-07-23 12:56:53
-@@ -17,6 +17,11 @@
+--- upstream/asap.c	2026-10-22 00:45:06
++++ asap.c	2026-10-22 00:45:47
+@@ -16,6 +16,11 @@
+ {
  	return x < y ? x : y;
  }
- 
++
 +//TODO:  MODIZER changes start / YOYOFR
 +#include "ModizerVoicesData.h"
 +//TODO:  MODIZER changes end / YOYOFR
 +
-+
+ 
  static void FuString_Assign(char **str, char *value)
  {
- 	free(*str);
-@@ -177,11 +182,13 @@
+@@ -203,11 +208,13 @@
  	int mute;
  	int out;
  	int delta;
@@ -26,7 +26,7 @@
  
  static void PokeyChannel_Slope(PokeyChannel *self, Pokey *pokey, const PokeyPair *pokeys, int cycle);
  
-@@ -213,6 +220,7 @@
+@@ -239,6 +246,7 @@
  	int sumDACOutputs;
  	int iirRate;
  	int iirAcc;
@@ -34,33 +34,28 @@
  	int trailing;
  };
  static void Pokey_Construct(Pokey *self);
-@@ -226,12 +234,12 @@
+@@ -252,9 +260,9 @@
  
  static void Pokey_Initialize(Pokey *self, int sampleRate);
  
--static void Pokey_AddDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta);
--
--static void Pokey_AddPokeyDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, bool muted);
-+static void Pokey_AddDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, int channel_idx); //YOYOFR
+-static void Pokey_AddDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, bool muted);
++static void Pokey_AddDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, bool muted, int channel_idx); //YOYOFR
  
 -static void Pokey_AddExternalDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta);
-+static void Pokey_AddPokeyDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, bool muted, int channel_idx); //YOYOFR
- 
 +static void Pokey_AddExternalDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, int channel_idx); //YOYOFR
-+
+ 
  /**
   * Fills <code>DeltaBuffer</code> up to <code>cycleLimit</code> basing on current Audf/Audc/Audctl values.
-  * @param self This <code>Pokey</code>.
-@@ -242,7 +250,7 @@
+@@ -268,7 +276,7 @@
  
- static bool Pokey_IsSilent(const Pokey *self);
+ static int Pokey_GetMute(const Pokey *self);
  
 -static void Pokey_Mute(Pokey *self, int mask);
 +static void Pokey_Mute(Pokey *self, int mask, int cycle); //YOYOFR: cycle param
  
- static void Pokey_EndSongInit(Pokey *self);
+ static void Pokey_InitMute(Pokey *self, int cycle);
  
-@@ -252,7 +260,7 @@
+@@ -276,7 +284,7 @@
  
  static int Pokey_CheckIrq(Pokey *self, int cycle, int nextEventCycle);
  
@@ -69,7 +64,7 @@
  
  static void Pokey_AccumulateTrailing(Pokey *self, int i);
  
-@@ -2395,7 +2403,7 @@
+@@ -2584,7 +2592,7 @@
  		Pokey *pokey = addr == 0 || addr == 3 ? &self->pokeys.basePokey : &self->pokeys.extraPokey;
  		int delta = data - self->covox[addr];
  		if (delta != 0) {
@@ -78,7 +73,7 @@
  			self->covox[addr] = (uint8_t) data;
  			self->gtiaOrCovoxPlayedThisFrame = true;
  		}
-@@ -2404,8 +2412,8 @@
+@@ -2593,8 +2601,8 @@
  		int delta = ((self->consol & 8) - (data & 8)) << 20;
  		if (delta != 0) {
  			int cycle = self->cpu.cycle;
@@ -89,7 +84,7 @@
  			self->gtiaOrCovoxPlayedThisFrame = true;
  		}
  		self->consol = data;
-@@ -2752,8 +2760,11 @@
+@@ -2849,8 +2857,11 @@
  
  void ASAP_MutePokeyChannels(ASAP *self, int mask)
  {
@@ -102,8 +97,8 @@
 +	Pokey_Mute(&self->pokeys.extraPokey, mask >> 4, self->cpu.cycle);
  }
  
- int ASAP_GetBlocksPlayed(const ASAP *self)
-@@ -2866,6 +2877,52 @@
+ static bool ASAP_RestartSong(ASAP *self, int muteMask)
+@@ -3061,6 +3072,52 @@
  
  static int ASAP_GenerateAt(ASAP *self, uint8_t *buffer, int bufferOffset, int bufferLen, ASAPSampleFormat format)
  {
@@ -156,67 +151,56 @@
  	if (self->silenceCycles > 0 && self->silenceCyclesCounter <= 0)
  		return 0;
  	int blockShift = ASAPInfo_GetChannels(&self->moduleInfo) - (format == ASAPSampleFormat_U8 ? 1 : 0);
-@@ -7388,7 +7445,10 @@
+@@ -7464,7 +7521,10 @@
  
  static void PokeyChannel_AddDelta(const PokeyChannel *self, Pokey *pokey, const PokeyPair *pokeys, int cycle, int delta)
  {
--	Pokey_AddPokeyDelta(pokey, pokeys, cycle, delta, (self->mute & 10) != 0);
-+    //YOYOFR: channel index = position in this Pokey + 4 for the extra Pokey
-+    int channel_idx = (int) (self - pokey->channels);
-+    if (pokey == &pokeys->extraPokey) channel_idx += 4;
-+	Pokey_AddPokeyDelta(pokey, pokeys, cycle, delta, (self->mute & 10) != 0, channel_idx); //YOYOFR
+-	Pokey_AddDelta(pokey, pokeys, cycle, delta, (self->mute & 2) != 0);
++	//YOYOFR: channel index = position in this Pokey + 4 for the extra Pokey
++	int channel_idx = (int) (self - pokey->channels);
++	if (pokey == &pokeys->extraPokey) channel_idx += 4;
++	Pokey_AddDelta(pokey, pokeys, cycle, delta, (self->mute & 2) != 0, channel_idx); //YOYOFR
  }
  
  static void PokeyChannel_Slope(PokeyChannel *self, Pokey *pokey, const PokeyPair *pokeys, int cycle)
-@@ -7527,7 +7587,7 @@
+@@ -7603,17 +7663,17 @@
  	Pokey_StartFrame(self);
  }
  
--static void Pokey_AddDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta)
-+static void Pokey_AddDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, int channel_idx) //YOYOFR
- {
- 	if (delta == 0)
- 		return;
-@@ -7535,24 +7595,31 @@
- 	int fraction = i >> 8 & 1023;
- 	i >>= 18;
- 	delta >>= 14;
--	for (int j = 0; j < 32; j++)
--		self->deltaBuffer[i + j] += delta * pokeys->sincLookup[fraction][j];
-+    for (int j = 0; j < 32; j++) {
-+        self->deltaBuffer[i + j] += delta * pokeys->sincLookup[fraction][j];
-+        //YOYOFR: per-channel accumulation for the voice oscilloscope
-+        if (channel_idx >= 0 && channel_idx < 8 && m_voice_buff_accumul_temp[channel_idx])
-+            m_voice_buff_accumul_temp[channel_idx][(i+j)] += delta * pokeys->sincLookup[fraction][j];
-+        //YOYOFR
-+    }
-+    
-+    
- }
- 
--static void Pokey_AddPokeyDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, bool muted)
-+static void Pokey_AddPokeyDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, bool muted, int channel_idx) //YOYOFR
+-static void Pokey_AddDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, bool muted)
++static void Pokey_AddDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, bool muted, int channel_idx) //YOYOFR
  {
  	self->sumDACInputs += delta;
  	if (muted)
  		return;
  	int newOutput = Pokey_COMPRESSED_SUMS[self->sumDACInputs] << 16;
--	Pokey_AddDelta(self, pokeys, cycle, newOutput - self->sumDACOutputs);
-+	Pokey_AddDelta(self, pokeys, cycle, newOutput - self->sumDACOutputs, channel_idx); //YOYOFR
+-	Pokey_AddExternalDelta(self, pokeys, cycle, newOutput - self->sumDACOutputs);
++	Pokey_AddExternalDelta(self, pokeys, cycle, newOutput - self->sumDACOutputs, channel_idx); //YOYOFR
  	self->sumDACOutputs = newOutput;
  }
  
 -static void Pokey_AddExternalDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta)
 +static void Pokey_AddExternalDelta(Pokey *self, const PokeyPair *pokeys, int cycle, int delta, int channel_idx) //YOYOFR
  {
- 	if ((self->channels[0].mute & 8) == 0)
--		Pokey_AddDelta(self, pokeys, cycle, delta);
-+		Pokey_AddDelta(self, pokeys, cycle, delta, channel_idx); //YOYOFR
+ 	if (delta == 0)
+ 		return;
+@@ -7621,8 +7681,13 @@
+ 	int fraction = i >> 8 & 1023;
+ 	i >>= 18;
+ 	delta >>= 14;
+-	for (int j = 0; j < 32; j++)
++	for (int j = 0; j < 32; j++) {
+ 		self->deltaBuffer[i + j] += delta * pokeys->sincLookup[fraction][j];
++		//YOYOFR: per-channel accumulation for the voice oscilloscope
++		if (channel_idx >= 0 && channel_idx < 8 && m_voice_buff_accumul_temp[channel_idx])
++			m_voice_buff_accumul_temp[channel_idx][(i+j)] += delta * pokeys->sincLookup[fraction][j];
++		//YOYOFR
++	}
  }
  
  static void Pokey_GenerateUntilCycle(Pokey *self, const PokeyPair *pokeys, int cycleLimit)
-@@ -7615,10 +7682,10 @@
- 	return true;
+@@ -7694,10 +7759,10 @@
+ 	return mask;
  }
  
 -static void Pokey_Mute(Pokey *self, int mask)
@@ -227,8 +211,8 @@
 +		PokeyChannel_SetMute(&self->channels[i], (mask & 1 << i) != 0, 2, cycle);
  }
  
- static void Pokey_EndSongInit(Pokey *self)
-@@ -7854,8 +7921,28 @@
+ static void Pokey_InitMute(Pokey *self, int cycle)
+@@ -7927,8 +7992,28 @@
  	return nextEventCycle;
  }
  
@@ -258,7 +242,7 @@
  	self->iirAcc += self->deltaBuffer[i] - (self->iirRate * self->iirAcc >> 11);
  	int sample = self->iirAcc >> 11;
  	if (sample < -32767)
-@@ -7875,6 +7962,7 @@
+@@ -7948,6 +8033,7 @@
  		buffer[bufferOffset++] = (uint8_t) sample;
  		break;
  	}
@@ -266,7 +250,7 @@
  	return bufferOffset;
  }
  
-@@ -7941,6 +8029,13 @@
+@@ -8014,6 +8100,13 @@
  	self->sampleOffset = 0;
  	self->readySamplesStart = 0;
  	self->readySamplesEnd = 0;
@@ -280,7 +264,7 @@
  }
  
  static int PokeyPair_Poke(PokeyPair *self, int addr, int data, int cycle)
-@@ -7975,6 +8070,21 @@
+@@ -8048,6 +8141,21 @@
  	Pokey_StartFrame(&self->basePokey);
  	if (self->extraPokeyMask != 0)
  		Pokey_StartFrame(&self->extraPokey);
@@ -302,7 +286,7 @@
  }
  
  static int PokeyPair_EndFrame(PokeyPair *self, int cycle)
-@@ -7999,9 +8109,9 @@
+@@ -8072,9 +8180,9 @@
  		blocks = samplesEnd - i;
  	if (blocks > 0) {
  		for (; i < samplesEnd; i++) {

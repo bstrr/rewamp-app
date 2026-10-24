@@ -14,6 +14,7 @@ import 'track_info_flash.dart';
 import 'transport_log.dart';
 import 'user_settings.dart';
 import 'viz_selector_widget.dart';
+import 'loading_ring.dart';
 
 /// Pose le mini lecteur PAR-DESSUS la coquille, qu'il met hors scène sans la
 /// démonter.
@@ -253,15 +254,22 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
     final c = widget.controller;
     final l10n = context.l10n;
     Widget btn(IconData icon, VoidCallback? onPressed, double size,
-            {String? tooltip, Key? key}) =>
+            {String? tooltip, Key? key, bool ring = false}) =>
         IconButton(
           key: key,
           iconSize: size,
           tooltip: tooltip,
           padding: const EdgeInsets.symmetric(horizontal: 6),
           constraints: const BoxConstraints(),
-          icon: OutlinedGlyph(
-              icon: icon, size: size, enabled: onPressed != null),
+          icon: ring
+              ? LoadingRing(
+                  loading: c.loadingTrack,
+                  size: size,
+                  outlined: true,
+                  child: OutlinedGlyph(
+                      icon: icon, size: size, enabled: onPressed != null))
+              : OutlinedGlyph(
+                  icon: icon, size: size, enabled: onPressed != null),
           onPressed: onPressed,
         );
     return ListenableBuilder(
@@ -299,7 +307,8 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
                           }
                         : null,
                     38,
-                    key: const ValueKey('mwv-play')),
+                    key: const ValueKey('mwv-play'),
+                    ring: true),
                 btn(Icons.fast_forward, c.canGoNext ? c.goNext : null, 28,
                     key: const ValueKey('mwv-next')),
                 const SizedBox(width: 10),
@@ -589,7 +598,11 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
           IconButton(
             key: const ValueKey('mw-play'),
             iconSize: 30,
-            icon: Icon(c.isPlaying ? Icons.pause : Icons.play_arrow),
+            icon: LoadingRing(
+              loading: c.loadingTrack,
+              size: 30,
+              child: Icon(c.isPlaying ? Icons.pause : Icons.play_arrow),
+            ),
             onPressed: c.hasFile
                 ? () {
                     logTransport(c.isPlaying ? 'pause' : 'lecture',

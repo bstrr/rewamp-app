@@ -855,7 +855,7 @@ class UserSettings extends ChangeNotifier {
                 _kNsfVrc7Patch, _kNsfVrc7Opll],
     'he':      [_kHeSpuMain, _kHeSpuReverb],
     'adplug':  [_kAdplugSurround],
-    'vgm':     [_kVgmJpnTags,
+    'vgm':     [_kVgmJpnTags, _kVgmLoopFade,
                 _kVgmYm2612, _kVgmYmf262, _kVgmYm3812, _kVgmQsound, _kVgmRf5c68,
                 _kVgmGb, _kVgmYm2413, _kVgmYm2151, _kVgmAy8910, _kVgmNes, _kVgmSn76496, _kVgmSaa1099, _kVgmC6280],
   };
@@ -968,6 +968,7 @@ class UserSettings extends ChangeNotifier {
     'heSpuMain': _kHeSpuMain, 'heSpuReverb': _kHeSpuReverb,
     'adplugSurround': _kAdplugSurround,
     'vgmJapaneseTags': _kVgmJpnTags,
+    'vgmLoopFadeSeconds': _kVgmLoopFade,
     'vgmYm2612Core': _kVgmYm2612, 'vgmYmf262Core': _kVgmYmf262,
     'vgmYm3812Core': _kVgmYm3812, 'vgmQsoundCore': _kVgmQsound,
     'vgmRf5c68Core': _kVgmRf5c68,
@@ -1258,6 +1259,11 @@ class UserSettings extends ChangeNotifier {
   static const _kVgmJpnTags = 'vgm_japanese_tags';
   bool get vgmJapaneseTags => _p.getBool(_kVgmJpnTags) ?? false;
   set vgmJapaneseTags(bool v) { _p.setBool(_kVgmJpnTags, v); notifyListeners(); }
+  // Fondu de fin d'un VGM qui BOUCLE, boucles forcées désactivées (le format
+  // n'en prévoit pas: vgmplay fond 8 s après 2 passes). 0 = coupure nette.
+  static const _kVgmLoopFade = 'vgm_loop_fade_secs';
+  int get vgmLoopFadeSeconds => (_p.getInt(_kVgmLoopFade) ?? 5).clamp(0, 16);
+  set vgmLoopFadeSeconds(int v) { _p.setInt(_kVgmLoopFade, v); notifyListeners(); }
   static const _kVgmYm2612 = 'vgm_ym2612_core';
   static const _kVgmYmf262 = 'vgm_ymf262_core';
   static const _kVgmYm3812 = 'vgm_ym3812_core';
@@ -1344,11 +1350,13 @@ class UserSettings extends ChangeNotifier {
   static const _kSecureAuthToken = 'rewamp.auth_token';
 
   // Android: plus d'`encryptedSharedPreferences` — Jetpack Security est
-  // abandonné par Google, et flutter_secure_storage 10 migre TOUT SEUL les
-  // données existantes vers ses propres ciphers au premier accès. ⚠️ C'est
-  // cette migration qui interdit de sauter directement en v11, laquelle
-  // SUPPRIME l'ancien backend: un appareil qui n'a jamais tourné en v10 y
-  // perdrait son jeton, donc son compte.
+  // abandonné par Google. flutter_secure_storage 10 a migré les données
+  // existantes vers ses propres ciphers au premier accès; la v11 (depuis le
+  // 2026-10-18) SUPPRIME l'ancien backend. Montée faite après qu'un build v10
+  // a tourné chez les testeurs Android (beta 6 → 8): un appareil resté en
+  // dessous de v10 perdrait son jeton, donc son compte. `AndroidOptions()` par
+  // défaut, aucun des paramètres retirés en v11 (`encryptedSharedPreferences`,
+  // `sharedPreferencesName`, anciens algorithmes) n'est employé.
   static const FlutterSecureStorage _secure = FlutterSecureStorage(
     aOptions: AndroidOptions(),
     // first_unlock (not unlocked): a background media session may need to log a
@@ -2101,9 +2109,10 @@ class UserSettings extends ChangeNotifier {
 
   static const _kOnboardingSeenBuild = 'onboarding.seen_build';
 
-  /// Build number whose welcome carousel has been acknowledged ('' = never).
-  /// Keyed by BUILD, not a bool: this is a beta, so the data-reset warning is
-  /// worth repeating at each update.
+  /// Build number on which the welcome carousel was acknowledged ('' = never).
+  /// Only its emptiness matters since 1.0 (shown once per install, see
+  /// onboarding.dart); during the beta it was compared to the running build,
+  /// to repeat the data-reset warning at each update.
   String get onboardingSeenBuild => _p.getString(_kOnboardingSeenBuild) ?? '';
   set onboardingSeenBuild(String v) {
     _p.setString(_kOnboardingSeenBuild, v);

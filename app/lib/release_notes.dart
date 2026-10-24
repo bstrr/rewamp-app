@@ -39,9 +39,16 @@ import 'user_settings.dart';
 /// correctifs (piste PSF, playlists fusionnées, défauts des visualiseurs)
 /// entrent dans cette note. Nouveautés d'abord (vitesse, Windows, formats,
 /// bibliothèque, pochette, visualiseurs), correctifs ensuite.
-const kReleaseNotesVersion = 9;
+///
+/// **10 = 1.0** (`1.0.0+18`, 2026-10-19): fin de la beta. La 8 a été PUBLIÉE,
+/// ses onze puces sont vues et RETIRÉES. Douze puces: fluidité (chargement hors
+/// du fil UI + anneau), arcade ES5505/ES5506 et moteurs, panneau ⓘ, archives
+/// déposées, piano, formats Amiga et ZX, « Ouvrir avec » Apple, puis les
+/// corrections (crash `.mtc`, crossfade, pochette republiée). Le navigateur
+/// Podiums en tête. Le libellé n'est plus « Beta N » mais le numéro.
+const kReleaseNotesVersion = 10;
 
-const kReleaseNotesLabel = 'Beta 8';
+const kReleaseNotesLabel = '1.0';
 
 /// Les points de la note, dans l'ordre d'affichage. Une note SYNTHÉTIQUE: ce
 /// que l'utilisateur verra changer, pas le journal des commits. Le dernier
@@ -49,17 +56,18 @@ const kReleaseNotesLabel = 'Beta 8';
 /// délibérément en dernier et signalé, c'est la seule ligne qui demande
 /// quelque chose au lecteur plutôt que de lui annoncer un gain.
 List<String> releaseNotesBullets(AppLocalizations l10n) => [
-      l10n.releaseNotesV9Speed,
-      l10n.releaseNotesV9Windows,
-      l10n.releaseNotesV9Formats,
-      l10n.releaseNotesV9Amiga,
-      l10n.releaseNotesV9MoonBlaster,
-      l10n.releaseNotesV9HideElsewhere,
-      l10n.releaseNotesV9ArtworkFullscreen,
-      l10n.releaseNotesV9Viz,
-      l10n.releaseNotesV9PsfTrack,
-      l10n.releaseNotesV9Playlists,
-      l10n.releaseNotesV9AmigaInfo,
+      l10n.releaseNotesV10Podiums,
+      l10n.releaseNotesV10Loading,
+      l10n.releaseNotesV10Arcade,
+      l10n.releaseNotesV10InfoPanel,
+      l10n.releaseNotesV10LocalAlbums,
+      l10n.releaseNotesV10Piano,
+      l10n.releaseNotesV10Amiga,
+      l10n.releaseNotesV10ZxSpectrum,
+      l10n.releaseNotesV10OpenWith,
+      l10n.releaseNotesV10MtcCrash,
+      l10n.releaseNotesV10Crossfade,
+      l10n.releaseNotesV10Artwork,
     ];
 
 /// L'écran lui-même: fond du splash, logo réduit, la note, un bouton.

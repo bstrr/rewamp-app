@@ -2412,6 +2412,13 @@ class AppLocalizationsJa extends AppLocalizations {
       'VGM タグに日本語のタイトル・ゲーム・アーティスト欄がある場合、それを優先します。';
 
   @override
+  String get settingsVgmLoopFade => 'ループ曲の終了フェード';
+
+  @override
+  String get settingsVgmLoopFadeHelp =>
+      'VGM形式にはフェードアウトがありません。ループする曲はループを2回再生し、この時間でフェードアウトします。オフ＝即停止。ループのない曲はそのまま終わります。';
+
+  @override
   String get localImportFolder => 'フォルダをインポート';
 
   @override
@@ -3726,6 +3733,113 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get podiumBrowserTitle => '表彰台';
+
+  @override
+  String get podiumHubBias => '各曲は最高順位で1回だけ数えます。';
+
+  @override
+  String get podiumRecentWinners => '最近の優勝作';
+
+  @override
+  String get podiumRecentWinnersSubtitle => '直近2年の金賞、新しいコンポから';
+
+  @override
+  String get podiumViaSelf => '音楽コンポ';
+
+  @override
+  String get podiumViaSelfSubtitle => '曲そのものが出品された';
+
+  @override
+  String get podiumViaProduction => 'デモのサウンドトラック';
+
+  @override
+  String get podiumViaProductionSubtitle => 'その曲が使われたデモやゲームが入賞';
+
+  @override
+  String get podiumByKind => 'コンポの種類別';
+
+  @override
+  String get podiumByEra => '年代別';
+
+  @override
+  String get podiumByParty => 'パーティ別';
+
+  @override
+  String get podiumByPartySubtitle => 'メダル数で並べたパーティシリーズ';
+
+  @override
+  String get podiumTopArtists => '受賞の多いアーティスト';
+
+  @override
+  String get podiumAll => 'すべての表彰台';
+
+  @override
+  String get podiumAllSubtitle => '新しいコンポから、次に順位順';
+
+  @override
+  String get podiumChipVia => '性質';
+
+  @override
+  String get podiumChipKind => 'コンポの種類';
+
+  @override
+  String get podiumChipSeries => 'パーティ';
+
+  @override
+  String get podiumChipEra => '年代';
+
+  @override
+  String get compoKindTracked => 'Tracked';
+
+  @override
+  String get compoKindChip => 'Chip';
+
+  @override
+  String get compoKindStreaming => 'Streaming';
+
+  @override
+  String get compoKindExecutable => '実行形式';
+
+  @override
+  String get compoKindOldskool => 'Oldskool';
+
+  @override
+  String get compoKindCombined => '総合';
+
+  @override
+  String get compoKindSoundtrack => 'サウンドトラック';
+
+  @override
+  String get compoKindTrackedHint => 'トラッカーモジュール：MOD、XM、IT…';
+
+  @override
+  String get compoKindChipHint => 'チップ音楽：SID、AY、NES、ゲームボーイ…';
+
+  @override
+  String get compoKindStreamingHint => 'ストリーミング音源：MP3、OGG、WAV…';
+
+  @override
+  String get compoKindExecutableHint => '極小プログラムが生成する音楽';
+
+  @override
+  String get compoKindOldskoolHint => '当時のハードまたはトラッカー、ストリーミングなし';
+
+  @override
+  String get compoKindCombinedHint => '形式の制限がないコンポ';
+
+  @override
+  String get compoKindSoundtrackHint => '入賞したデモやゲームの音楽';
+
+  @override
+  String podiumDecadeLabel(String decade) {
+    return '$decade年代';
+  }
+
+  @override
+  String get podiumSortPodium => '新しいコンポから';
+
+  @override
   String get competitionEmpty => 'このコンペにはエントリーがありません';
 
   @override
@@ -3751,11 +3865,11 @@ class AppLocalizationsJa extends AppLocalizations {
   String get onboardingStart => 'はじめる';
 
   @override
-  String get onboardingBetaTitle => 'ベータ版';
+  String get onboardingWelcomeTitle => 'Rewamp へようこそ';
 
   @override
-  String get onboardingBetaBody =>
-      'Rewamp はまだ開発中です。ライブラリ、プレイリスト、お気に入り、再生統計といったローカルデータは、バージョン 1.0 までに初期化される可能性があります。ダウンロードしたファイル自体は影響を受けませんが、大切なものは別途保管してください。';
+  String get onboardingWelcomeBody =>
+      'チップチューン、トラッカーモジュール、ゲーム音楽のためのプレーヤー。Amiga、Atari、C64、家庭用ゲーム機、アーケード、PC。大規模なオンラインアーカイブから聴くことも、手持ちのファイルを開くこともできます。';
 
   @override
   String onboardingVersion(String version, String build) {
@@ -3787,7 +3901,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get onboardingReplayTitle => 'はじめに';
 
   @override
-  String get onboardingReplaySubtitle => 'ベータ版の注意と機能紹介をもう一度見る';
+  String get onboardingReplaySubtitle => 'はじめにと機能紹介をもう一度見る';
 
   @override
   String get settingsPatternTitle => 'パターン';
@@ -3964,52 +4078,55 @@ class AppLocalizationsJa extends AppLocalizations {
   String get releaseNotesTitle => '新着情報';
 
   @override
-  String get releaseNotesV9Speed =>
-      '再生速度を 0.2×〜3× で変更できるようになりました（「ボイス」パネル）。多くのエンジンは音程を保ったままテンポを変え、それ以外はリサンプリングします。';
+  String get releaseNotesV10Loading =>
+      '読み込みの遅い曲でもアプリが固まらなくなりました。再生/一時停止の周りの細いリングが読み込み中であることを示します。';
 
   @override
-  String get releaseNotesV9Windows =>
-      'Windows：メディアキーとシステムのメディアコントロール（音量ポップアップ、タスクバー）で再生を操作でき、全画面ビジュアライザーが画面全体に表示されるようになりました。';
+  String get releaseNotesV10Piano => 'ピアノ表示：同時に鳴る声部や楽器が多い曲は、より多くの鍵盤に振り分けられます。';
 
   @override
-  String get releaseNotesV9Formats =>
-      '新しいプレーヤー：NoiseTracker GS（Apple IIGS）、Ron Klaren（Amiga）、SAM Coupé の .cop プログラム。';
+  String get releaseNotesV10Amiga =>
+      'Amiga：StoneTracker、SUNtronic（TSMリップ）、さらに多くの Soundtracker 2.6 モジュールが再生できるようになり、SoundPlayer の曲も iOS で鳴ります。';
 
   @override
-  String get releaseNotesV9Amiga =>
-      'Amiga と Atari ST：SidMon 1、Sonic Arranger、Paul Robotham、Quartet、SoundFactory、一部の Maximum Effect モジュールが再生できるようになりました。';
+  String get releaseNotesV10ZxSpectrum =>
+      'ZX Spectrum：zxart の .mt3 ファイルが再生でき、Linux では ZXTune 形式と SAM Coupé の .cop プログラムも使えます。';
 
   @override
-  String get releaseNotesV9MoonBlaster =>
-      'MSX MoonBlaster：曲がサンプルキットを読み込み、ノイズが鳴らなくなりました。エディットモードのファイルも正しく再生されます。';
+  String get releaseNotesV10OpenWith =>
+      'macOS と iOS：対応するすべての形式が「このアプリケーションで開く」に表示されるようになりました。';
 
   @override
-  String get releaseNotesV9HideElsewhere =>
-      'ライブラリ：「この端末にない項目を隠す」で、ファイルが別の端末にあるローカル項目を非表示にできます。';
+  String get releaseNotesV10MtcCrash =>
+      '修正：PT3 と TFM または PSG を組み合わせた一部の .mtc ファイルでアプリが終了していました。';
 
   @override
-  String get releaseNotesV9ArtworkFullscreen =>
-      'プレーヤーでアートワークを長押しすると全画面で表示されます。';
+  String get releaseNotesV10Podiums =>
+      '新しい「表彰台」ブラウザー：デモシーンのコンペ入賞作をパーティー・年・部門別に、殿堂入りランキングとともに。';
 
   @override
-  String get releaseNotesV9Viz =>
-      'ビジュアライザー：既定でボイスごとのオシロスコープ（ストリーム形式はライン スペクトラム）、オシロスコープからグリッドとボイス名を切り替え可能、ステレオ オシロスコープもより安定しました。';
+  String get releaseNotesV10Arcade =>
+      'アーケード：Ensoniq ES5505/ES5506 の音楽（タイトー F3 など）が再生でき、Apple IIGS の VGM でアプリが終了しなくなり、エンジンも最新に（FM-Kingtracker .fmk を追加）。';
 
   @override
-  String get releaseNotesV9PsfTrack =>
-      '修正：一部の PSF アルバムで曲をタップすると別の曲が再生されることがありました。';
+  String get releaseNotesV10InfoPanel =>
+      '情報パネル：フォーマット・エンジン・チャンネル・ループ位置を先頭に表示し、項目名を強調。';
 
   @override
-  String get releaseNotesV9Playlists =>
-      '複数のプレイリストを含むフォルダーは、すべての曲を重複なくまとめた 1 つのアルバムになりました。';
+  String get releaseNotesV10LocalAlbums =>
+      'アルバム画面とサブソング画面にコレクションを表示。ドロップしたアーカイブは全トラックを表示し、「ローカル」と表示され、差し替え後に二重表示されなくなりました。';
 
   @override
-  String get releaseNotesV9AmigaInfo =>
-      '長さや作者が不明な Amiga の曲は、1 週間後にサーバーへ再問い合わせするようになりました（以前は再問い合わせしませんでした）。';
+  String get releaseNotesV10Crossfade =>
+      '修正：クロスフェード有効時、フェードより短いトラックが聞こえませんでした。';
+
+  @override
+  String get releaseNotesV10Artwork =>
+      '修正：サーバーで差し替えたアートワークが「ファイルを再ダウンロード」後にどこでも表示されます。';
 
   @override
   String get releaseNotesDataReset =>
-      'このベータのためにローカルデータを初期化しました。ライブラリとプレイリストはアカウントから再構築されます。ダウンロードはやり直しです。';
+      'このバージョンのためにローカルデータを初期化しました。ライブラリとプレイリストはアカウントから再構築されます。ダウンロードはやり直しです。';
 
   @override
   String get releaseNotesDismiss => '続ける';

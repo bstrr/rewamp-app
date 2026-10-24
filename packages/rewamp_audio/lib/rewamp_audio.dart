@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
@@ -77,6 +78,8 @@ typedef _SetForcedLoopDart = void Function(
     double baseDurationSeconds);
 typedef _HasNativeLoopNative = Int32 Function();
 typedef _HasNativeLoopDart = int Function();
+typedef _EndFadeNative = Double Function();
+typedef _EndFadeDart = double Function();
 
 typedef _SetNextFileNative = Void Function(
     Pointer<Utf8> path, Int32 loopMode, Int32 loopCount, Int32 fadeoutEnabled,
@@ -356,6 +359,7 @@ class RewampAudio {
   _SetVolumeDart?       _setVolumeFn;
   _SetForcedLoopDart?   _setForcedLoopFn;
   _HasNativeLoopDart?   _hasNativeLoopFn;
+  _EndFadeDart?         _endFadeFn;
   _SetNextFileDart?     _setNextFileFn;
   _VizClearArtworkDart? _clearNextFileFn;  // void Function()
   _GetMaskDart?         _handoffSerialFn;  // int64 Function()
@@ -568,6 +572,9 @@ class RewampAudio {
     try {
       _setForcedLoopFn = _lib.lookupFunction<_SetForcedLoopNative, _SetForcedLoopDart>('rewamp_set_forced_loop');
       _hasNativeLoopFn = _lib.lookupFunction<_HasNativeLoopNative, _HasNativeLoopDart>('rewamp_has_native_loop_support');
+      try {
+        _endFadeFn = _lib.lookupFunction<_EndFadeNative, _EndFadeDart>('rewamp_track_end_fade_seconds');
+      } catch (_) {}
     } catch (_) {
       debugLog('rewamp_audio: native forced-loop functions not found');
     }
@@ -946,12 +953,25 @@ class RewampAudio {
     _uninit();
   }
 
+  /// ⚠️ BLOQUE le fil appelant jusqu'au premier bloc audio du décodeur — des
+  /// secondes pour une init de player UADE qui patine. Sur le fil UI c'était un
+  /// gel sur macOS et un kill par le chien de garde sur iOS. Le lecteur passe
+  /// par [loadFileAsync]; cette forme reste pour les harnais et les isolates.
   bool loadFile(String path) {
     final pathPtr = path.toNativeUtf8();
     final result = _loadFile(pathPtr) == 0;
     calloc.free(pathPtr);
     return result;
   }
+
+  /// [loadFile] hors du fil UI: l'appel natif tourne dans un isolate de travail
+  /// qui re-lie ses propres symboles (même recette que l'extraction
+  /// d'archives). Le natif protège le reste: un seul chargement à la fois,
+  /// les commandes venues d'ailleurs pendant ce temps rendent
+  /// `REWAMP_ERROR_BUSY` (voir rewamp_load_file dans rewamp_audio.h). La
+  /// SÉRIALISATION des demandes est l'affaire de l'appelant (PlayerController).
+  Future<bool> loadFileAsync(String path) =>
+      Isolate.run(() => RewampAudio().loadFile(path), debugName: 'rewamp-load');
 
   void unload() => _unload();
 
@@ -998,6 +1018,11 @@ class RewampAudio {
   /// support (its plugin claimed [setForcedLoop] natively) — the caller
   /// should skip its own generic loop/fadeout handling for this file.
   bool get hasNativeLoopSupport => (_hasNativeLoopFn?.call() ?? 0) != 0;
+
+  /// Seconds of end fade the loaded file's plugin appended on its own after
+  /// the file's nominal length (libvgm on a looping VGM), 0 when none.
+  /// [durationSeconds] already includes it; a catalogue duration does not.
+  double get trackEndFadeSeconds => _endFadeFn?.call() ?? 0;
 
   /// Gapless: stage the NEXT queue entry. When the current decoder ends, the
   /// native producer opens this path in place and keeps the output running.

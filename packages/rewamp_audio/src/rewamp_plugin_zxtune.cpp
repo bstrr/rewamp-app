@@ -73,7 +73,7 @@ static const int64_t ZX_LOOP_STALL_FRAMES = ZXTUNE_RATE / 2;
 // by other plugins (libvgm/libgme/openmpt/sid). Registered before vgmstream's
 // catch-all but its score (55) loses to format-specific plugins.
 static const char* const kZxExts[] = {
-    "ay", "ym", "vtx", "psg", "pt1", "pt2", "pt3", "stc", "st1", "stp",
+    "ay", "ym", "vtx", "psg", "pt1", "pt2", "pt3", "mt3", "stc", "st1", "stp",
     "asc", "sqt", "psc", "gtr", "chi", "dst", "sqd", "str", "dmm",
     "tfc", "tfd", "tfe", "ftc", "psm", "pdt", "chp", "vt2",
     /* E-Tracker (SAM Coupé, SAA1099): le décodeur était VENDORÉ et ENREGISTRÉ

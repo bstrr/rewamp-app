@@ -55,6 +55,10 @@ class SongTile extends StatefulWidget {
   /// petit — pour les listes qui en mélangent plusieurs (recherche, écran
   /// artiste, écran groupe).
   final bool showCollection;
+  /// Ajoute l'ANNÉE sur la ligne de collection: celle de la COMPO quand la
+  /// ligne porte un podium (le navigateur Podiums trie dessus — c'est l'année
+  /// qu'on lit), celle du morceau sinon. Rien si aucune n'est connue.
+  final bool showYear;
 
   /// Whether a row may be treated as a WHOLE ALBUM (tap opens the album, and
   /// the play-album action appears). True for search results, where a text
@@ -78,6 +82,7 @@ class SongTile extends StatefulWidget {
     this.grid  = false,
     this.small = false,
     this.showCollection = false,
+    this.showYear = false,
   });
 
   @override
@@ -371,8 +376,9 @@ class _SongTileState extends State<SongTile> {
   Widget build(BuildContext context) {
     if (widget.grid) return _buildGridCell(context);
     final r  = widget.result;
+    final year = widget.showYear ? (r.podium?.year ?? r.year) : null;
     final showCollectionLine =
-        widget.showCollection && r.collection.isNotEmpty;
+        (widget.showCollection && r.collection.isNotEmpty) || year != null;
     return ListTile(
       leading: Stack(
         clipBehavior: Clip.none,
@@ -446,7 +452,11 @@ class _SongTileState extends State<SongTile> {
           if (showCollectionLine)
             Text(
               // Le NOM, pas le slug: « jw_dsf » ne dit rien à personne.
-              RewampDb.collectionLabel(r.collection),
+              [
+                if (widget.showCollection && r.collection.isNotEmpty)
+                  RewampDb.collectionLabel(r.collection),
+                if (year != null) '$year',
+              ].join(' · '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               // Même corps que la note et le « Top N % » de la ligne: c'est la

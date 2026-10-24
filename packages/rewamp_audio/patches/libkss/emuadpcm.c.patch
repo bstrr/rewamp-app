@@ -1,8 +1,8 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/modules/emu8950/emuadpcm.c	2026-07-06 09:48:52
-+++ modules/emu8950/emuadpcm.c	2026-07-06 09:44:22
-@@ -41,10 +41,10 @@
- 
- FILE *fp;
+--- third_party/libkss/upstream/modules/emu8950/emuadpcm.c	2026-10-22 00:44:15
++++ third_party/libkss/modules/emu8950/emuadpcm.c	2026-10-22 00:47:45
+@@ -39,10 +39,10 @@
+ #define RAM_SIZE (256 * 1024)
+ #define ROM_SIZE (256 * 1024)
  
 -OPL_ADPCM *OPL_ADPCM_new(uint32_t clk) {
 -  OPL_ADPCM *_this;
@@ -14,7 +14,7 @@
    if (!_this)
      return NULL;
  
-@@ -62,16 +62,16 @@
+@@ -60,16 +60,16 @@
      goto Error_Exit;
    memset(_this->memory[1], 0, ROM_SIZE);
  
@@ -34,7 +34,7 @@
    if (_this) {
      free(_this->memory[0]);
      free(_this->memory[1]);
-@@ -79,7 +79,7 @@
+@@ -77,7 +77,7 @@
    }
  }
  
@@ -43,7 +43,36 @@
    int i;
  
    for (i = 0; i < 0x20; i++)
-@@ -100,8 +100,8 @@
+@@ -95,21 +95,21 @@
+   _this->output[0] = _this->output[1] = 0;
+ }
+ 
+-int OPL_ADPCM_save_state(OPL_ADPCM *_this, uint8_t *out) {
++int OPLKSS_ADPCM_save_state(OPLKSS_ADPCM *_this, uint8_t *out) {
+   /* Engine state only; the 256K RAM/ROM sample buffers are loaded once and not
+-   * part of the snapshot (see OPL_ADPCM_load_state, which keeps this instance's). */
++   * part of the snapshot (see OPLKSS_ADPCM_load_state, which keeps this instance's). */
+   if (out)
+-    memcpy(out, _this, sizeof(OPL_ADPCM));
+-  return (int)sizeof(OPL_ADPCM);
++    memcpy(out, _this, sizeof(OPLKSS_ADPCM));
++  return (int)sizeof(OPLKSS_ADPCM);
+ }
+ 
+-void OPL_ADPCM_load_state(OPL_ADPCM *_this, const uint8_t *in, int size) {
+-  if (size < (int)sizeof(OPL_ADPCM))
++void OPLKSS_ADPCM_load_state(OPLKSS_ADPCM *_this, const uint8_t *in, int size) {
++  if (size < (int)sizeof(OPLKSS_ADPCM))
+     return;
+   /* keep this instance's own RAM/ROM buffers across the copy */
+   uint8_t *ram = _this->memory[0];
+   uint8_t *rom = _this->memory[1];
+-  memcpy(_this, in, sizeof(OPL_ADPCM));
++  memcpy(_this, in, sizeof(OPLKSS_ADPCM));
+   _this->memory[0] = ram;
+   _this->memory[1] = rom;
+   /* `wave` is the RAM/ROM base selected by reg 0x08 — re-point at this instance's
+@@ -120,8 +120,8 @@
  #define DELTA_ADDR_MAX (1 << 16)
  #define DELTA_ADDR_MASK (DELTA_ADDR_MAX - 1)
  
@@ -54,7 +83,7 @@
    _this->delta_addr += _this->delta_n;
  
    if (_this->delta_addr & DELTA_ADDR_MAX) {
-@@ -126,7 +126,7 @@
+@@ -146,7 +146,7 @@
    return 0;
  }
  
@@ -63,7 +92,7 @@
    static uint32_t F[] = {
        57, 57, 57, 57, 77, 102, 128, 153 // This table values are from ymdelta.c by Tatsuyuki Satoh.
    };
-@@ -142,7 +142,7 @@
+@@ -162,7 +162,7 @@
    _this->diff = CLAP(DMIN, (_this->diff * F[val & 7]) >> 6, DMAX);
  }
  
@@ -72,7 +101,7 @@
    uint32_t val;
  
    if (_this->play_start && update_stage(_this)) {
-@@ -157,7 +157,7 @@
+@@ -177,7 +177,7 @@
    return ((_this->output[0] + _this->output[1]) * (_this->reg[0x12] & 0xff)) >> 13;
  }
  
@@ -81,7 +110,7 @@
    if (_this->reg[0x07] & R07_SP_OFF)
      return 0;
  
-@@ -183,7 +183,7 @@
+@@ -206,7 +206,7 @@
    }
  }
  
@@ -90,7 +119,7 @@
    adr &= 0x1f;
    data &= 0xff;
  
-@@ -231,7 +231,7 @@
+@@ -256,7 +256,7 @@
      _this->reg[0x0E] = data;
      break;
  
@@ -99,7 +128,7 @@
      _this->reg[0x0F] = data;
  
      if ((_this->reg[0x07] & R07_REC) && (_this->reg[0x07] & R07_MEMORY_DATA)) {
-@@ -265,16 +265,16 @@
+@@ -290,16 +290,16 @@
   *    +----- D4: EOS
   * IRQ bit (D7) is not implemented on this module.
   */
@@ -119,7 +148,7 @@
    if (start >= RAM_SIZE) return;
    if (start + length > RAM_SIZE) {
      length = RAM_SIZE - start;
-@@ -282,10 +282,10 @@
+@@ -307,10 +307,10 @@
    memcpy(_this->memory[0] + start, data, length);
  }
  

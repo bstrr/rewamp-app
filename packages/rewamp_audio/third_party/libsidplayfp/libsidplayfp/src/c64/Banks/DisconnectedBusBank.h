@@ -42,11 +42,11 @@ namespace libsidplayfp
 class DisconnectedBusBank final : public Bank
 {
 private:
-    const PLA &pla;
+    const PLA &m_pla;
 
 public:
-    DisconnectedBusBank(PLA &pla) :
-        pla(pla)
+    explicit DisconnectedBusBank(const PLA &pla) :
+        m_pla(pla)
     {}
 
     /**
@@ -57,7 +57,7 @@ public:
     /**
      * No device is connected so this should return the value left on the bus.
      */
-    uint8_t peek(uint_least16_t) override { return pla.getLastReadByte(); }
+    uint8_t peek(uint_least16_t) override { return m_pla.getLastReadByte(); }
 };
 
 }

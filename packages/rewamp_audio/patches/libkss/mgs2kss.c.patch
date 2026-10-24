@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/kss/mgs2kss.c	2026-07-06 09:48:52
-+++ src/kss/mgs2kss.c	2026-07-06 09:44:22
+--- third_party/libkss/upstream/src/kss/mgs2kss.c	2026-10-22 00:44:16
++++ third_party/libkss/src/kss/mgs2kss.c	2026-10-22 00:44:21
 @@ -27,7 +27,7 @@
      /* SAVE MIB POINTER TO WORK AREA */
      0xDD, 0x22, 0xF0, 0x7F, /* LD (07FF0H),IX */

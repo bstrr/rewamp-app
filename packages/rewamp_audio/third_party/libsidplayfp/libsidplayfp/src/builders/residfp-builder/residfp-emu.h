@@ -1,7 +1,7 @@
 /*
  * This file is part of libsidplayfp, a SID player engine.
  *
- * Copyright 2011-2019 Leandro Nini <drfiemost@users.sourceforge.net>
+ * Copyright 2011-2026 Leandro Nini <drfiemost@users.sourceforge.net>
  * Copyright 2007-2010 Antti Lankila
  * Copyright 2001 Simon White
  *
@@ -47,7 +47,7 @@ public:
     static const char* getCredits();
 
 public:
-    reSIDfpEmu(sidbuilder *builder);
+    explicit reSIDfpEmu(sidbuilder *builder);
     ~reSIDfpEmu() override;
 
     bool getStatus() const { return m_status; }
@@ -67,11 +67,38 @@ public:
     void model(SidConfig::sid_model_t model, bool digiboost) override;
 
     // Specific to residfp
-    void filter(bool enable);
-    void filter6581Curve(double filterCurve);
-    void filter6581Range(double adjustment);
-    void filter8580Curve(double filterCurve);
+    void enableFilter(bool enable) { m_sid.enableFilter(enable); }
+
+    void filter6581Curve(double filterCurve) { m_sid.setFilter6581Curve(filterCurve); }
+
+    void filter6581Range(double adjustment) { m_sid.setFilter6581Range(adjustment); }
+
+    void filter8580Curve(double filterCurve) { m_sid.setFilter8580Curve(filterCurve); }
+
+    void enableOld6581caps(bool enable) { m_sid.enableOld6581caps(enable); }
+
     void combinedWaveforms(SidConfig::sid_cw_t cws);
+
+    void dacLeakage(double level)
+    {
+#if (LIBRESIDFP_VERSION_MAJ > 1) || (LIBRESIDFP_VERSION_MIN >= 2)
+        m_sid.setDacLeakage(level);
+#endif
+    }
+
+    void offset6581(double offset)
+    {
+#if (LIBRESIDFP_VERSION_MAJ > 1) || (LIBRESIDFP_VERSION_MIN >= 2)
+        m_sid.setOffset6581(offset);
+#endif
+    }
+
+    void dcbRes(double res)
+    {
+#if (LIBRESIDFP_VERSION_MAJ > 1) || (LIBRESIDFP_VERSION_MIN >= 2)
+        m_sid.setDCBRes(res);
+#endif
+    }
 };
 
 }

@@ -15,6 +15,13 @@
 #include <ctype.h>
 #include <time.h>   /* clock_gettime — waveform read-head smoothing */
 #include <pthread.h> /* background seek thread — see rewamp_seek_seconds() */
+#ifdef _WIN32
+/* Sleep, déclarée à la main plutôt que par <windows.h> entier (macros min/max,
+ * near/far… qui entrent en collision avec les moteurs inclus plus bas). */
+__declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
+#else
+#include <unistd.h>   /* usleep — REWAMP_DEBUG_LOAD_DELAY_MS */
+#endif
 
 #ifdef REWAMP_WITH_PROWIZARD
 #include <dirent.h>
@@ -500,6 +507,12 @@ double        g_force_base_duration_secs = 0.0;
  * every open(); read once right after in rewamp_load_file(). */
 int           g_force_loop_native_veto   = 0;
 static int    g_native_loop_supported    = 0;  /* set by the last rewamp_load_file() */
+/* Fondu de fin que le greffon a lui-même AJOUTÉ après la durée nominale du
+ * fichier (secondes; 0 = aucun) — libvgm sur un VGM à boucle, réglage
+ * `loop_fade_secs`. Sa length() le compte déjà, mais la durée CATALOGUE non:
+ * Dart, qui préfère le catalogue, coupait le fondu. Remis à zéro avant chaque
+ * open(), posé par le greffon dans son open(). */
+double        g_track_end_fade_secs      = 0.0;
 
 /* Generic native fadeout window for a natively-looped track with a known
  * single-pass length (see rewamp_set_forced_loop's doc comment) — computed
@@ -1114,6 +1127,7 @@ static int rewamp_open_track(const char* path, RewampOpenedTrack* out) {
         }
         RewampAudioFormat fmt = {0};
         g_force_loop_native_veto = 0; // plugin's open() may set it (see below)
+        g_track_end_fade_secs    = 0.0; // idem (fondu de fin propre au greffon)
         // Pass the ORIGINAL path (with suffix) so the plugin can read subsong.
         RewampDecoder* dec = vt->open(path, &fmt);
         if (dec != NULL && fmt.channels > 0 && fmt.sampleRate > 0) {
@@ -1232,10 +1246,51 @@ int64_t rewamp_track_generation(void) {
     return g_load_count + rewamp_handoff_serial();
 }
 
-RewampResult rewamp_load_file(const char* path) {
-    if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+/* ── Chargement hors du fil UI ──────────────────────────────────────────────
+ * rewamp_load_file BLOQUE jusqu'au premier bloc audio du décodeur: quelques
+ * millisecondes d'ordinaire, des secondes pour une init de player UADE qui
+ * patine (bornée à 60 s virtuelles depuis 5ba88f84, soit ~1 s réelle — mais
+ * d'autres moteurs n'ont pas de borne). Appelé sur le fil UI c'était un gel
+ * sur macOS et un kill par le chien de garde sur iOS (test.mod, 2026-10-15).
+ * Dart l'appelle donc depuis un isolate de travail. Ce qui le rend sûr:
+ *   - UN chargement à la fois (g_load_lock, trylock ⇒ REWAMP_ERROR_BUSY);
+ *   - pendant le chargement, les commandes venues d'un autre fil sont
+ *     REFUSÉES (rewamp_load_busy_for_caller): elles toucheraient g_sound /
+ *     g_dataSource en cours de (dé)montage. Le fil du chargement lui-même
+ *     passe (rewamp_load_file appelle rewamp_unload, clear_next_file…);
+ *   - les sondes qui ouvrent un décodeur (rewamp_probe_subsong_count) prennent
+ *     le même verrou et ATTENDENT: deux décodeurs ouverts en même temps, c'est
+ *     ce que les moteurs singleton interdisent (double-décodeur), et leurs
+ *     open() partagent les globaux de voix/tags. Le cas est rare (une sonde
+ *     pendant un chargement) et dure ce que dure le chargement.
+ * Les LECTURES d'état (position, durée, is_playing) ne sont pas gardées: elles
+ * testent g_sound_loaded, qui est à 0 du rewamp_unload initial jusqu'au
+ * ma_sound_init final. */
+static pthread_mutex_t g_load_lock      = PTHREAD_MUTEX_INITIALIZER;
+static volatile int    g_load_in_flight = 0;
+static pthread_t       g_load_thread;
 
+static int rewamp_load_busy_for_caller(void) {
+    return g_load_in_flight && !pthread_equal(pthread_self(), g_load_thread);
+}
+
+static RewampResult rewamp_load_file_locked(const char* path) {
     rewamp_unload();
+    /* Bouton de DÉVELOPPEMENT: `REWAMP_DEBUG_LOAD_DELAY_MS=2000` dans
+     * l'environnement de l'app retarde chaque ouverture d'autant — pour VOIR
+     * l'anneau d'attente (LoadingRing) et éprouver les gardes BUSY sans
+     * chercher un fichier qui s'ouvre lentement (il n'y en a presque plus:
+     * UADE est borné). Sur le fil du chargement, donc hors du fil UI. */
+    {
+        const char* d = getenv("REWAMP_DEBUG_LOAD_DELAY_MS");
+        if (d != NULL && atoi(d) > 0) {
+#ifdef _WIN32
+            Sleep((unsigned long)atoi(d));
+#else
+            usleep((useconds_t)atoi(d) * 1000u);
+#endif
+        }
+    }
     // A manual load supersedes whatever next-track was staged for gapless: the
     // queue decision that staged it is stale the moment the user picks a track.
     rewamp_clear_next_file();
@@ -1268,7 +1323,19 @@ RewampResult rewamp_load_file(const char* path) {
     return REWAMP_ERROR_LOAD_FAILED;
 }
 
+RewampResult rewamp_load_file(const char* path) {
+    if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+    if (pthread_mutex_trylock(&g_load_lock) != 0) return REWAMP_ERROR_BUSY;
+    g_load_thread    = pthread_self();
+    g_load_in_flight = 1;
+    const RewampResult r = rewamp_load_file_locked(path);
+    g_load_in_flight = 0;
+    pthread_mutex_unlock(&g_load_lock);
+    return r;
+}
+
 void rewamp_unload(void) {
+    if (rewamp_load_busy_for_caller()) return;
     if (!g_sound_loaded) return;
     // Must happen before ma_sound_uninit(): the seek thread reads/mutates the
     // live decoder state (g_sound / g_dataSource) — never tear that down out
@@ -1299,6 +1366,7 @@ static volatile int g_pause_requested = 0;
 
 RewampResult rewamp_play(void) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+    if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     if (!g_sound_loaded) return REWAMP_ERROR_NO_SOUND;
     // A pause may have SUSPENDED the whole device (see rewamp_device_suspend —
     // iOS Now Playing ignores playbackRate=0 while the audio unit runs).
@@ -1324,6 +1392,7 @@ RewampResult rewamp_play(void) {
 
 RewampResult rewamp_pause(void) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+    if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     if (!g_sound_loaded) return REWAMP_ERROR_NO_SOUND;
     if (ma_device_get_state(&g_device) != ma_device_state_started) {
         // Device not running (iOS session interruption — Spotify took the
@@ -1359,6 +1428,7 @@ RewampResult rewamp_pause(void) {
  * exists to kill). rewamp_play() restarts the device transparently. */
 RewampResult rewamp_device_suspend(void) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+    if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     /* Only while genuinely paused — a play racing the delayed suspend wins. */
     if (g_sound_loaded && ma_sound_is_playing(&g_sound)) return REWAMP_OK;
     ma_device_stop(&g_device);
@@ -1368,6 +1438,7 @@ RewampResult rewamp_device_suspend(void) {
 
 RewampResult rewamp_stop(void) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+    if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     if (!g_sound_loaded) return REWAMP_ERROR_NO_SOUND;
     rewamp_seek_thread_cancel_join();   // abort + wait out any in-progress seek
     ma_sound_stop(&g_sound);
@@ -1390,6 +1461,7 @@ int rewamp_is_playing(void) {
 
 void rewamp_set_volume(float volume) {
     if (!g_initialized || !g_sound_loaded) return;
+    if (rewamp_load_busy_for_caller()) return;
     ma_sound_set_volume(&g_sound, volume);
 }
 
@@ -1427,6 +1499,9 @@ static pthread_mutex_t g_next_mtx = PTHREAD_MUTEX_INITIALIZER;
 void rewamp_set_next_file(const char* path, int loopMode, int loopCount,
                           int fadeoutEnabled, double fadeoutSeconds,
                           double baseDurationSeconds) {
+    /* Un armement pendant un chargement vise la piste qu'on QUITTE: ignoré,
+     * Dart ré-arme après le résultat du chargement (_onLoadResult). */
+    if (rewamp_load_busy_for_caller()) return;
     if (path == NULL || path[0] == '\0') { rewamp_clear_next_file(); return; }
     pthread_mutex_lock(&g_next_mtx);
     snprintf(g_next.path, sizeof(g_next.path), "%s", path);
@@ -1440,6 +1515,7 @@ void rewamp_set_next_file(const char* path, int loopMode, int loopCount,
 }
 
 void rewamp_clear_next_file(void) {
+    if (rewamp_load_busy_for_caller()) return;   /* le chargement l'efface lui-même */
     pthread_mutex_lock(&g_next_mtx);
     g_next.staged = 0;
     pthread_mutex_unlock(&g_next_mtx);
@@ -1456,6 +1532,7 @@ void rewamp_set_crossfade_seconds(double seconds) {
  * Par piste: remise à zéro à chaque load et à chaque handoff. */
 extern double g_track_end_seconds;
 void rewamp_set_track_end_seconds(double seconds) {
+    if (rewamp_load_busy_for_caller()) return;   /* par piste: Dart re-pose après le load */
     g_track_end_seconds = seconds > 0.0 ? seconds : 0.0;
 }
 
@@ -1505,6 +1582,10 @@ int rewamp_has_native_loop_support(void) {
     return g_native_loop_supported;
 }
 
+double rewamp_track_end_fade_seconds(void) {
+    return g_track_end_fade_secs;
+}
+
 double rewamp_get_position_seconds(void) {
     if (!g_initialized || !g_sound_loaded) return 0.0;
     float pos = 0.0f;
@@ -1521,6 +1602,7 @@ double rewamp_get_duration_seconds(void) {
 
 RewampResult rewamp_seek_seconds(double seconds) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+    if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     if (!g_sound_loaded) return REWAMP_ERROR_NO_SOUND;
 
     // Cancel + join whatever seek is already running (bounded — see the
@@ -1694,7 +1776,21 @@ int rewamp_can_play(const char* path) {
     return rewamp_registry_select(path) != NULL ? 1 : 0;
 }
 
+static int rewamp_probe_subsong_count_locked(const char* path);
+
+/* Sérialisée avec rewamp_load_file (voir g_load_lock): la sonde OUVRE un
+ * décodeur, et deux open() concurrents partagent les globaux de voix/tags —
+ * et violent l'unicité des moteurs singleton. Attend la fin d'un chargement en
+ * vol au lieu de répondre faux: un faux « 0 » ferait prendre un conteneur pour
+ * un fichier simple. */
 int rewamp_probe_subsong_count(const char* path) {
+    pthread_mutex_lock(&g_load_lock);
+    const int n = rewamp_probe_subsong_count_locked(path);
+    pthread_mutex_unlock(&g_load_lock);
+    return n;
+}
+
+static int rewamp_probe_subsong_count_locked(const char* path) {
     s_probe_title_fn    = NULL;
     s_probe_duration_fn = NULL;
     s_probe_index_fn    = NULL;

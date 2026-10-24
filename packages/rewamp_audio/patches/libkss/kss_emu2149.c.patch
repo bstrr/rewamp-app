@@ -1,5 +1,5 @@
---- third_party/libkss/upstream/modules/emu2149/kss_emu2149.c	2026-07-09 18:43:32
-+++ third_party/libkss/modules/emu2149/kss_emu2149.c	2026-09-05 09:35:13
+--- third_party/libkss/upstream/modules/emu2149/kss_emu2149.c	2026-10-22 00:44:15
++++ third_party/libkss/modules/emu2149/kss_emu2149.c	2026-10-22 00:47:34
 @@ -13,8 +13,13 @@
   */
  #include <stdlib.h>
@@ -122,7 +122,7 @@
  {
    int i;
  
-@@ -192,34 +197,34 @@
+@@ -201,34 +206,34 @@
  }
  
  void
@@ -163,7 +163,7 @@
  {
  
    int i, noise;
-@@ -305,7 +310,7 @@
+@@ -314,7 +319,7 @@
        continue;
      }
  
@@ -172,7 +172,7 @@
      {
        psg->ch_out[i] = 0;
        continue;
-@@ -325,14 +330,66 @@
+@@ -334,14 +339,66 @@
    }
  }
  
@@ -243,7 +243,7 @@
  {
    if (!psg->quality) 
    {
-@@ -355,7 +412,7 @@
+@@ -364,7 +421,7 @@
  }
  
  void
@@ -252,10 +252,23 @@
  {
    int c;
  
-@@ -418,4 +475,4 @@
-   }
- 
+@@ -429,12 +486,12 @@
    return;
+ }
+ 
+-int PSG_save_state(PSG *psg, uint8_t *out) {
+-  if (out) memcpy(out, psg, sizeof(PSG));
+-  return (int)sizeof(PSG);
++int PSGKSS_save_state(PSGKSS *psg, uint8_t *out) {
++  if (out) memcpy(out, psg, sizeof(PSGKSS));
++  return (int)sizeof(PSGKSS);
+ }
+-void PSG_load_state(PSG *psg, const uint8_t *in, int size) {
++void PSGKSS_load_state(PSGKSS *psg, const uint8_t *in, int size) {
+   /* voltbl is the only pointer and targets a static table (same address in every
+      instance), so a plain copy is position-independent (restorable cross-instance). */
+-  if (size >= (int)sizeof(PSG)) memcpy(psg, in, sizeof(PSG));
 -}
 \ No newline at end of file
++  if (size >= (int)sizeof(PSGKSS)) memcpy(psg, in, sizeof(PSGKSS));
 +}

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rewamp/l10n.dart';
+import 'package:rewamp/local_db.dart';
 import 'package:rewamp/rewamp_db.dart';
 import 'package:rewamp/track_options_sheet.dart';
 
@@ -101,5 +102,34 @@ void main() {
     await open(t, result: row(album: 'Commando', subsongs: 21));
     expect(find.text('Voir les subsongs'), findsNothing);
     expect(find.text('Voir l\'album'), findsNothing);
+  });
+
+  group('trackOffersAlbumLink (ligne locale)', () {
+    TrackRecord rec({String? album, String? albumId, String? onlineId}) =>
+        TrackRecord(
+          id: 'x', filePath: '/d/Gunship 2000.sc68', entryPath: '',
+          subsongIdx: 1, metaAlbum: album, albumId: albumId,
+          subsongCount: 9, source: 'online', onlineId: onlineId,
+          isFavorite: false, inLibrary: false, playCount: 0,
+        );
+    const uuid = 'fcbd1a27-fa34-5aa2-8c0a-495caea187bc';
+
+    test('catalogue SANS uuid d\'album: le tag du fichier n\'est pas un album',
+        () {
+      // Gunship 2000.sc68: meta_album = son propre nom (tag lu par le moteur).
+      expect(trackOffersAlbumLink(rec(album: 'Gunship 2000', onlineId: uuid)),
+          isFalse);
+    });
+    test('catalogue AVEC uuid d\'album: lien', () {
+      expect(trackOffersAlbumLink(
+              rec(album: 'Commando', albumId: uuid, onlineId: uuid)),
+          isTrue);
+    });
+    test('import local: le nom (son dossier) est l\'identité', () {
+      expect(trackOffersAlbumLink(rec(album: 'Mes rips')), isTrue);
+    });
+    test('sans album: rien', () {
+      expect(trackOffersAlbumLink(rec(onlineId: uuid)), isFalse);
+    });
   });
 }

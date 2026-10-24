@@ -50,7 +50,7 @@ class loadError
 private:
     const char* m_msg;
 public:
-    loadError(const char* msg) : m_msg(msg) {}
+    explicit loadError(const char* msg) : m_msg(msg) {}
     const char* message() const { return m_msg; }
 };
 
@@ -180,19 +180,19 @@ public:  // ----------------------------------------------------------------
     /**
      * Get the pointer to the tune data.
      */
-    const uint_least8_t* c64Data() const { return &cache[fileOffset]; }
+    const uint_least8_t* c64Data() const { return &m_cache[m_fileOffset]; }
 
 protected:  // -------------------------------------------------------------
 
     std::unique_ptr<SidTuneInfoImpl> info;
 
-    uint_least8_t songSpeed[MAX_SONGS];
-    SidTuneInfo::clock_t clockSpeed[MAX_SONGS];
+    uint_least8_t m_songSpeed[MAX_SONGS];
+    SidTuneInfo::clock_t m_clockSpeed[MAX_SONGS];
 
     /// For files with header: offset to real data
-    uint_least32_t fileOffset;
+    uint_least32_t m_fileOffset;
 
-    buffer_t cache;
+    buffer_t m_cache;
 
 protected:
     SidTuneBase();
@@ -256,7 +256,7 @@ protected:
     /**
      * Petscii to Ascii converter.
      */
-    std::string petsciiToAscii(SmartPtr_sidtt<const uint8_t>& spPet);
+    static std::string petsciiToAscii(SmartPtr_sidtt<const uint8_t>& spPet);
 
 private:  // ---------------------------------------------------------------
 

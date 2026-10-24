@@ -1,0 +1,25 @@
+--- a/src/builders/sidlite-builder/sidlite/Filter.cpp
++++ b/src/builders/sidlite-builder/sidlite/Filter.cpp
+@@ -32,6 +32,10 @@
+ #include <mutex>
+ #include <cmath>
+ 
++//YOYOFR
++extern "C" int sid_v4;
++//YOYOFR
++
+ namespace SIDLite
+ {
+ 
+@@ -131,6 +135,11 @@
+         // average level (for VU-meter)
+         Level += ((std::abs(Output)>>VUMETER_DIVSHIFTS) - Level ) / VUMETER_LOWPASS_DIV;
+     }
++    
++    //YOYOFR
++    sid_v4=Digi;
++    //YOYOFR
++    
+     return Output / Attenuation; // master output
+ }
+ 

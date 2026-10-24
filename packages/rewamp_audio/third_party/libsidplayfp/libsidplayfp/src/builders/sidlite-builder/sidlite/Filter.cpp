@@ -30,6 +30,7 @@
 
 #include <map>
 #include <mutex>
+#include <cstdlib>
 #include <cmath>
 
 //YOYOFR
@@ -69,18 +70,18 @@ int Filter::clock(int FilterInput, int NonFiltered)
     enum SIDspecs { HIGHPASS_BITVAL=0x40, BANDPASS_BITVAL=0x20, LOWPASS_BITVAL=0x10 };
 
     //Filter
-    unsigned char FilterSwitchReso = regs[0x17];
-    unsigned char VolumeBand = regs[0x18];
+    unsigned char FilterSwitchReso = m_regs[0x17];
+    unsigned char VolumeBand = m_regs[0x18];
 
-    int Cutoff = (regs[0x16] << 3) + (regs[0x15] & 7);
+    int Cutoff = (m_regs[0x16] << 3) + (m_regs[0x15] & 7);
     int Resonance = FilterSwitchReso >> 4;
-    if (LIKELY(s->is8580()))
+    if (LIKELY(m_settings->is8580()))
     {
         Cutoff = CutoffMul8580[Cutoff];
         Resonance = Resonances8580[Resonance];
     }
     else
-    { //6581
+    { // 6581
         // MOSFET-VCR control-voltage calculation (resistance-modulation aka 6581 filter distortion) emulation
         Cutoff += (FilterInput*105)>>16;
         if (Cutoff > SID_CUTOFF_MAX)
@@ -107,9 +108,10 @@ int Filter::clock(int FilterInput, int NonFiltered)
     }
 
     // Output stage
-    // For $D418 volume-register digi playback: an AC / DC separation for $D418 value at low (20Hz or so) cutoff-frequency,
-    // sending AC (highpass) value to a 4th 'digi' channel mixed to the master output,
-    // and set ONLY the DC (lowpass) value to the volume-control.
+    // For $D418 volume-register digi playback: an AC / DC separation for $D418 value
+    // at low (20Hz or so) cutoff-frequency, sending AC (highpass) value
+    // to a 4th 'digi' channel mixed to the master output, and set ONLY
+    // the DC (lowpass) value to the volume-control.
     // This solved 2 issues:
     //  Thanks to the lowpass filtering of the volume-control,
     //    SID tunes where digi is played together with normal SID channels
@@ -118,12 +120,15 @@ int Filter::clock(int FilterInput, int NonFiltered)
     //    (This is useful for fade-in/out tunes like Hades Nebula, where clicking ruins the intro.)
     int MainVolume;
     int Digi = 0;
-    if (LIKELY(s->getRealSIDmode()))
+    if (LIKELY(m_settings->getRealSIDmode()))
     {
         int Tmp = (signed int)((VolumeBand & 0xF) << FRACTIONAL_SHIFTS);
-        Digi = (Tmp - PrevVolume) * D418_DIGI_MUL; // highpass is digi, adding it to output must be before digifilter-code
-        PrevVolume += (Tmp - PrevVolume) / 1024; // arithmetic shift amount determines digi lowpass-frequency
-        MainVolume = PrevVolume >> FRACTIONAL_SHIFTS; // lowpass is main volume
+        // highpass is digi, adding it to output must be before digifilter-code
+        Digi = (Tmp - PrevVolume) * D418_DIGI_MUL;
+        // arithmetic shift amount determines digi lowpass-frequency
+        PrevVolume += (Tmp - PrevVolume) / 1024;
+        // lowpass is main volume
+        MainVolume = PrevVolume >> FRACTIONAL_SHIFTS;
     }
     else
         MainVolume = VolumeBand & 0xF;
@@ -133,7 +138,7 @@ int Filter::clock(int FilterInput, int NonFiltered)
     if (UNLIKELY(!++VUmeterUpdateCounter))
     {
         // average level (for VU-meter)
-        Level += ((std::abs(Output)>>VUMETER_DIVSHIFTS) - Level ) / VUMETER_LOWPASS_DIV;
+        Level += ((std::abs(Output) >> VUMETER_DIVSHIFTS) - Level) / VUMETER_LOWPASS_DIV;
     }
     
     //YOYOFR
@@ -144,8 +149,8 @@ int Filter::clock(int FilterInput, int NonFiltered)
 }
 
 Filter::Filter(settings *s, unsigned char *regs) :
-    regs(regs),
-    s(s)
+    m_regs(regs),
+    m_settings(s)
 {
     reset();
 }
@@ -189,7 +194,8 @@ void Filter::rebuildCutoffTables(unsigned short samplerate)
             //8580 Cutoff-curve (for samplerate)
             for (int i=0; i<CF_LEN; i++)
             {
-                cutoff_tab[i] = (1. - std::exp((i+2) * cutoff_ratio_8580)) * Magnitude; //linear curve by resistor-ladder VCR (with a little leakage)
+                // linear curve by resistor-ladder VCR (with a little leakage)
+                cutoff_tab[i] = (1. - std::exp((i+2) * cutoff_ratio_8580)) * Magnitude;
             }
             auto ct = &(CUTOFF_CACHE_8580.emplace_hint(lb, co_cache_t::value_type(samplerate, cutoff_tab))->second);
             CutoffMul8580 = ct->data();
@@ -209,22 +215,38 @@ void Filter::rebuildCutoffTables(unsigned short samplerate)
         {
             co_tab_t cutoff_tab;
 
-            constexpr double VCR_SHUNT_6581 = 1500.; //kOhm //cca 1.5 MOhm Rshunt across VCR FET drain and source (causing 220Hz bottom cutoff with 470pF integrator capacitors in old C64)
-            constexpr int VCR_FET_TRESHOLD = 192; //Vth (on cutoff numeric range 0..2048) for the VCR cutoff-frequency control FET below which it doesn't conduct
-            constexpr double CAP_6581 = 0.470; //nF //filter capacitor value for 6581
-            constexpr double FILTER_DARKNESS_6581 = 22.0; //the bigger the value, the darker the filter control is (that is, cutoff frequency increases less with the same cutoff-value)
-            //constexpr double FILTER_DISTORTION_6581 = 0.0016; //the bigger the value the more of resistance-modulation (filter distortion) is applied for 6581 cutoff-control
+            // cca 1.5 MOhm Rshunt across VCR FET drain and source
+            // (causing 220Hz bottom cutoff with 470pF integrator capacitors in old C64)
+            constexpr double VCR_SHUNT_6581 = 1500.; // kOhm
+            // Vth (on cutoff numeric range 0..2048) for the VCR cutoff-frequency control FET
+            // below which it doesn't conduct
+            constexpr int VCR_FET_TRESHOLD = 192;
+            // filter capacitor value for 6581
+            constexpr double CAP_6581 = 0.470; // nF
+            // the bigger the value, the darker the filter control is
+            // (that is, cutoff frequency increases less with the same cutoff-value)
+            constexpr double FILTER_DARKNESS_6581 = 22.0;
+            // the bigger the value the more of resistance-modulation
+            // (filter distortion) is applied for 6581 cutoff-control
+            //constexpr double FILTER_DISTORTION_6581 = 0.0016;
 
-            constexpr double cap_6581_reciprocal = -1000000./CAP_6581;
-            constexpr double cutoff_steepness_6581 = FILTER_DARKNESS_6581*(2048-VCR_FET_TRESHOLD); //pre-scale for 0...2048 cutoff-value range
+            constexpr double cap_6581_reciprocal = -1000000. / CAP_6581;
+            // pre-scale for 0...2048 cutoff-value range
+            constexpr double cutoff_steepness_6581 = FILTER_DARKNESS_6581 * (2048-VCR_FET_TRESHOLD); 
 
             // 6581 Cutoff-curve: (for samplerate)
             for (int i=0; i<CF_LEN; ++i)
             {
-                double rDS_VCR_FET = i<=VCR_FET_TRESHOLD ? 100000000.0 //below Vth treshold Vgs control-voltage FET presents an open circuit
-                    : cutoff_steepness_6581/(i-VCR_FET_TRESHOLD);  // rDS ~ (-Vth*rDSon) / (Vgs-Vth)  //above Vth FET drain-source resistance is proportional to reciprocal of cutoff-control voltage
+                // below Vth treshold Vgs control-voltage FET presents an open circuit
+                // rDS ~ (-Vth*rDSon) / (Vgs-Vth)
+                // above Vth FET drain-source resistance is proportional to reciprocal of cutoff-control voltage
+                double rDS_VCR_FET = i<=VCR_FET_TRESHOLD ? 100000000.0
+                    : cutoff_steepness_6581 / (i-VCR_FET_TRESHOLD);
 
-                cutoff_tab[i] = (1. - std::exp(cap_6581_reciprocal / (VCR_SHUNT_6581*rDS_VCR_FET/(VCR_SHUNT_6581+rDS_VCR_FET)) / samplerate)) * Magnitude; //curve with 1.5MOhm VCR parallel Rshunt emulation
+                // curve with 1.5MOhm VCR parallel Rshunt emulation
+                cutoff_tab[i] = (1. - std::exp(cap_6581_reciprocal
+                        / (VCR_SHUNT_6581 * rDS_VCR_FET / (VCR_SHUNT_6581+rDS_VCR_FET)) / samplerate))
+                    * Magnitude;
             }
             auto ct = &(CUTOFF_CACHE_6581.emplace_hint(lb, co_cache_t::value_type(samplerate, cutoff_tab))->second);
             CutoffMul6581 = ct->data();

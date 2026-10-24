@@ -198,7 +198,8 @@ static RewampDecoder* sid_open(const char* path, RewampAudioFormat* outFormat) {
     // Configure engine.
     SidConfig cfg = dec->engine->config();
     cfg.frequency       = SID_RENDER_RATE;
-    cfg.playback        = SidConfig::STEREO;
+    // Pas de cfg.playback: libsidplayfp 3.x l'a retiré (« no longer
+    // meaningful »), la stéréo se demande à initMixer(true), plus bas.
     cfg.samplingMethod  =
         rewamp_get_engine_param("sid", "sampling", 0) > 0.5
             ? SidConfig::RESAMPLE_INTERPOLATE   /* best, CPU-heavy */

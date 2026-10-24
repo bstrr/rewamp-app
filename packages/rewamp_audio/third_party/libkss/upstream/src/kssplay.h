@@ -22,6 +22,11 @@ extern "C" {
 #define KSSPLAY_MUTE (1 << KSSPLAY_VOL_BITS)
 #define KSSPLAY_VOL_MASK ((1 << KSSPLAY_VOL_BITS) - 1)
 
+/* MGSDRV `@m` text: the console is 80 columns wide, the buffer keeps a
+   margin on top of it. KSSPLAY_get_MGStext never returns more than this. */
+#define KSSPLAY_MGSTEXT_COLUMNS 80
+#define KSSPLAY_MGSTEXT_SIZE 256
+
 typedef struct tagKSSPLAY KSSPLAY;
 struct tagKSSPLAY {
   KSS *kss;
@@ -62,6 +67,15 @@ struct tagKSSPLAY {
   int opll_stereo;
 
   PSG_RateConv *psg_rconv;
+
+  /* MGSDRV `@m` text, assembled from the writes to I/O 0x43/0x44 */
+  int mgs_text_pos;
+  char mgs_text[KSSPLAY_MGSTEXT_SIZE];
+
+  int32_t psg_ch_pan[3];  /* per-channel PSG panning (-128..128), 0 = center */
+  int32_t scc_ch_pan[5];  /* per-channel SCC panning (-128..128), 0 = center */
+  uint8_t psg_per_ch_pan; /* enable per-channel PSG panning */
+  uint8_t scc_per_ch_pan; /* enable per-channel SCC panning */
 };
 
 /**
@@ -119,11 +133,32 @@ void KSSPLAY_calc(KSSPLAY *, int16_t *buf, uint32_t length);
 /* Calcurate samples internally. No output is generated. */
 void KSSPLAY_calc_silent(KSSPLAY *, uint32_t length);
 
+/* Like KSSPLAY_calc_silent, but also clocks the devices that have envelopes (OPL, OPLL, PSG/SNG) exactly
+   as KSSPLAY_calc does, so a state saved with KSSPLAY_save_state after a silent run matches real playback.
+   Slower than KSSPLAY_calc_silent, since it runs the device synthesis. */
+void KSSPLAY_calc_silent_accurate(KSSPLAY *, uint32_t length);
+
+/* Save/restore the playback state (for seek / keyframe checkpoints): the KSSPLAY
+   playback progress plus the whole VM (CPU, sound chips and RAM). Host settings
+   (volume/mute/pan/type/filters) are not included, so a load keeps them; the
+   same song must already be loaded (matching memory topology). Call with
+   out=NULL to obtain the required buffer size. */
+int KSSPLAY_save_state(KSSPLAY *kssplay, uint8_t *out);
+void KSSPLAY_load_state(KSSPLAY *kssplay, const uint8_t *in, int size);
+
 /**
  * Calcurate wave samples as a sequence of KSSPLAY_PER_CH_OUT struct.
  * This function generates raw wave samples. All volume and filter settings are ignored.
  */
 void KSSPLAY_calc_per_ch(KSSPLAY *kssplay, KSSPLAY_PER_CH_OUT *per_ch_out, uint32_t length);
+
+/**
+ * Like KSSPLAY_calc, but also fills per_ch_out[length] with the raw per-channel
+ * outputs for each sample (pre-mix: volume/pan/filter/fade are not applied).
+ * A single synthesis pass yields both the mixed audio (buf) and the per-channel
+ * waveforms (per_ch_out).
+ */
+void KSSPLAY_calc_with_per_ch(KSSPLAY *kssplay, int16_t *buf, KSSPLAY_PER_CH_OUT *per_ch_out, uint32_t length);
 
 /* Delete KSSPLAY object */
 void KSSPLAY_delete(KSSPLAY *);

@@ -1,0 +1,15 @@
+--- a/src/builders/sidlite-builder/sidlite/WavGen.cpp
++++ b/src/builders/sidlite-builder/sidlite/WavGen.cpp
+@@ -336,6 +336,12 @@
+         {
+             NonFiltered += (swave * Envelope) / ENVELOPE_MAGNITUDE_DIV;
+         }
++        
++        //YOYOFR
++        ChannelOutput[Channel]=(swave * Envelope) / ENVELOPE_MAGNITUDE_DIV;
++        ChannelFreq[Channel]=(ChannelPtr[1]<<8) | ChannelPtr[0];
++        ChannelEnv[Channel]=Envelope;
++        //YOYOFR
+     }
+     // update readable SID1-registers (some SID tunes might use 3rd channel ENV3/OSC3 value as control)
+     oscReg = WavGenOut >> WAVE_OSC3_SHIFTS; // OSC3, ENV3 (some players rely on it, unfortunately even for timing)

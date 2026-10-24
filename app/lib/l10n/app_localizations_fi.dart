@@ -2495,6 +2495,13 @@ class AppLocalizationsFi extends AppLocalizations {
       'Suosii VGM-tagien japanilaisia kenttiä (nimi, peli, artisti), kun ne ovat olemassa.';
 
   @override
+  String get settingsVgmLoopFade => 'Häivytys silmukoivissa kappaleissa';
+
+  @override
+  String get settingsVgmLoopFadeHelp =>
+      'VGM-muodossa ei ole häivytystä: silmukoiva kappale soittaa silmukkansa kahdesti ja häipyy sitten tämän ajan kuluessa. Pois = suora katkaisu. Silmukattomat kappaleet päättyvät sellaisenaan.';
+
+  @override
   String get localImportFolder => 'Tuo kansio';
 
   @override
@@ -3879,6 +3886,118 @@ class AppLocalizationsFi extends AppLocalizations {
   }
 
   @override
+  String get podiumBrowserTitle => 'Palkintosijat';
+
+  @override
+  String get podiumHubBias =>
+      'Jokainen kappale lasketaan kerran, parhaan sijoituksensa mukaan.';
+
+  @override
+  String get podiumRecentWinners => 'Tuoreet voittajat';
+
+  @override
+  String get podiumRecentWinnersSubtitle =>
+      'Kullat kahdelta viime vuodelta, uusimmat compot ensin';
+
+  @override
+  String get podiumViaSelf => 'Musiikkicompot';
+
+  @override
+  String get podiumViaSelfSubtitle => 'Kappale kilpaili itse';
+
+  @override
+  String get podiumViaProduction => 'Demojen soundtrackit';
+
+  @override
+  String get podiumViaProductionSubtitle =>
+      'Demo tai peli, jota se säestää, sijoittui';
+
+  @override
+  String get podiumByKind => 'Compon lajin mukaan';
+
+  @override
+  String get podiumByEra => 'Aikakauden mukaan';
+
+  @override
+  String get podiumByParty => 'Partyn mukaan';
+
+  @override
+  String get podiumByPartySubtitle => 'Party-sarjat mitalien mukaan';
+
+  @override
+  String get podiumTopArtists => 'Palkituimmat artistit';
+
+  @override
+  String get podiumAll => 'Kaikki palkintosijat';
+
+  @override
+  String get podiumAllSubtitle =>
+      'Uusimmat compot ensin, sitten sijoituksen mukaan';
+
+  @override
+  String get podiumChipVia => 'Luonne';
+
+  @override
+  String get podiumChipKind => 'Compon laji';
+
+  @override
+  String get podiumChipSeries => 'Party';
+
+  @override
+  String get podiumChipEra => 'Aikakausi';
+
+  @override
+  String get compoKindTracked => 'Tracked';
+
+  @override
+  String get compoKindChip => 'Chip';
+
+  @override
+  String get compoKindStreaming => 'Streaming';
+
+  @override
+  String get compoKindExecutable => 'Executable';
+
+  @override
+  String get compoKindOldskool => 'Oldskool';
+
+  @override
+  String get compoKindCombined => 'Yhdistetty';
+
+  @override
+  String get compoKindSoundtrack => 'Soundtrack';
+
+  @override
+  String get compoKindTrackedHint => 'Tracker-modulit: MOD, XM, IT…';
+
+  @override
+  String get compoKindChipHint => 'Chip-musiikki: SID, AY, NES, Game Boy…';
+
+  @override
+  String get compoKindStreamingHint => 'Striimattu ääni: MP3, OGG, WAV…';
+
+  @override
+  String get compoKindExecutableHint =>
+      'Pikkuruisen ohjelman tuottama musiikki';
+
+  @override
+  String get compoKindOldskoolHint => 'Vanha rauta tai tracked, ei striimausta';
+
+  @override
+  String get compoKindCombinedHint => 'Compo ilman formaattirajoitusta';
+
+  @override
+  String get compoKindSoundtrackHint => 'Sijoittuneen demon tai pelin musiikki';
+
+  @override
+  String podiumDecadeLabel(String decade) {
+    return '$decade-luku';
+  }
+
+  @override
+  String get podiumSortPodium => 'Uusimmat compot ensin';
+
+  @override
   String get competitionEmpty => 'Tässä kilpailussa ei ole osallistujia';
 
   @override
@@ -3906,11 +4025,11 @@ class AppLocalizationsFi extends AppLocalizations {
   String get onboardingStart => 'Aloita';
 
   @override
-  String get onboardingBetaTitle => 'Beta-versio';
+  String get onboardingWelcomeTitle => 'Tervetuloa Rewampiin';
 
   @override
-  String get onboardingBetaBody =>
-      'Rewamp on vielä kesken. Paikalliset tiedot — kirjasto, soittolistat, suosikit, tilastot — voidaan nollata ennen versiota 1.0. Lataamasi tiedostot eivät ole vaarassa, mutta säilytä tärkeät muualla.';
+  String get onboardingWelcomeBody =>
+      'Soitin chiptuneille, tracker-moduuleille ja pelimusiikille — Amiga, Atari, C64, konsolit, kolikkopelit ja PC. Kuuntele suurista verkkoarkistoista tai avaa omat tiedostosi.';
 
   @override
   String onboardingVersion(String version, String build) {
@@ -3943,7 +4062,7 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get onboardingReplaySubtitle =>
-      'Katso beta-ilmoitus ja esittelykierros uudelleen';
+      'Katso esittely ja esittelykierros uudelleen';
 
   @override
   String get settingsPatternTitle => 'Patternit';
@@ -4130,52 +4249,56 @@ class AppLocalizationsFi extends AppLocalizations {
   String get releaseNotesTitle => 'Uutta';
 
   @override
-  String get releaseNotesV9Speed =>
-      'Toistonopeus 0,2×–3× Äänet-paneelissa. Useimmat moottorit muuttavat tempoa ja säilyttävät sävelkorkeuden; muut uudelleennäytteistävät.';
+  String get releaseNotesV10Loading =>
+      'Hitaasti latautuva kappale ei enää jäädytä sovellusta: ohut rengas toisto/tauko-painikkeen ympärillä näyttää, että lataus on kesken.';
 
   @override
-  String get releaseNotesV9Windows =>
-      'Windows: mediapainikkeet ja järjestelmän mediaohjaimet (äänenvoimakkuusikkuna, tehtäväpalkki) ohjaavat toistoa, ja koko näytön visualisointi täyttää nyt koko näytön.';
+  String get releaseNotesV10Piano =>
+      'Piano-visualisointi: kappaleet, joissa soi monta ääntä tai soitinta yhtä aikaa, jaetaan useammalle koskettimistolle.';
 
   @override
-  String get releaseNotesV9Formats =>
-      'Uudet soittimet: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) ja SAM Coupén .cop-ohjelmat.';
+  String get releaseNotesV10Amiga =>
+      'Amiga: StoneTracker, SUNtronic (TSM-ripit) ja useampi Soundtracker 2.6 -moduuli soivat nyt, ja SoundPlayer-kappaleet soivat iOS:ssä.';
 
   @override
-  String get releaseNotesV9Amiga =>
-      'Amiga ja Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory ja osa Maximum Effect -moduuleista soivat nyt.';
+  String get releaseNotesV10ZxSpectrum =>
+      'ZX Spectrum: zxartin .mt3-tiedostot soivat, ja Linuxissa mukana ovat ZXTune-formaatit ja SAM Coupén .cop-ohjelmat.';
 
   @override
-  String get releaseNotesV9MoonBlaster =>
-      'MSX MoonBlaster: kappaleet lataavat näytesarjansa kohinan soittamisen sijaan, ja muokkaustilan tiedostot soivat oikein.';
+  String get releaseNotesV10OpenWith =>
+      'macOS ja iOS: kaikki tuetut formaatit näkyvät nyt Avaa sovelluksella -valikossa.';
 
   @override
-  String get releaseNotesV9HideElsewhere =>
-      'Kirjasto: ”Piilota kohteet, jotka eivät ole tällä laitteella” piilottaa paikalliset kohteet, joiden tiedosto on toisella laitteella.';
+  String get releaseNotesV10MtcCrash =>
+      'Korjattu: jotkin .mtc-tiedostot, joissa PT3 on yhdistetty TFM:ään tai PSG:hen, kaatoivat sovelluksen.';
 
   @override
-  String get releaseNotesV9ArtworkFullscreen =>
-      'Pitkä painallus soittimen kansikuvaan näyttää sen koko näytöllä.';
+  String get releaseNotesV10Podiums =>
+      'Uusi ”Palkintosijat”-selain: demoskenen kilpailujen voittajat partyittain, vuosittain tai kilpailulajeittain, sekä kunniagalleria.';
 
   @override
-  String get releaseNotesV9Viz =>
-      'Visualisoinnit: oletuksena ääntenkohtainen oskilloskooppi (viivaspektri suoratoistomuodoille), ruudukko ja äänten nimet säädettävissä oskilloskoopista, ja vakaampi stereo-oskilloskooppi.';
+  String get releaseNotesV10Arcade =>
+      'Arcade: Ensoniq ES5505/ES5506 -musiikki (Taito F3…) soi, Apple IIGS -VGM-tiedostot eivät enää kaada sovellusta, ja moottorit on päivitetty (FM-Kingtracker .fmk lisätty).';
 
   @override
-  String get releaseNotesV9PsfTrack =>
-      'Korjattu: joidenkin PSF-albumien kappaleen napauttaminen saattoi toistaa toisen.';
+  String get releaseNotesV10InfoPanel =>
+      'Tietopaneeli: formaatti, moottori, kanavat ja silmukkakohdat ensin, ja kenttien nimet erottuvat.';
 
   @override
-  String get releaseNotesV9Playlists =>
-      'Kansio, jossa on useita soittolistoja, muodostaa nyt yhden albumin kaikista niiden kappaleista ilman kaksoiskappaleita.';
+  String get releaseNotesV10LocalAlbums =>
+      'Albumi- ja alikappalenäkymät näyttävät kokoelman; pudotettu arkisto listaa kaikki raitansa, on merkitty ”paikallinen” eikä enää näy kahdesti korvaamisen jälkeen.';
 
   @override
-  String get releaseNotesV9AmigaInfo =>
-      'Amiga-kappaleet, joiden kestoa tai tekijää ei tunneta, kysyvät palvelimelta uudelleen viikon kuluttua – aiemmin eivät koskaan.';
+  String get releaseNotesV10Crossfade =>
+      'Korjattu: ristihäivytyksen kanssa häivytystä lyhyempi raita ei kuulunut.';
+
+  @override
+  String get releaseNotesV10Artwork =>
+      'Korjattu: palvelimella vaihdettu kansikuva näkyy kaikkialla, kun on valittu ”Lataa tiedosto uudelleen”.';
 
   @override
   String get releaseNotesDataReset =>
-      'Paikalliset tiedot nollattiin tätä betaa varten. Kirjasto ja soittolistat rakentuvat tililtä; lataukset on tehtävä uudelleen.';
+      'Paikalliset tiedot nollattiin tätä versiota varten. Kirjasto ja soittolistat rakentuvat tililtä; lataukset on tehtävä uudelleen.';
 
   @override
   String get releaseNotesDismiss => 'Jatka';

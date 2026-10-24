@@ -114,6 +114,13 @@ namespace Module
     virtual Cell::Ptr GetChannel(uint_t idx) const = 0;
     virtual uint_t CountActiveChannels() const = 0;
     virtual uint_t GetTempo() const = 0;
+    //rewamp: how many channels GetChannel() accepts. Upstream has no such
+    //query — a caller had to KNOW the width — and the pattern view guessed it
+    //as hardware channels / track models, which is wrong as soon as one
+    //delegate of a multi-track container has hardware voices but no track
+    //model (an .mtc pairing a PT3 with a register dump): GetChannel(3) on a
+    //three-channel line, boost::array assertion, app killed (2026-10-18).
+    virtual uint_t GetChannelsCount() const = 0;
   };
 
   class Pattern

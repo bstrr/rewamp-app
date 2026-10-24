@@ -63,6 +63,8 @@ void SCC_writeReg(SCC *scc, uint32_t adr, uint32_t val) ;
 uint32_t SCC_read(SCC *scc, uint32_t adr) ;
 uint32_t SCC_setMask(SCC *scc, uint32_t adr) ;
 uint32_t SCC_toggleMask(SCC *scc, uint32_t adr) ;
+int SCC_save_state(SCC *, uint8_t *out) ; /* save state to out; out=NULL -> required size */
+void SCC_load_state(SCC *, const uint8_t *in, int size) ;
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,19 @@
+--- a/src/Event.h
++++ b/src/Event.h
+@@ -20,8 +20,8 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+  */
+ 
+-#ifndef EVENT_H
+-#define EVENT_H
++#ifndef LIBSIDPLAYFP_EVENT_H
++#define LIBSIDPLAYFP_EVENT_H
+ 
+ #include <cstdint>
+ 
+@@ -77,4 +77,4 @@
+ 
+ }
+ 
+-#endif // EVENT_H
++#endif // LIBSIDPLAYFP_EVENT_H

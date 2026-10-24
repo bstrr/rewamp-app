@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'artwork_url_version.dart';
 import 'library_identity.dart'
     show libraryRefIsDeadIdentity, libraryRefIsPhantomImport;
 import 'library_presence.dart'
@@ -11,6 +12,7 @@ import 'rewamp_db.dart' show catalogueSongId;
 import 'uade_info.dart';
 import 'user_settings.dart';
 
+import 'package:archive/archive.dart' show getCrc32;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -1103,7 +1105,7 @@ class LocalDb extends ChangeNotifier {
 
     _db = await openDatabase(
       path,
-      version: 77,
+      version: 78,
       onCreate:  _onCreate,
       onUpgrade: _onUpgrade,
       // PRAGMAs must be re-applied on every connection, not just at creation.
@@ -1137,6 +1139,20 @@ class LocalDb extends ChangeNotifier {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 78) {
+      // Empreinte du FICHIER d'une ligne hors catalogue (voir
+      // stampFileFingerprint / _forgetStaleFileFacts). Gardée par table_info:
+      // une base créée par un build de développement peut déjà l'avoir.
+      final cols = {
+        for (final c in await db.rawQuery('PRAGMA table_info(tracks)'))
+          c['name'] as String,
+      };
+      for (final c in const ['file_size', 'file_mtime_ms', 'file_crc']) {
+        if (!cols.contains(c)) {
+          await db.execute('ALTER TABLE tracks ADD COLUMN $c INTEGER');
+        }
+      }
+    }
     if (oldVersion < 77) {
       // RÉPARATION, pas de schéma: un CONTENEUR du catalogue sans album (un
       // `.sndh` à 20 sous-chansons) écrivait une entrée ALBUM dans les récents
@@ -2965,6 +2981,21 @@ class LocalDb extends ChangeNotifier {
     final d = db ?? _database;
     final nfp = _norm(filePath);
     final nep = _norm(entryPath);
+    // Une entrée de file ou de récents peut porter l'ANCIENNE url d'une
+    // pochette republiée (`?v=` plus petit, ou nue): la réécrire ici
+    // défaisait le rafraîchissement — voir artwork_url_version.dart.
+    if (artworkUrl != null && artworkUrl.startsWith('http')) {
+      final had = await d.rawQuery(
+          'SELECT artwork_url FROM tracks WHERE file_path = ? '
+          'AND entry_path = ? AND subsong_idx = ?',
+          [nfp, nep, subsongIdx]);
+      final stored =
+          had.isEmpty ? null : had.first['artwork_url'] as String?;
+      if (stored != null &&
+          artworkUrlSupersedes(storedFrom: artworkUrl, url: stored)) {
+        artworkUrl = null;
+      }
+    }
     // TEMP (diagnostic « écritures croisées »): tout estampillage d'album ou
     // d'origine par le chemin d'UPSERT, avec la cible. Un `album_id` sans
     // `metaAlbum` est déjà une anomalie en soi (voir getRecentEntries).
@@ -3088,6 +3119,49 @@ class LocalDb extends ChangeNotifier {
     return row.first['id'] as String;
   }
 
+  /// Inscrit TOUTES les pistes d'une archive ouverte localement (dépôt,
+  /// « Ouvrir avec »), dans l'ordre de la file.
+  ///
+  /// `tracks` n'est qu'un journal de lecture: seule une piste JOUÉE y entrait
+  /// (`_persistPlay`). Or l'écran d'album d'un zip déposé et la relance depuis
+  /// « écoutés récemment » se reconstruisent DEPUIS `tracks` — un zip Darius
+  /// Gaiden (vgz + m3u) n'y montrait que les pistes déjà entendues, et la
+  /// relance ne rejouait qu'elles. Même idée que `materializeAlbumTracks` pour
+  /// un album du catalogue.
+  ///
+  /// ⚠️ INSERT seulement, jamais `upsertTrack`: son UPDATE écrit `duration_s`
+  /// et `format_ext` sans garde, donc une liste qui ne sait pas la durée
+  /// effacerait celle qu'une lecture a mesurée. Une ligne existante ne reçoit
+  /// que ce qui lui MANQUE (position, album). Pas d'origine d'import
+  /// (`local_rel_path`/`local_origin`): ouvrir n'est pas importer.
+  Future<void> materializeOpenedArchiveTracks(List<TrackRecord> tracks) async {
+    if (tracks.isEmpty) return;
+    await _database.transaction((txn) async {
+      for (var i = 0; i < tracks.length; i++) {
+        final t = tracks[i];
+        final nfp = _norm(t.filePath);
+        final nep = _norm(t.entryPath);
+        await txn.execute('''
+          INSERT OR IGNORE INTO tracks
+            (id, file_path, entry_path, subsong_idx, title, artist, meta_album,
+             position, duration_s, format_ext, subsong_count, source)
+          VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+          nfp, nep, t.subsongIdx, t.title, t.artist, t.metaAlbum,
+          i + 1, t.durationS, t.formatExt, t.subsongCount, t.source,
+        ]);
+        await txn.execute('''
+          UPDATE tracks
+          SET position   = COALESCE(position, ?),
+              meta_album = CASE WHEN meta_album IS NULL OR meta_album = ''
+                                THEN ? ELSE meta_album END
+          WHERE file_path = ? AND entry_path = ? AND subsong_idx = ?
+        ''', [i + 1, t.metaAlbum, nfp, nep, t.subsongIdx]);
+      }
+    });
+    notifyListeners();
+  }
+
   /// Grave la pochette DÉCOUVERTE d'un fichier local (voisin de dossier,
   /// embarquée) sans toucher au reste de la ligne — upsertTrack n'est PAS une
   /// mise à jour partielle: ses champs null ÉCRASENT titre/artiste/durée.
@@ -3103,6 +3177,24 @@ class LocalDb extends ChangeNotifier {
       UPDATE tracks SET artwork_url = COALESCE(artwork_url, ?)
       WHERE file_path = ? AND entry_path = ? AND subsong_idx = ?
     ''', [artworkUrl, _norm(filePath), _norm(entryPath), subsongIdx]);
+    notifyListeners();
+  }
+
+  /// Remplace la pochette d'un fichier du CATALOGUE par celle que le serveur
+  /// vient de donner — toutes ses lignes (sous-chansons comprises) et son
+  /// entrée « Écoutés récemment ».
+  ///
+  /// À part de [backfillTrackIdentity], qui ne fait que COMBLER (COALESCE):
+  /// ici l'url en place est PÉRIMÉE (pochette republiée, voir
+  /// `RewampDb.markIdentityStale`), la garder serait le bug.
+  Future<void> replaceTrackArtwork(String filePath, String artworkUrl) async {
+    final nfp = _norm(filePath);
+    await _database.rawUpdate(
+        'UPDATE tracks SET artwork_url = ? WHERE file_path = ?',
+        [artworkUrl, nfp]);
+    await _database.rawUpdate(
+        'UPDATE recent_albums SET artwork_url = ? WHERE file_path = ?',
+        [artworkUrl, nfp]);
     notifyListeners();
   }
 
@@ -3344,8 +3436,148 @@ class LocalDb extends ChangeNotifier {
       WHERE  file_path = ?
       ORDER BY subsong_idx ASC
     ''', [_norm(filePath)]);
-    return rows.map(TrackRecord.fromMap).toList();
+    return (await _forgetStaleFileFacts(rows)).map(TrackRecord.fromMap).toList();
   }
+
+  /// Ce qu'une ligne HORS CATALOGUE sait de son fichier (durée, nombre de
+  /// sous-chansons, artiste, album) n'est qu'un CACHE du fichier, et il périme
+  /// quand le fichier change sous le même chemin — un `.vgm` régénéré par un
+  /// outil, un module réenregistré depuis le tracker, des tags corrigés. Ces
+  /// lignes l'emportaient pourtant sur le fichier (« la ligne DÉJÀ EN BASE
+  /// gagne », local_open): la durée d'hier devenait la base de la boucle
+  /// forcée et la fin connue du tick, donc la nouvelle version était COUPÉE à
+  /// l'ancienne longueur, et `_persistPlay` réécrivait la même durée — elle ne
+  /// se corrigeait jamais. Dépôt comme relance depuis les récents passent par
+  /// ici.
+  ///
+  /// **Le témoin est l'EMPREINTE posée à la dernière lecture**
+  /// ([stampFileFingerprint]), du moins cher au plus cher: taille, date de
+  /// modification, puis CRC32 du début et de la fin — lus SEULEMENT quand les
+  /// deux premiers concordent, un écart les dispensant de lire quoi que ce
+  /// soit. Comparer par ÉGALITÉ et non « plus récent que »: un fichier
+  /// remplacé par une copie plus ANCIENNE (une sauvegarde, une copie qui
+  /// conserve sa date) a changé lui aussi. Une ligne d'avant la mig 78 n'a pas
+  /// d'empreinte: repli sur « modifié après `last_played_at` ».
+  ///
+  /// Changé ⇒ ces faits sont vidés, en base aussi (`subsong_count` est
+  /// COALESCÉ à l'écriture et ne redescendrait pas; `upsertTrack` garde un
+  /// artiste ou un album quand le nouveau est vide), et la lecture qui suit les
+  /// réécrit depuis le moteur et les tags — le lecteur ne laisse un tag que
+  /// COMBLER un trou. Sauf l'album d'un fichier IMPORTÉ (`local_rel_path`):
+  /// c'est son DOSSIER qui le nomme, et l'album local se regroupe dessus. Le
+  /// titre reste: celui d'un fichier mono-piste suit déjà son tag à chaque
+  /// lecture, celui d'une sous-chanson vient d'ailleurs (M3U, numérotation).
+  /// Une ligne jamais jouée n'a pas de témoin et garde ce qu'elle sait; une
+  /// ligne du CATALOGUE n'est jamais touchée — sa durée vient du serveur.
+  Future<List<Map<String, Object?>>> _forgetStaleFileFacts(
+      List<Map<String, Object?>> rows) async {
+    if (rows.isEmpty) return rows;
+    // Par fichier: l'empreinte la plus récente, sinon la dernière lecture.
+    final ref = <String, ({int lastPlay, FileFingerprint? fp})>{};
+    for (final r in rows) {
+      if (!_localRowFactsCanGoStale(r)) continue;
+      final at = r['last_played_at'] as int?;
+      final stamp = FileFingerprint.fromRow(r);
+      if (at == null && stamp == null) continue;
+      final path = r['file_path'] as String;
+      final prev = ref[path];
+      if (prev == null || (at ?? -1) > prev.lastPlay) {
+        ref[path] = (lastPlay: at ?? -1, fp: stamp ?? prev?.fp);
+      }
+    }
+    if (ref.isEmpty) return rows;
+    final stale = <String>{};
+    await Future.wait([
+      for (final e in ref.entries)
+        () async {
+          try {
+            if (await fileChangedSince(_denorm(e.key),
+                stamp: e.value.fp, lastPlayedSec: e.value.lastPlay)) {
+              stale.add(e.key);
+            }
+          } catch (_) {/* illisible: on garde ce qu'on sait */}
+        }(),
+    ]);
+    if (stale.isEmpty) return rows;
+    for (final fp in stale) {
+      await _database.rawUpdate(
+        'UPDATE tracks SET duration_s = NULL, subsong_count = NULL, '
+        'artist = NULL, '
+        "meta_album = CASE WHEN local_rel_path IS NULL OR local_rel_path = '' "
+        'THEN NULL ELSE meta_album END '
+        "WHERE file_path = ? AND (online_id IS NULL OR online_id = '')",
+        [fp],
+      );
+    }
+    return [
+      for (final r in rows)
+        stale.contains(r['file_path']) && _localRowFactsCanGoStale(r)
+            ? (Map<String, Object?>.of(r)
+              ..['duration_s'] = null
+              ..['subsong_count'] = null
+              ..['artist'] = null
+              ..['meta_album'] =
+                  ((r['local_rel_path'] as String?) ?? '').isEmpty
+                      ? null
+                      : r['meta_album'])
+            : r,
+    ];
+  }
+
+  /// Ce que la base sait de la VERSION PRÉSENTE du fichier hors catalogue
+  /// [filePath] (ligne [entryPath]/[subsongIdx]), ou null quand elle n'en sait
+  /// rien de sûr.
+  ///
+  /// Pour `loadFile`, qui reçoit ses métadonnées de l'ENTRÉE DE FILE et pas de
+  /// la base: une file construite avant que le fichier change (en mémoire,
+  /// restaurée de `queue_state.json`, une playlist) porte encore l'ancienne
+  /// durée. La lecture la réécrivait en base et l'empreinte posée juste après
+  /// la CERTIFIAIT — `dariusg_t06.vgm` régénéré (146 s) restait bloqué à
+  /// 4,46 s sous son nom, et jouait juste renommé. Et rejouer la MÊME entrée de
+  /// file la ramenait, le fichier n'étant plus « changé » une fois réempreint.
+  ///
+  /// Rendue dans deux cas: le fichier a CHANGÉ (ses faits viennent d'être
+  /// oubliés, la ligne les a vidés), ou la ligne porte l'EMPREINTE de ce qui
+  /// est sur le disque — elle a été écrite par une lecture de CETTE version
+  /// et décrit le fichier mieux qu'une file qui a pu être construite avant.
+  /// Une ligne sans empreinte (d'avant la mig 78) et inchangée: null, la file
+  /// garde la parole.
+  Future<TrackRecord?> currentLocalFileFacts(String filePath,
+      {String entryPath = '', int subsongIdx = 0}) async {
+    final rows = await _database.rawQuery(
+        'SELECT * FROM tracks WHERE file_path = ?', [_norm(filePath)]);
+    final after = await _forgetStaleFileFacts(rows);
+    final changed = !identical(after, rows);
+    for (final r in after) {
+      if (!_localRowFactsCanGoStale(r)) continue;
+      if (r['subsong_idx'] != subsongIdx ||
+          _denorm(r['entry_path'] as String) != entryPath) {
+        continue;
+      }
+      // Inchangé (sinon on ne serait pas ici sans `changed`) ET empreint.
+      if (changed || FileFingerprint.fromRow(r) != null) {
+        return TrackRecord.fromMap(r);
+      }
+    }
+    return null;
+  }
+
+  /// Pose l'empreinte ACTUELLE de [filePath] sur ses lignes hors catalogue —
+  /// appelé quand une lecture vient d'aboutir, l'instant où la ligne décrit
+  /// la version présente du fichier. Silencieux sur un fichier illisible.
+  Future<void> stampFileFingerprint(String filePath) async {
+    final fp = await FileFingerprint.read(filePath);
+    if (fp == null) return;
+    await _database.rawUpdate(
+      'UPDATE tracks SET file_size = ?, file_mtime_ms = ?, file_crc = ? '
+      "WHERE file_path = ? AND (online_id IS NULL OR online_id = '')",
+      [fp.size, fp.mtimeMs, fp.crc, _norm(filePath)],
+    );
+  }
+
+  /// Une ligne dont les faits de fichier peuvent périmer: hors catalogue.
+  static bool _localRowFactsCanGoStale(Map<String, Object?> r) =>
+      ((r['online_id'] as String?) ?? '').isEmpty;
 
   /// [getTracksForFile] pour un LOT de chemins, en UNE requête par tranche.
   ///
@@ -3372,7 +3604,7 @@ class LocalDb extends ChangeNotifier {
           '(${List.filled(part.length, '?').join(',')}) '
           'ORDER BY file_path, subsong_idx ASC',
           part);
-      for (final r in rows) {
+      for (final r in await _forgetStaleFileFacts(rows)) {
         final orig = byNorm[r['file_path'] as String];
         if (orig == null) continue;
         (out[orig] ??= <TrackRecord>[]).add(TrackRecord.fromMap(r));
@@ -3413,7 +3645,7 @@ class LocalDb extends ChangeNotifier {
         WHERE  album_id = ?
         $order
       ''', [albumId]);
-      if (rows.isNotEmpty) return rows.map(TrackRecord.fromMap).toList();
+      if (rows.isNotEmpty) return (await _forgetStaleFileFacts(rows)).map(TrackRecord.fromMap).toList();
     }
     if (nearFilePath != null && nearFilePath.isNotEmpty) {
       final dir = p.dirname(_norm(nearFilePath));
@@ -3424,14 +3656,14 @@ class LocalDb extends ChangeNotifier {
         WHERE  meta_album = ? AND file_path LIKE ? ESCAPE '\\'
         $order
       ''', [metaAlbum, '${_likeEscape('$dir${p.separator}')}%']);
-      if (rows.isNotEmpty) return rows.map(TrackRecord.fromMap).toList();
+      if (rows.isNotEmpty) return (await _forgetStaleFileFacts(rows)).map(TrackRecord.fromMap).toList();
     }
     final rows = await _database.rawQuery('''
       SELECT * FROM tracks
       WHERE  meta_album = ?
       $order
     ''', [metaAlbum]);
-    return rows.map(TrackRecord.fromMap).toList();
+    return (await _forgetStaleFileFacts(rows)).map(TrackRecord.fromMap).toList();
   }
 
   // Escapes LIKE wildcards in a literal path prefix (used with ESCAPE '\').
@@ -6250,6 +6482,111 @@ class LocalDb extends ChangeNotifier {
   ///
   /// Tout en UNE transaction: à moitié réécrit, l'import serait introuvable
   /// par la moitié des écrans.
+  /// Une extraction d'archive PÉRIMÉE ([from]) cède sa place à celle de la
+  /// version qui l'a remplacée ([to]) — même archive, même chemin, contenu
+  /// régénéré (voir `RewampDb._supersedeOlderArchiveExtractions`).
+  ///
+  /// Ce que l'utilisateur a posé sur l'ancienne version (♥, bibliothèque,
+  /// écoutes — `play_events` pend en cascade à la ligne) SUIT les membres de
+  /// même chemin relatif: c'est le même album. Un membre que la nouvelle
+  /// version connaît DÉJÀ garde sa ligne (UNIQUE sur le chemin) et l'ancienne
+  /// part; l'entrée « Écoutés récemment » aussi, sinon l'album y figure deux
+  /// fois. Ce qui reste sous [from] (membre disparu de la nouvelle version)
+  /// pointe alors un fichier absent, et la purge par identité s'en charge.
+  Future<void> supersedeArchiveExtraction(String from, String to) async {
+    final sep = p.separator;
+    String esc(String v) =>
+        v.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
+    await _database.transaction((txn) async {
+      for (final (f, t) in {(from, to), (_norm(from), _norm(to))}) {
+        final likeF = '${esc('$f$sep')}%';
+        final likeT = '${esc('$t$sep')}%';
+        await txn.rawDelete(
+          "DELETE FROM tracks WHERE file_path LIKE ? ESCAPE '\\' AND EXISTS ("
+          'SELECT 1 FROM tracks n WHERE n.file_path = ? || '
+          'substr(tracks.file_path, ?) AND n.entry_path = tracks.entry_path '
+          'AND n.subsong_idx = tracks.subsong_idx)',
+          [likeF, '$t$sep', '$f$sep'.length + 1],
+        );
+        final hasNew = await txn.rawQuery(
+            "SELECT 1 FROM recent_albums WHERE file_path LIKE ? ESCAPE '\\' "
+            'LIMIT 1',
+            [likeT]);
+        if (hasNew.isNotEmpty) {
+          await txn.rawDelete(
+              "DELETE FROM recent_albums WHERE file_path LIKE ? ESCAPE '\\'",
+              [likeF]);
+        }
+      }
+      await rewriteLocalPaths(txn,
+          from: from, to: to, importsRoot: from, isDirectory: true,
+          rewriteRelative: false);
+    });
+    notifyListenersNow();
+  }
+
+  /// Recale les lignes d'une extraction d'archive sur les noms EXACTS que le
+  /// disque porte ([relNames], chemins relatifs à [dir] en séparateur natif).
+  ///
+  /// ⚠️ Une archive régénérée renomme couramment un membre en ne changeant
+  /// que la CASSE (« Mission 1-1 » → « mission 1-1 »). La fusion de
+  /// [supersedeArchiveExtraction] fait suivre l'ancienne ligne sous son
+  /// ancien nom, et sur un disque insensible à la casse (APFS, NTFS) ce
+  /// chemin « existe » encore: `File.exists` répond oui, la purge ne la voit
+  /// jamais, et l'album rejoué depuis les récents enfilait les deux lignes —
+  /// 29 entrées pour 26 pistes (Elevator Action Returns, 2026-10-23). Seule
+  /// la LISTE du dossier dit le vrai nom.
+  ///
+  /// Par ligne dont le nom n'est pas exact: un seul membre de même nom à la
+  /// casse près ⇒ la ligne le rejoint (son ♥, ses écoutes suivent), sauf si
+  /// ce membre a déjà sa ligne — l'intruse part; aucun ⇒ membre disparu de
+  /// cette version, la ligne part.
+  Future<void> reconcileArchiveRows(String dir, Set<String> relNames) async {
+    final sep = p.separator;
+    final byLower = <String, List<String>>{};
+    for (final r in relNames) {
+      (byLower[r.toLowerCase()] ??= []).add(r);
+    }
+    final prefixes = {'$dir$sep', '${_norm(dir)}$sep'};
+    var changed = false;
+    await _database.transaction((txn) async {
+      for (final pre in prefixes) {
+        final esc = pre
+            .replaceAll(r'\', r'\\')
+            .replaceAll('%', r'\%')
+            .replaceAll('_', r'\_');
+        final rows = await txn.rawQuery(
+            'SELECT id, file_path, entry_path, subsong_idx FROM tracks '
+            "WHERE file_path LIKE ? ESCAPE '\\'",
+            ['$esc%']);
+        for (final r in rows) {
+          final fp = r['file_path'] as String;
+          final rel = fp.substring(pre.length);
+          if (relNames.contains(rel)) continue;
+          final cands = byLower[rel.toLowerCase()] ?? const <String>[];
+          changed = true;
+          if (cands.length == 1) {
+            final target = '$pre${cands.single}';
+            final taken = await txn.rawQuery(
+                'SELECT 1 FROM tracks WHERE file_path = ? AND entry_path = ? '
+                'AND subsong_idx = ? LIMIT 1',
+                [target, r['entry_path'], r['subsong_idx']]);
+            if (taken.isEmpty) {
+              await rewriteLocalPaths(txn,
+                  from: _denorm(fp), to: _denorm(target), importsRoot: dir,
+                  isDirectory: false, rewriteRelative: false);
+              continue;
+            }
+          }
+          await txn.delete('tracks', where: 'id = ?', whereArgs: [r['id']]);
+          await txn.delete('recent_albums',
+              where: 'file_path = ?', whereArgs: [fp]);
+        }
+      }
+    });
+    if (changed) notifyListenersNow();
+  }
+
   Future<void> rewriteLocalPathPrefix({
     required String from,
     required String to,
@@ -8071,6 +8408,13 @@ const _kSchemaStatements = [
     -- picker | drop | archive | folder; NULL = pas un import local.
     local_rel_path   TEXT,
     local_origin     TEXT,
+    -- (mig 78) Empreinte du fichier à sa dernière lecture, lignes hors
+    -- catalogue seulement: taille, date de modification (ms) et CRC32 de son
+    -- début et de sa fin (voir fileFingerprint). Elle dit si le fichier a
+    -- CHANGÉ sous le même chemin, et donc si la ligne en cache encore la vérité.
+    file_size        INTEGER,
+    file_mtime_ms    INTEGER,
+    file_crc         INTEGER,
     UNIQUE (file_path, entry_path, subsong_idx)
   )''',
 
@@ -8357,4 +8701,80 @@ class PmPlaylistItem {
     this.name,
     required this.position,
   });
+}
+
+
+// ---------------------------------------------------------------------------
+// Empreinte d'un fichier local (mig 78)
+// ---------------------------------------------------------------------------
+
+/// Taille, date de modification et CRC32 d'ÉCHANTILLONS d'un fichier: ses
+/// [kFingerprintSpan] premiers et derniers octets (le fichier entier s'il est
+/// plus court que deux fois cela). Pas le fichier entier: une piste FLAC de
+/// 60 Mo serait relue à chaque ouverture. Le début porte l'en-tête (longueur,
+/// point de boucle, puces d'un VGM), la fin les tags (GD3, ID3v1, APE): ce
+/// sont les deux zones qu'une régénération ou une retouche de tags touche,
+/// et une modification au MILIEU qui garderait aussi la taille ET la date au
+/// milliseconde près n'arrive pas en pratique.
+class FileFingerprint {
+  final int size;
+  final int mtimeMs;
+  final int? crc;
+  const FileFingerprint(this.size, this.mtimeMs, this.crc);
+
+  static const kFingerprintSpan = 64 * 1024;
+
+  static FileFingerprint? fromRow(Map<String, Object?> r) {
+    final size = r['file_size'] as int?;
+    final mtime = r['file_mtime_ms'] as int?;
+    if (size == null || mtime == null) return null;
+    return FileFingerprint(size, mtime, r['file_crc'] as int?);
+  }
+
+  /// Null quand le fichier est absent ou illisible.
+  static Future<FileFingerprint?> read(String path, {bool withCrc = true}) async {
+    try {
+      final st = await File(path).stat();
+      if (st.type != FileSystemEntityType.file) return null;
+      final mtime = st.modified.millisecondsSinceEpoch;
+      if (!withCrc) return FileFingerprint(st.size, mtime, null);
+      return FileFingerprint(st.size, mtime, await sampleCrc(path, st.size));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// CRC32 du début et de la fin de [path] ([size] = sa taille).
+  static Future<int> sampleCrc(String path, int size) async {
+    final raf = await File(path).open();
+    try {
+      const span = kFingerprintSpan;
+      if (size <= 2 * span) return getCrc32(await raf.read(size));
+      final head = await raf.read(span);
+      await raf.setPosition(size - span);
+      final tail = await raf.read(span);
+      return getCrc32(tail, getCrc32(head));
+    } finally {
+      await raf.close();
+    }
+  }
+}
+
+/// Le fichier [path] a-t-il changé depuis la lecture qui a posé [stamp]?
+///
+/// Avec empreinte: taille ou date différente ⇒ oui, SANS lire le fichier;
+/// identiques ⇒ le CRC des échantillons tranche (une empreinte sans CRC
+/// s'en tient aux deux premiers). Sans empreinte (ligne d'avant la mig 78):
+/// modifié après [lastPlayedSec] (secondes, < 0 = jamais joué ⇒ non). Un
+/// fichier ABSENT n'a pas « changé » — il est sur un autre appareil.
+Future<bool> fileChangedSince(String path,
+    {FileFingerprint? stamp, int lastPlayedSec = -1}) async {
+  final now = await FileFingerprint.read(path, withCrc: false);
+  if (now == null) return false;
+  if (stamp == null) {
+    return lastPlayedSec >= 0 && now.mtimeMs ~/ 1000 > lastPlayedSec;
+  }
+  if (now.size != stamp.size || now.mtimeMs != stamp.mtimeMs) return true;
+  if (stamp.crc == null) return false;
+  return await FileFingerprint.sampleCrc(path, now.size) != stamp.crc;
 }

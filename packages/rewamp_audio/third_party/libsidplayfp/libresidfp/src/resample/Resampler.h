@@ -22,10 +22,9 @@
 #ifndef RESAMPLER_H
 #define RESAMPLER_H
 
-#include <cmath>
-#include <cassert>
+#include "Limiter.h"
 
-#include "siddefs-fp.h"
+#include <cstdint>
 
 namespace reSIDfp
 {
@@ -36,75 +35,10 @@ namespace reSIDfp
  */
 class Resampler
 {
-private:
-#if defined(PADE_TANH)
-    // Padé approximation of tanh
-    static constexpr inline double sid_tanh(double x) noexcept
-    {
-        if (likely(x < 3.))
-        {
-            const double x2 = x * x;
-            const double num = x*(945. + x2*(105. + x2));
-            const double den = 945. + x2*(420. + x2*15.);
-            return num/den;
-        }
-        return 1.;
-    }
-#elif defined(LAMBERT_TANH)
-    // 7th-degree Lambert approximation of tanh
-    static constexpr inline double sid_tanh(double x) noexcept
-    {
-        if (likely(x < 4.))
-        {
-            const double x2 = x * x;
-            const double num = x*(135135. + x2*(17325. + x2*(378 + x2)));
-            const double den = 135135. + x2*(62370. + x2*(3150. + x2*28.));
-            return num/den;
-        }
-        return 1.;
-    }
-#else
-    static inline double sid_tanh(double x)
-    {
-        return std::tanh(x);
-    }
-#endif
-
-    template<int m>
-    static inline int clipper(int x)
-    {
-        assert(x >= 0);
-        constexpr int threshold = 28000;
-        if (likely(x < threshold))
-            return x;
-
-        constexpr double max_val = static_cast<double>(m);
-        constexpr double t = threshold / max_val;
-        constexpr double a = 1. - t;
-        constexpr double b = 1. / a;
-
-        double value = static_cast<double>(x - threshold) / max_val;
-        value = t + a * sid_tanh(b * value);
-        return static_cast<int>(value * max_val);
-    }
-
-    /*
-     * Soft Clipping implementation, splitted for test.
-     */
-    static inline int softClipImpl(int x)
-    {
-        return x < 0 ? -clipper<32768>(-x) : clipper<32767>(x);
-    }
-
 protected:
-    /*
-     * Soft Clipping into 16 bit range [-32768,32767]
-     */
-    static inline short softClip(int x) { return static_cast<short>(softClipImpl(x)); }
+    virtual int32_t output() const = 0;
 
-    virtual int output() const = 0;
-
-    Resampler() {}
+    Resampler() = default;
 
 public:
     virtual ~Resampler() = default;
@@ -115,17 +49,17 @@ public:
      * @param sample input sample
      * @return true when a sample is ready
      */
-    virtual bool input(int sample) = 0;
+    virtual bool input(int32_t sample) = 0;
 
     /**
      * Output a sample from resampler.
      *
      * @return resampled sample
      */
-    inline short getOutput(int scaleFactor) const
+    inline int16_t getOutput(int32_t scaleFactor) const
     {
-        const int out = (scaleFactor * output()) / 2;
-        return softClip(out);
+        const int32_t out = (scaleFactor * output()) / 2;
+        return Limiter::softClip(out);
     }
 
     virtual void reset() = 0;

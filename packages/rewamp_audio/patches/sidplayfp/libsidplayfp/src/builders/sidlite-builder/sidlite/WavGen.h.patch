@@ -1,0 +1,13 @@
+--- a/src/builders/sidlite-builder/sidlite/WavGen.h
++++ b/src/builders/sidlite-builder/sidlite/WavGen.h
+@@ -42,7 +42,9 @@
+ 
+     inline unsigned char getOsc3() const { return oscReg; }
+     inline unsigned char getEnv3() const { return envReg; }
+-
++    int  ChannelOutput[3]; //YOYOFR
++    int  ChannelFreq[3]; //YOYOFR
++    int  ChannelEnv[3]; //YOYOFR
+ private:
+     unsigned char *regs;
+     settings      *s;

@@ -12,6 +12,7 @@
   2004 10-21 : Version 1.14 -- Fixed the problem where SCCKSS+ is disabled.
   2015 12-13 : Version 1.15 -- Changed own integer types to C99 stdint.h types.
   2016 09-06 : Version 1.16 -- Support per-channel output.
+  2026 07-22 : Version 1.17 -- Added SCCKSS_{save,load}State().
 
   Registar map for SCCKSS_writeReg()
 
@@ -140,7 +141,7 @@ SCCKSS_reset (SCCKSS * scc)
 
   for (i = 0; i < 5; i++)
   {
-    for (j = 0; j < 5; j++)
+    for (j = 0; j < 32; j++)
       scc->wave[i][j] = 0;
     scc->count[i] = 0;
     scc->freq[i] = 0;
@@ -539,4 +540,12 @@ void
 SCCKSS_set_type (SCCKSS * scc, uint32_t type)
 {
   scc->type = type;
+}
+
+int SCCKSS_save_state(SCCKSS *scc, uint8_t *out) {
+  if (out) memcpy(out, scc, sizeof(SCCKSS));
+  return (int)sizeof(SCCKSS);
+}
+void SCCKSS_load_state(SCCKSS *scc, const uint8_t *in, int size) {
+  if (size >= (int)sizeof(SCCKSS)) memcpy(scc, in, sizeof(SCCKSS)); /* scalar-only state */
 }

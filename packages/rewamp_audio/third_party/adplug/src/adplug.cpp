@@ -89,6 +89,7 @@
 #include "mtr.h"
 #include "plx.h"
 #include "wm.h"
+#include "fmk.h"
 
 /***** CAdPlug *****/
 
@@ -136,7 +137,7 @@ const CPlayerDesc CAdPlug::allplayers[] = {
   CPlayerDesc(CrolPlayer::factory, "Adlib Visual Composer", ".rol\0"),
   CPlayerDesc(CxmiPlayer::factory, "Miles Design eXtended MIDI", ".xmi\0"),
   CPlayerDesc(CxsmPlayer::factory, "eXtra Simple Music", ".xsm\0"),
-  CPlayerDesc(CdroPlayer::factory, "DOSBox Raw OPL v0.1", ".dro\0"),
+  CPlayerDesc(CdroPlayer::factory, "DOSBox Raw OPL v0/v1.0", ".dro\0"),
   CPlayerDesc(Cdro2Player::factory, "DOSBox Raw OPL v2.0", ".dro\0"),
   CPlayerDesc(CpisPlayer::factory, "Beni Tracker PIS Player", ".pis\0"),
   CPlayerDesc(CmscPlayer::factory, "Adlib MSC Player", ".msc\0"),
@@ -149,6 +150,7 @@ const CPlayerDesc CAdPlug::allplayers[] = {
   CPlayerDesc(CsopPlayer::factory, "Note Sequencer by sopepos", ".sop\0"),
   CPlayerDesc(CheradPlayer::factory, "Herbulot AdLib System", ".hsq\0.sqx\0.sdb\0.agd\0.ha2\0"),
   CPlayerDesc(CwmPlayer::factory, "MusicV WM", ".wm\0.m\0"),
+  CPlayerDesc(CfmkPlayer::factory, "FM-Kingtracker", ".fmk\0"),
   CPlayerDesc()
 };
 

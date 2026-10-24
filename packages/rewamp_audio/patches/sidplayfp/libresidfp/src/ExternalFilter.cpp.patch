@@ -1,0 +1,13 @@
+--- a/src/ExternalFilter.cpp
++++ b/src/ExternalFilter.cpp
+@@ -61,6 +61,10 @@
+     // State of filter.
+     Vlp = 0; //1 << (15 + 11);
+     Vhp = 0;
++    //YOYOFR
++    Vlp2=0;
++    Vhp2=0;
++    //YOYOFR
+ }
+ 
+ } // namespace reSIDfp

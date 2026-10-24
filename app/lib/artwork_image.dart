@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'uade_info.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'artwork_url_version.dart';
 import 'platform_artwork.dart';
 
 // ---------------------------------------------------------------------------
@@ -148,8 +149,13 @@ class ArtworkCache {
     // « on sert le fichier d'un autre ».
     final basename = p.basenameWithoutExtension(targetPath);
 
-    // Honour user-placed artwork or a previously downloaded file.
-    final existing = await _scanDir(dirPath, basename);
+    // Honour user-placed artwork or a previously downloaded file — unless it
+    // was fetched from an EARLIER VERSION of this url (see _supersededBy).
+    var existing = await _scanDir(dirPath, basename);
+    if (existing != null && await _supersededBy(existing, url)) {
+      await _discardLocal(existing);
+      existing = null;
+    }
     if (existing != null) {
       _paths[url] = existing;
       if (priority) unawaited(revalidate(url, existing));
@@ -176,6 +182,48 @@ class ArtworkCache {
           .whenComplete(() => _pendingPriority.remove(url)));
     }
     return null;
+  }
+
+  /// Un fichier de pochette posé SOUS UN NOM QUI NE DIT PAS SON URL — voisin
+  /// du fichier audio (`<morceau>.png`) ou `artwork.<ext>` d'un dossier
+  /// d'album — note l'url d'où il vient dans `.<nom>.src`, à côté de lui.
+  ///
+  /// ⚠️ Sans ça, une pochette REMPLACÉE côté serveur n'était jamais revue: le
+  /// serveur la publie sous une url VERSIONNÉE (`cover.png?v=<date>`), mais le
+  /// fichier se cherche par NOM, donc la nouvelle url trouvait l'ancien
+  /// fichier et le servait — « Skate or Die » (hvsc), 2026-10-23: nouvelle
+  /// image dans le lecteur juste après « Re-télécharger » (cache haché, clé =
+  /// url), l'ancienne partout ailleurs et dans le lecteur après relance.
+  static String _srcPathOf(String artPath) =>
+      p.join(p.dirname(artPath), '.${p.basename(artPath)}.src');
+
+  Future<bool> _supersededBy(String artPath, String url) async {
+    try {
+      final src = File(_srcPathOf(artPath));
+      final from =
+          await src.exists() ? (await src.readAsString()).trim() : null;
+      return artworkUrlSupersedes(storedFrom: from, url: url);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _writeSrc(String artPath, String url) async {
+    try {
+      await File(_srcPathOf(artPath)).writeAsString(url, flush: true);
+    } catch (_) {}
+  }
+
+  Future<void> _discardLocal(String artPath) async {
+    try {
+      final f = File(artPath);
+      if (await f.exists()) await f.delete();
+      final src = File(_srcPathOf(artPath));
+      if (await src.exists()) await src.delete();
+    } catch (_) {}
+    _paths.removeWhere((_, v) => v == artPath);
+    PaintingBinding.instance.imageCache.evict(FileImage(File(artPath)));
+    _forgetListings(p.dirname(artPath));
   }
 
   /// Revalide la copie locale de [url] contre le serveur, UNE fois par
@@ -301,6 +349,8 @@ class ArtworkCache {
       try {
         final f = File(path);
         if (await f.exists()) await f.delete();
+        final src = File(_srcPathOf(path));
+        if (await src.exists()) await src.delete();
       } catch (_) {}
       // Le bitmap décodé survit à l'effacement du fichier: l'évincer aussi.
       PaintingBinding.instance.imageCache.evict(FileImage(File(path)));
@@ -601,6 +651,7 @@ class ArtworkCache {
         final file = File(targetPath);
         await file.parent.create(recursive: true);
         await file.writeAsBytes(res.bodyBytes);
+        await _writeSrc(targetPath, url);
         _forgetListings(p.dirname(targetPath));   // le dossier vient de changer
         _paths[url] = targetPath;
       }

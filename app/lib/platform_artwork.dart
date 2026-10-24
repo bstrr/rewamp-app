@@ -127,7 +127,7 @@ const Map<String, SoundPlatform> _extMap = {
   'mpk': SoundPlatform.msx, 'mbm': SoundPlatform.msx, 'opx': SoundPlatform.msx,
   // ZX Spectrum
   'ay': SoundPlatform.zxSpectrum, 'ym': SoundPlatform.zxSpectrum, 'vtx': SoundPlatform.zxSpectrum,
-  'pt3': SoundPlatform.zxSpectrum, 'pt2': SoundPlatform.zxSpectrum, 'stc': SoundPlatform.zxSpectrum,
+  'pt3': SoundPlatform.zxSpectrum, 'mt3': SoundPlatform.zxSpectrum, 'pt2': SoundPlatform.zxSpectrum, 'stc': SoundPlatform.zxSpectrum,
   'psg': SoundPlatform.zxSpectrum, 'asc': SoundPlatform.zxSpectrum, 'stp': SoundPlatform.zxSpectrum,
   // Amstrad CPC
   'chp': SoundPlatform.amstradCpc, 'cpc': SoundPlatform.amstradCpc,
@@ -157,6 +157,7 @@ const Map<String, SoundPlatform> _extMap = {
   'dro': SoundPlatform.adlib, 'adl': SoundPlatform.adlib, 'bam': SoundPlatform.adlib,
   'rad': SoundPlatform.adlib, 'rix': SoundPlatform.adlib, 'lds': SoundPlatform.adlib,
   'laa': SoundPlatform.adlib, 'imf': SoundPlatform.adlib, 'ksm': SoundPlatform.adlib,
+  'fmk': SoundPlatform.adlib,
   // Standard MIDI
   'mid': SoundPlatform.midi, 'midi': SoundPlatform.midi, 'kar': SoundPlatform.midi,
   'rmi': SoundPlatform.midi,

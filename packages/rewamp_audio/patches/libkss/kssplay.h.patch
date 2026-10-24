@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/kssplay.h	2026-07-06 09:48:51
-+++ src/kssplay.h	2026-07-06 09:44:22
+--- third_party/libkss/upstream/src/kssplay.h	2026-10-22 00:44:16
++++ third_party/libkss/src/kssplay.h	2026-10-22 00:47:34
 @@ -8,6 +8,7 @@
  #include "filters/rc_filter.h"
  #include "kss/kss.h"
@@ -8,7 +8,7 @@
  #include "vm/vm.h"
  
  #ifdef __cplusplus
-@@ -44,9 +45,9 @@
+@@ -49,9 +50,9 @@
    int32_t device_pan[KSS_DEVICE_MAX];
    uint32_t device_type[KSS_DEVICE_MAX];
    FIR *device_fir[2][KSS_DEVICE_MAX];
@@ -21,16 +21,29 @@
  
    uint32_t fade;
    uint32_t fade_step;
-@@ -61,7 +62,7 @@
+@@ -66,16 +67,16 @@
    int scc_disable;
    int opll_stereo;
  
 -  PSG_RateConv *psg_rconv;
 +  PSGKSS_RateConv *psg_rconv;
+ 
+   /* MGSDRV `@m` text, assembled from the writes to I/O 0x43/0x44 */
+   int mgs_text_pos;
+   char mgs_text[KSSPLAY_MGSTEXT_SIZE];
+ 
+-  int32_t psg_ch_pan[3];  /* per-channel PSG panning (-128..128), 0 = center */
+-  int32_t scc_ch_pan[5];  /* per-channel SCC panning (-128..128), 0 = center */
+-  uint8_t psg_per_ch_pan; /* enable per-channel PSG panning */
+-  uint8_t scc_per_ch_pan; /* enable per-channel SCC panning */
++  int32_t psg_ch_pan[3];  /* per-channel PSGKSS panning (-128..128), 0 = center */
++  int32_t scc_ch_pan[5];  /* per-channel SCCKSS panning (-128..128), 0 = center */
++  uint8_t psg_per_ch_pan; /* enable per-channel PSGKSS panning */
++  uint8_t scc_per_ch_pan; /* enable per-channel SCCKSS panning */
  };
  
  /**
-@@ -89,7 +90,7 @@
+@@ -103,7 +104,7 @@
   * sng[3]   :NOISE
   *
   * dac[0]: 1-bit DAC
@@ -39,3 +52,12 @@
   */
  typedef struct tagKSSPLAY_PER_CH_OUT {
    int16_t psg[3];
+@@ -133,7 +134,7 @@
+ /* Calcurate samples internally. No output is generated. */
+ void KSSPLAY_calc_silent(KSSPLAY *, uint32_t length);
+ 
+-/* Like KSSPLAY_calc_silent, but also clocks the devices that have envelopes (OPL, OPLL, PSG/SNG) exactly
++/* Like KSSPLAY_calc_silent, but also clocks the devices that have envelopes (OPLKSS, OPLLKSS, PSGKSS/SNG) exactly
+    as KSSPLAY_calc does, so a state saved with KSSPLAY_save_state after a silent run matches real playback.
+    Slower than KSSPLAY_calc_silent, since it runs the device synthesis. */
+ void KSSPLAY_calc_silent_accurate(KSSPLAY *, uint32_t length);

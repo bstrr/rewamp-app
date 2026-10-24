@@ -80,7 +80,7 @@ const char TXT_FORMAT_REL[] = "Unsupported tape image file (REL)";
 const char P00_ID[] = "C64File";
 
 
-SidTuneBase* p00::load(const char *fileName, buffer_t& dataBuf)
+SidTuneBase* p00::load(const char *fileName, const buffer_t& dataBuf)
 {
     const char *ext = SidTuneTools::fileExtOfPath(fileName);
 
@@ -156,7 +156,7 @@ void p00::load(const char* format, const X00Header* pHeader)
     }
 
     // Automatic settings
-    fileOffset            = X00_ID_LEN + X00_NAME_LEN + 1;
+    m_fileOffset          = X00_ID_LEN + X00_NAME_LEN + 1;
     info->m_songs         = 1;
     info->m_startSong     = 1;
     info->m_compatibility = SidTuneInfo::COMPATIBILITY_BASIC;

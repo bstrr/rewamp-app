@@ -1,6 +1,6 @@
---- third_party/libkss/upstream/modules/emu2212/kss_emu2212.c	2026-07-09 18:43:32
-+++ third_party/libkss/modules/emu2212/kss_emu2212.c	2026-09-05 09:35:13
-@@ -3,22 +3,22 @@
+--- third_party/libkss/upstream/modules/emu2212/kss_emu2212.c	2026-10-22 00:44:15
++++ third_party/libkss/modules/emu2212/kss_emu2212.c	2026-10-22 00:47:34
+@@ -3,23 +3,23 @@
    emu2212.c -- S.C.C. emulator by Mitsutaka Okazaki 2001-2016
  
    2001 09-30 : Version 1.00
@@ -20,6 +20,8 @@
 +  2004 10-21 : Version 1.14 -- Fixed the problem where SCCKSS+ is disabled.
    2015 12-13 : Version 1.15 -- Changed own integer types to C99 stdint.h types.
    2016 09-06 : Version 1.16 -- Support per-channel output.
+-  2026 07-22 : Version 1.17 -- Added SCC_{save,load}State().
++  2026 07-22 : Version 1.17 -- Added SCCKSS_{save,load}State().
  
 -  Registar map for SCC_writeReg()
 +  Registar map for SCCKSS_writeReg()
@@ -32,7 +34,7 @@
    $80-9F : WaveTable CH.E
   
    $C0    : CH.A Freq(L)
-@@ -38,7 +38,7 @@
+@@ -39,7 +39,7 @@
    $D3    : CH.D Volume
    $D4    : CH.E Volume
   
@@ -41,7 +43,7 @@
    $E1    : CH mask
    $E2    : Extra Flags
  
-@@ -46,12 +46,17 @@
+@@ -47,12 +47,17 @@
  #include <stdio.h>
  #include <stdlib.h>
  #include <string.h>
@@ -61,7 +63,7 @@
  {
    if (scc->quality)
    {
-@@ -67,7 +72,7 @@
+@@ -68,7 +73,7 @@
  }
  
  uint32_t
@@ -70,7 +72,7 @@
  {
    uint32_t ret = 0;
    if(scc)
-@@ -79,7 +84,7 @@
+@@ -80,7 +85,7 @@
  }
  
  uint32_t
@@ -79,7 +81,7 @@
  {
    uint32_t ret = 0;
    if(scc)
-@@ -91,38 +96,38 @@
+@@ -92,38 +97,38 @@
  }
  
  void
@@ -128,7 +130,7 @@
  {
    int i, j;
  
-@@ -163,14 +168,14 @@
+@@ -164,14 +169,14 @@
  }
  
  void
@@ -145,7 +147,7 @@
  {
    int i;
  
-@@ -189,7 +194,7 @@
+@@ -190,7 +195,7 @@
      if (scc->ch_enable & (1 << i))
      {
        scc->phase[i] = ((scc->count[i] >> (GETA_BITS)) + scc->offset[i]) & 0x1F;
@@ -154,7 +156,7 @@
          scc->ch_out[i] += (scc->volume[i] * scc->wave[i][scc->phase[i]]) & 0xfff0;
      }
  
-@@ -198,14 +203,60 @@
+@@ -199,14 +204,60 @@
  
  }
  
@@ -218,7 +220,7 @@
  {
    if (!scc->quality) {
      update_output(scc);
-@@ -223,7 +274,7 @@
+@@ -224,7 +275,7 @@
  }
  
  uint32_t
@@ -227,7 +229,7 @@
  {
    if (adr < 0xA0)
      return scc->wave[adr >> 5][adr & 0x1f];
-@@ -234,7 +285,7 @@
+@@ -235,7 +286,7 @@
  }
  
  void
@@ -236,7 +238,7 @@
  {
    int ch;
    uint32_t freq;
-@@ -307,100 +358,100 @@
+@@ -308,100 +359,100 @@
  }
  
  static inline void
@@ -364,7 +366,7 @@
      return (scc->base_adr>>8)&0x20;
    
    if( adr < scc->base_adr ) return 0;
-@@ -415,10 +466,10 @@
+@@ -416,10 +467,10 @@
  
    switch (scc->type) 
    {
@@ -377,7 +379,7 @@
      if(!scc->mode)
        return read_standard (scc, adr);
      else 
-@@ -432,11 +483,11 @@
+@@ -433,11 +484,11 @@
  }
  
  void
@@ -391,7 +393,7 @@
    {
      scc->base_adr = 0x9000 | ((val&0x20)<<8);
      return;
-@@ -452,7 +503,7 @@
+@@ -453,7 +504,7 @@
        scc->mode = 0;
        scc->active = 1;
      }
@@ -400,7 +402,7 @@
      {
        scc->mode = 1;
        scc->active = 1;
-@@ -469,10 +520,10 @@
+@@ -470,10 +521,10 @@
  
    switch (scc->type) 
    {
@@ -413,7 +415,7 @@
      if(scc->mode)
        write_enhanced (scc, adr, val);
      else 
-@@ -485,7 +536,7 @@
+@@ -486,15 +537,15 @@
  }
  
  void
@@ -421,4 +423,17 @@
 +SCCKSS_set_type (SCCKSS * scc, uint32_t type)
  {
    scc->type = type;
+ }
+ 
+-int SCC_save_state(SCC *scc, uint8_t *out) {
+-  if (out) memcpy(out, scc, sizeof(SCC));
+-  return (int)sizeof(SCC);
++int SCCKSS_save_state(SCCKSS *scc, uint8_t *out) {
++  if (out) memcpy(out, scc, sizeof(SCCKSS));
++  return (int)sizeof(SCCKSS);
+ }
+-void SCC_load_state(SCC *scc, const uint8_t *in, int size) {
+-  if (size >= (int)sizeof(SCC)) memcpy(scc, in, sizeof(SCC)); /* scalar-only state */
++void SCCKSS_load_state(SCCKSS *scc, const uint8_t *in, int size) {
++  if (size >= (int)sizeof(SCCKSS)) memcpy(scc, in, sizeof(SCCKSS)); /* scalar-only state */
  }

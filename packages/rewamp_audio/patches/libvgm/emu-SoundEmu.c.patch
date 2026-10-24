@@ -1,0 +1,24 @@
+diff --git a/emu/SoundEmu.c b/emu/SoundEmu.c
+index 61120e3..5c6a701 100644
+--- a/emu/SoundEmu.c
++++ b/emu/SoundEmu.c
+@@ -191,6 +191,9 @@
+ #ifdef SNDDEV_ICS2115
+ #include "cores/ics2115.h"
+ #endif
++#ifdef SNDDEV_ZSG2
++#include "cores/zsg2.h"
++#endif
+ #ifdef SNDDEV_YM2414
+ #include "cores/ymfmintf.h"
+ #endif
+@@ -340,6 +343,9 @@ const DEV_DECL* sndEmu_Devices[] = {
+ #ifdef SNDDEV_ICS2115
+ 	&sndDev_ICS2115,
+ #endif
++#ifdef SNDDEV_ZSG2
++	&sndDev_ZSG2,
++#endif
+ #ifdef SNDDEV_YM2414
+ 	&sndDev_YM2414,
+ #endif

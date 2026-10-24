@@ -183,8 +183,13 @@ static RewampDecoder* vgm_open_fn(const char* path, RewampAudioFormat* outFormat
         rewamp_track_message_append("Source channels: %d (downmixed)\n",
                                     fmt->input_channels);
     if (fmt->loop_flag) {
-        rewamp_track_message_append("Loop: %lld → %lld\n",
-            (long long)fmt->loop_start, (long long)fmt->loop_end);
+        /* loop_end est EXCLUSIF (vgmstream: « loop_end_sample »). */
+        const long long ls = (long long)fmt->loop_start;
+        const long long ll = (long long)fmt->loop_end - ls;
+        if (fmt->sample_rate > 0 && ll > 0)
+            rewamp_track_message_append_loop((double)ls / fmt->sample_rate,
+                                             (double)ll / fmt->sample_rate,
+                                             ls, ll);
     }
     if (fmt->play_samples > 0 && fmt->sample_rate > 0) {
         unsigned total = (unsigned)(fmt->play_samples / fmt->sample_rate);

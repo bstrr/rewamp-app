@@ -44,8 +44,9 @@ class ChannelScopeWidget extends StatefulWidget {
 class _ChannelScopeWidgetState extends State<ChannelScopeWidget>
     with SingleTickerProviderStateMixin {
 
-  // Cap: more than any real VGM chip set ever exposes.
-  static const _maxCh = 32;
+  // Cap, same as the GL renderer (MAX_VOICES) and the 64-bit mute mask: the
+  // ZSG-2 has 48 voices and the OPL4 42 — 32 silently dropped the rest.
+  static const _maxCh = 64;
 
   // Exactly one 60 fps frame of audio at 44 100 Hz.
   // The C ring buffer returns the last `_kDisplaySamples` in chronological

@@ -1985,6 +1985,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         value: _settings.vgmJapaneseTags,
         onChanged: (v) => _settings.vgmJapaneseTags = v,
       ),
+      _SliderRow(
+        label: l10n.settingsVgmLoopFade,
+        resetKey: 'vgmLoopFadeSeconds',
+        value: _settings.vgmLoopFadeSeconds.toDouble(),
+        min: 0,
+        max: 16,
+        divisions: 16,
+        format: (v) => v <= 0
+            ? l10n.settingsOff
+            : l10n.settingsValueSeconds(v.round()),
+        onChanged: (v) => _settings.vgmLoopFadeSeconds = v.round(),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Text(l10n.settingsVgmLoopFadeHelp,
+            style: const TextStyle(fontSize: 12)),
+      ),
       core('YM2612 (Mega Drive)', 'vgmYm2612Core', _settings.vgmYm2612Core,
           [l10n.settingsDefault, 'GPGX (MAME)', 'Nuked OPN2', 'Gens'],
           (v) => _settings.vgmYm2612Core = v),
@@ -3788,7 +3805,7 @@ class AboutScreen extends StatelessWidget {
               _aboutChildren),
           // Relire la note de version. Elle n'était visible qu'UNE fois, au
           // premier lancement d'une build: qui la ferme trop vite n'avait
-          // aucun moyen d'y revenir, et rien ne disait ce que cette beta
+          // aucun moyen d'y revenir, et rien ne disait ce que cette version
           // apportait. Le sous-titre porte le nom de version — un nom, donc
           // pas de clé de traduction.
           ListTile(
@@ -3800,9 +3817,9 @@ class AboutScreen extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showReleaseNotes(context),
           ),
-          // Replays the first-run carousel for the CURRENT build: the beta
-          // notice with its version/build line is the thing a tester needs to
-          // quote, and it is otherwise only shown once per update.
+          // Replays the first-run carousel: its first page carries the
+          // version/build line a user quotes in a bug report, and the carousel
+          // itself is otherwise only shown once per install.
           ListTile(
             leading: Icon(Icons.slideshow_outlined,
                 color: Theme.of(context).colorScheme.primary),

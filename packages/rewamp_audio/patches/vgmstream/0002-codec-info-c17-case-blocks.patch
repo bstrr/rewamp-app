@@ -8,7 +8,7 @@
 # Rien d'autre ne change — même code, même ordre, aucun comportement touché.
 # Vérifié: le fichier compile en `-std=gnu17 -Werror` (il n'y arrivait pas).
 diff --git a/src/base/codec_info.c b/src/base/codec_info.c
-index 4e78f9ee..0544630f 100644
+index 8b74237c..226e8230 100644
 --- a/src/base/codec_info.c
 +++ b/src/base/codec_info.c
 @@ -4,81 +4,98 @@
@@ -127,7 +127,7 @@ index 4e78f9ee..0544630f 100644
  #endif
  
  #ifdef VGM_USE_MPEG
-@@ -86,30 +103,36 @@ const codec_info_t* codec_get_info(VGMSTREAM* v) {
+@@ -86,34 +103,41 @@ const codec_info_t* codec_get_info(VGMSTREAM* v) {
          case coding_MPEG_ealayer3:
          case coding_MPEG_layer1:
          case coding_MPEG_layer2:
@@ -166,6 +166,12 @@ index 4e78f9ee..0544630f 100644
 +        case coding_AAC_raw: {
              extern const codec_info_t aac_decoder;
              return &aac_decoder;
++        }
+ 
+-        case coding_KA_ADPCM:
++        case coding_KA_ADPCM: {
+             extern const codec_info_t ka_decoder;
+             return &ka_decoder;
 +        }
  
          default:

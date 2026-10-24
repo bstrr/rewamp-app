@@ -57,7 +57,7 @@ struct RewampDecoder {
 // and the too-generic m/raw). AdPlug still content-verifies in open().
 static const char* const kAdplugExts[] = {
     "a2m","a2t","adl","adlib","agd","amd","as3m","bam","bmf","cff","cmf",
-    "d00","dfm","dm0","dmo","dr0","dro","dtm","got","ha2","hsc","hsp","hsq",
+    "d00","dfm","dm0","dmo","dr0","dro","dtm","fmk","got","ha2","hsc","hsp","hsq",
     "ims","imf","jbm","ksm","laa","lds","mad","mdi","mdy","mkf","mkj","msc",
     "mtk","mtr","mus","pis","plx","rac","rad","rix","rol","sa2","sat","sci",
     "sdb","sng","sop","sqx","wlf","xad","xms","xsm",

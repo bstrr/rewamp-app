@@ -68,7 +68,7 @@ private:
     Bank* cpuWriteMap[16];
 
     /// IO region handler
-    IOBank* ioBank;
+    IOBank* m_ioBank;
 
     /// Kernal ROM
     KernalRomBank kernalRomBank;
@@ -96,7 +96,7 @@ private:
     void updateMappingPHI2();
 
 public:
-    MMU(EventScheduler &eventScheduler, IOBank* ioBank);
+    MMU(EventScheduler &scheduler, IOBank* ioBank);
 
     void reset();
 

@@ -337,6 +337,18 @@ auto TextureManager::LoadTexture(const ScannedFile& file) -> std::shared_ptr<Tex
     // to uploading levels by hand; either way it is a path we do not control and
     // cannot see. Here we link GLES directly, so this call cannot be missing.
     // Cheap, and idempotent when the chain is already there.
+    //
+    // GL errors are STICKY: glGetError returns the oldest unread one, so an
+    // error left behind by SOIL's upload (its own check is compiled out) or by
+    // anything earlier on this context would have been reported here as a
+    // mipmap failure. That is what "Loaded texture clouds … mipmaps ERREUR" on
+    // a plain 128x128 RGB jpeg most likely was (2026-09-19). Drain first, then
+    // attribute: the two cases are told apart in the log, with the code.
+    GLenum priorErr = GL_NO_ERROR;
+    for (GLenum e; (e = glGetError()) != GL_NO_ERROR;)
+    {
+        priorErr = e;
+    }
     glBindTexture(GL_TEXTURE_2D, tex);
     glGenerateMipmap(GL_TEXTURE_2D);
     const GLenum mipErr = glGetError();
@@ -344,9 +356,19 @@ auto TextureManager::LoadTexture(const ScannedFile& file) -> std::shared_ptr<Tex
 #ifdef DEBUG
     std::cerr << "Loaded texture " << file.lowerCaseBaseName << " id " << tex
               << " mipmaps " << (mipErr == GL_NO_ERROR ? "ok" : "ERREUR")
-              << std::endl;
+              << std::hex;
+    if (mipErr != GL_NO_ERROR)
+    {
+        std::cerr << " 0x" << mipErr;
+    }
+    if (priorErr != GL_NO_ERROR)
+    {
+        std::cerr << " (erreur GL antérieure au chargement: 0x" << priorErr << ")";
+    }
+    std::cerr << std::dec << std::endl;
 #else
     (void)mipErr;
+    (void)priorErr;
 #endif
 
     uint32_t memoryBytes = width * height * 4; // RGBA, unsigned byte color channels.

@@ -23,6 +23,7 @@ import 'production_screen.dart';
 import 'cancel_field.dart';
 import 'collection_families.dart';
 import 'entity_play_actions.dart';
+import 'podium_browser.dart';
 import 'podium_filter.dart';
 import 'rewamp_db.dart';
 import 'scrolling_text.dart';
@@ -2375,9 +2376,10 @@ class _SearchScreenState extends State<SearchScreen>
                 crossAxisSpacing: 10,
                 childAspectRatio: 1.9,
               ),
-              // +5 leading cards: Collections, Productions (demozoo entities
+              // +6 leading cards: Collections, Productions (demozoo entities
               // since migs 161-163 — no longer a tag category), Albums,
-              // Charts et Imports locaux.
+              // Charts, Imports locaux et Podiums (navigateur au grain podium,
+              // migs serveur 283-289 — podium_browser.dart).
               // La catégorie `origin` est ÉCARTÉE: trois tags en tout (Game /
               // Demoscene / AI Generated), une carte entière pour une liste de
               // trois lignes — la carte Albums prend sa place et la grille
@@ -2385,10 +2387,26 @@ class _SearchScreenState extends State<SearchScreen>
               // les puces de filtre de l'onglet Tags doivent continuer à la
               // proposer.
               itemCount:
-                  _tagCategories.where((s) => s != 'origin').length + 5,
+                  _tagCategories.where((s) => s != 'origin').length + 6,
               itemBuilder: (ctx, i) {
                 final cats =
                     _tagCategories.where((s) => s != 'origin').toList();
+                if (i == 5) {
+                  return _BrowseCard(
+                    label: l10n.podiumBrowserTitle,
+                    icon: Icons.emoji_events,
+                    // Jaune vif vers un jaune olive, franchement plus jaune
+                    // que l'or des coupes (podiumColor rang 1) et que l'ambre
+                    // de « éditeur », son seul voisin chaud sur la grille.
+                    colors: const [Color.fromARGB(255, 222, 208, 16), Color.fromARGB(255, 172, 165, 39)],
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => PodiumHubScreen(
+                        onTap:       _onSongTap,
+                        onPlayAlbum: widget.onPlayAlbum,
+                      ),
+                    )),
+                  );
+                }
                 if (i == 3) {
                   return _BrowseCard(
                     label: l10n.browseCharts,
@@ -2478,7 +2496,7 @@ class _SearchScreenState extends State<SearchScreen>
                     )),
                   );
                 }
-                final slug  = cats[i - 5];
+                final slug  = cats[i - 6];
                 final label = _categoryLabel(slug, l10n);
                 final style = _categoryCardStyle(slug);
                 return _BrowseCard(

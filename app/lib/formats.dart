@@ -40,7 +40,7 @@ const kFurnaceExts = <String>{ 'fur', 'ftm', '0cc', 'dnm', 'eft' };
 
 /// libzxtune ZX Spectrum / AY chiptunes (+ .chp via libchpconv).
 const kZxtuneExts = <String>{
-  'ay', 'ym', 'vtx', 'psg', 'pt1', 'pt2', 'pt3', 'stc', 'st1', 'stp',
+  'ay', 'ym', 'vtx', 'psg', 'pt1', 'pt2', 'pt3', 'mt3', 'stc', 'st1', 'stp',
   'asc', 'sqt', 'psc', 'gtr', 'chi', 'dst', 'sqd', 'str', 'dmm',
   'tfc', 'tfd', 'tfe', 'ftc', 'pdt', 'chp', 'vt2',
   // E-Tracker (SAM Coupé, SAA1099) — zxart la sert sous TROIS extensions,
@@ -162,7 +162,7 @@ const kAsapExts = <String>{
 /// AdPlug AdLib OPL2/OPL3.
 const kAdplugExts = <String>{
   'a2m', 'a2t', 'adl', 'adlib', 'agd', 'amd', 'as3m', 'bam', 'bmf', 'cff',
-  'cmf', 'd00', 'dfm', 'dm0', 'dmo', 'dtm', 'got', 'ha2', 'hsc', 'hsp', 'hsq',
+  'cmf', 'd00', 'dfm', 'dm0', 'dmo', 'dtm', 'fmk', 'got', 'ha2', 'hsc', 'hsp', 'hsq',
   'jbm', 'laa', 'lds', 'mad', 'mdi', 'mdy', 'mkf', 'mkj', 'msc', 'mtk', 'mtr',
   'pis', 'plx', 'rac', 'rad', 'rix', 'rol', 'sa2', 'sat', 'sci', 'sdb', 'sop',
   'sqx', 'wlf', 'xad', 'xms', 'xsm',
@@ -190,7 +190,8 @@ const kHighlyTheoriticalExts = <String>{
 
 /// ZX Spectrum PT3 (ProTracker 3) — real AY-3-8910/YM2149 synth (ayumi),
 /// takes priority over zxtune's own generic .pt3 claim.
-const kLibpt3Exts = <String>{ 'pt3' };
+/// `.mt3` = des PT3 ordinaires sous l'extension que zxart leur donne.
+const kLibpt3Exts = <String>{ 'pt3', 'mt3' };
 
 /// Cave Story's own tracker format (Organya, webPixel/Wothke adapter).
 const kOrganyaExts = <String>{ 'org' };

@@ -128,3 +128,4 @@ packages/rewamp_audio/third_party/libsidplayfp/libsidplayfp/src/builders/usbsid-
 # flatpak: artefacts de build locaux (scripts/flatpak/)
 scripts/flatpak/.build/
 scripts/flatpak/.flatpak-builder/
+scripts/__pycache__/

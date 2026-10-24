@@ -2488,6 +2488,13 @@ class AppLocalizationsDa extends AppLocalizations {
       'Foretrækker de japanske felter (titel, spil, kunstner) i VGM-tags, når de findes.';
 
   @override
+  String get settingsVgmLoopFade => 'Udtoning af spor, der looper';
+
+  @override
+  String get settingsVgmLoopFadeHelp =>
+      'VGM-formatet har ingen udtoning: et spor, der looper, spiller loopet to gange og toner derefter ud over denne tid. Fra = bråt stop. Spor uden loop slutter, som de er.';
+
+  @override
   String get localImportFolder => 'Importér en mappe';
 
   @override
@@ -3864,6 +3871,119 @@ class AppLocalizationsDa extends AppLocalizations {
   }
 
   @override
+  String get podiumBrowserTitle => 'Podier';
+
+  @override
+  String get podiumHubBias =>
+      'Hver sang tæller én gang, for sin bedste placering.';
+
+  @override
+  String get podiumRecentWinners => 'Nye vindere';
+
+  @override
+  String get podiumRecentWinnersSubtitle =>
+      'Guld fra de to seneste år, nyeste compoer først';
+
+  @override
+  String get podiumViaSelf => 'Musikcompoer';
+
+  @override
+  String get podiumViaSelfSubtitle => 'Sangen konkurrerede selv';
+
+  @override
+  String get podiumViaProduction => 'Demo-soundtracks';
+
+  @override
+  String get podiumViaProductionSubtitle =>
+      'Demoen eller spillet den lægger lyd til blev placeret';
+
+  @override
+  String get podiumByKind => 'Efter type compo';
+
+  @override
+  String get podiumByEra => 'Efter epoke';
+
+  @override
+  String get podiumByParty => 'Efter party';
+
+  @override
+  String get podiumByPartySubtitle => 'Partyserier rangeret efter medaljer';
+
+  @override
+  String get podiumTopArtists => 'Mest præmierede artister';
+
+  @override
+  String get podiumAll => 'Alle podier';
+
+  @override
+  String get podiumAllSubtitle =>
+      'Nyeste compoer først, derefter efter placering';
+
+  @override
+  String get podiumChipVia => 'Art';
+
+  @override
+  String get podiumChipKind => 'Type compo';
+
+  @override
+  String get podiumChipSeries => 'Party';
+
+  @override
+  String get podiumChipEra => 'Epoke';
+
+  @override
+  String get compoKindTracked => 'Tracked';
+
+  @override
+  String get compoKindChip => 'Chip';
+
+  @override
+  String get compoKindStreaming => 'Streaming';
+
+  @override
+  String get compoKindExecutable => 'Eksekverbar';
+
+  @override
+  String get compoKindOldskool => 'Oldskool';
+
+  @override
+  String get compoKindCombined => 'Kombineret';
+
+  @override
+  String get compoKindSoundtrack => 'Soundtrack';
+
+  @override
+  String get compoKindTrackedHint => 'Trackermoduler: MOD, XM, IT…';
+
+  @override
+  String get compoKindChipHint => 'Chipmusik: SID, AY, NES, Game Boy…';
+
+  @override
+  String get compoKindStreamingHint => 'Streamet lyd: MP3, OGG, WAV…';
+
+  @override
+  String get compoKindExecutableHint => 'Musik skabt af et bittelille program';
+
+  @override
+  String get compoKindOldskoolHint =>
+      'Gammel hardware eller tracked, ingen streaming';
+
+  @override
+  String get compoKindCombinedHint => 'Compo uden formatbegrænsning';
+
+  @override
+  String get compoKindSoundtrackHint =>
+      'Musik fra en placeret demo eller et spil';
+
+  @override
+  String podiumDecadeLabel(String decade) {
+    return '$decade\'erne';
+  }
+
+  @override
+  String get podiumSortPodium => 'Nyeste compoer først';
+
+  @override
   String get competitionEmpty => 'Denne konkurrence har ingen bidrag';
 
   @override
@@ -3891,11 +4011,11 @@ class AppLocalizationsDa extends AppLocalizations {
   String get onboardingStart => 'Kom i gang';
 
   @override
-  String get onboardingBetaTitle => 'Betaversion';
+  String get onboardingWelcomeTitle => 'Velkommen til Rewamp';
 
   @override
-  String get onboardingBetaBody =>
-      'Rewamp er stadig under opbygning. Lokale data — bibliotek, playlister, favoritter, statistik — kan blive nulstillet før version 1.0. Dine downloads er ikke i fare, men gem det, du holder af, et andet sted.';
+  String get onboardingWelcomeBody =>
+      'En afspiller til chiptunes, trackermoduler og spilmusik – Amiga, Atari, C64, konsoller, arkade og pc. Lyt fra de store onlinearkiver, eller åbn dine egne filer.';
 
   @override
   String onboardingVersion(String version, String build) {
@@ -3928,7 +4048,7 @@ class AppLocalizationsDa extends AppLocalizations {
 
   @override
   String get onboardingReplaySubtitle =>
-      'Se betabeskeden og rundvisningen igen';
+      'Se introduktionen og rundvisningen igen';
 
   @override
   String get settingsPatternTitle => 'Patterns';
@@ -4112,52 +4232,56 @@ class AppLocalizationsDa extends AppLocalizations {
   String get releaseNotesTitle => 'Nyheder';
 
   @override
-  String get releaseNotesV9Speed =>
-      'Afspilningshastighed fra 0,2× til 3× i panelet Stemmer. De fleste motorer ændrer tempoet og bevarer tonehøjden; de øvrige resampler.';
+  String get releaseNotesV10Loading =>
+      'Et nummer, der indlæses langsomt, fryser ikke længere appen: en tynd ring om afspil/pause viser, at det stadig indlæses.';
 
   @override
-  String get releaseNotesV9Windows =>
-      'Windows: medietasterne og systemets mediekontroller (lydstyrkevinduet, proceslinjen) styrer afspilningen, og visualiseringen i fuld skærm fylder nu hele skærmen.';
+  String get releaseNotesV10Piano =>
+      'Klaver-visualisering: numre med mange samtidige stemmer eller instrumenter fordeles på flere klaviaturer.';
 
   @override
-  String get releaseNotesV9Formats =>
-      'Nye afspillere: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) og .cop-programmer til SAM Coupé.';
+  String get releaseNotesV10Amiga =>
+      'Amiga: StoneTracker, SUNtronic (TSM-rips) og flere Soundtracker 2.6-moduler afspilles nu, og SoundPlayer-numre afspilles på iOS.';
 
   @override
-  String get releaseNotesV9Amiga =>
-      'Amiga og Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory og visse Maximum Effect-moduler afspilles nu.';
+  String get releaseNotesV10ZxSpectrum =>
+      'ZX Spectrum: .mt3-filer fra zxart afspilles, og på Linux er ZXTune-formaterne og SAM Coupé .cop-programmer med.';
 
   @override
-  String get releaseNotesV9MoonBlaster =>
-      'MSX MoonBlaster: numre indlæser deres samplesæt i stedet for at spille støj, og filer i redigeringstilstand afspilles korrekt.';
+  String get releaseNotesV10OpenWith =>
+      'macOS og iOS: alle understøttede formater vises nu under “Åbn med”.';
 
   @override
-  String get releaseNotesV9HideElsewhere =>
-      'Bibliotek: »Skjul det, der ikke er på denne enhed« skjuler lokale poster, hvis fil ligger på en anden enhed.';
+  String get releaseNotesV10MtcCrash =>
+      'Rettet: nogle .mtc-filer, der blander PT3 med TFM eller PSG, fik appen til at gå ned.';
 
   @override
-  String get releaseNotesV9ArtworkFullscreen =>
-      'Et langt tryk på coveret i afspilleren viser det i fuld skærm.';
+  String get releaseNotesV10Podiums =>
+      'Ny browser “Podier”: vindere af demoscenens konkurrencer efter party, år eller type compo, med en hall of fame.';
 
   @override
-  String get releaseNotesV9Viz =>
-      'Visualiseringer: oscilloskop pr. stemme som standard (linjespektrum til streamede formater), gitter og stemmenavne kan slås til og fra fra oscilloskopet, og et mere stabilt stereo-oscilloskop.';
+  String get releaseNotesV10Arcade =>
+      'Arkade: Ensoniq ES5505/ES5506-musik (Taito F3 …) afspilles, Apple IIGS-VGM-filer får ikke længere appen til at gå ned, og motorerne er opdateret (FM-Kingtracker .fmk tilføjet).';
 
   @override
-  String get releaseNotesV9PsfTrack =>
-      'Rettet: at trykke på et nummer i visse PSF-album kunne afspille et andet.';
+  String get releaseNotesV10InfoPanel =>
+      'Infopanelet: format, motor, kanaler og looppunkter står først, og feltnavnene træder frem.';
 
   @override
-  String get releaseNotesV9Playlists =>
-      'En mappe med flere playlister danner nu ét album med alle deres numre, uden dubletter.';
+  String get releaseNotesV10LocalAlbums =>
+      'Album- og delnummer-skærmene viser samlingen; et sluppet arkiv viser alle numre, er mærket “lokal” og vises ikke længere to gange, når det er udskiftet.';
 
   @override
-  String get releaseNotesV9AmigaInfo =>
-      'Amiga-numre uden kendt længde eller ophavsperson spørger serveren igen efter en uge i stedet for aldrig.';
+  String get releaseNotesV10Crossfade =>
+      'Rettet: med crossfade kunne et nummer, der er kortere end overgangen, ikke høres.';
+
+  @override
+  String get releaseNotesV10Artwork =>
+      'Rettet: et omslag, der er udskiftet på serveren, vises overalt efter “Download filen igen”.';
 
   @override
   String get releaseNotesDataReset =>
-      'Lokale data blev nulstillet til denne beta. Bibliotek og playlister genopbygges fra kontoen; downloads skal hentes igen.';
+      'Lokale data blev nulstillet til denne version. Bibliotek og playlister genopbygges fra kontoen; downloads skal hentes igen.';
 
   @override
   String get releaseNotesDismiss => 'Fortsæt';

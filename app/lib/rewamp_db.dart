@@ -22,6 +22,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:rewamp_audio/rewamp_audio.dart' show RewampAudio, SubsongInfo;
 import 'artwork_image.dart';
+import 'library_presence.dart' show invalidateLocalPresence;
 import 'local_db.dart';
 import 'local_delete.dart' show cleanCompanionsAfterDelete;
 import 'opened_files.dart' show OpenedFiles;
@@ -2138,6 +2139,11 @@ class CompoPodium {
   final String? playlistName;
   final int? productionId;
   final String? production;
+  /// Genre de la compo (migs serveur 283/284): une des valeurs de
+  /// [PodiumCriteria.kinds] — `soundtrack` pour tout podium `via = production`.
+  /// Null sur un serveur antérieur; une valeur inconnue est gardée telle
+  /// quelle (le libellé retombe sur la valeur brute).
+  final String? compoKind;
 
   const CompoPodium({
     required this.rank,
@@ -2150,6 +2156,7 @@ class CompoPodium {
     this.playlistName,
     this.productionId,
     this.production,
+    this.compoKind,
   });
 
   bool get isGold => rank == 1;
@@ -2169,8 +2176,142 @@ class CompoPodium {
       playlistName:    raw['playlist_name'] as String?,
       productionId:    (raw['production_id'] as num?)?.toInt(),
       production:      raw['production'] as String?,
+      compoKind:       raw['compo_kind'] as String?,
     );
   }
+}
+
+/// Les critères de PODIUM au-delà du rang (mig serveur 285): ils qualifient
+/// le podium d'un morceau — sa nature, le genre de sa compo, la série de party
+/// et l'année de la COMPO (pas celle du morceau). Portés par `browse_music`,
+/// `search_music`, `search_facets` et `podium_hall_of_fame`.
+///
+/// ⚠️ Côté serveur, poser l'un d'eux SANS `p_podium` implique `p_podium = 0`
+/// (jamais un filtre ignoré en silence); une valeur hors enum répond 400.
+/// Les valeurs de [kinds] sont donc bornées à [kCompoKinds] avant l'envoi.
+class PodiumCriteria {
+  /// `self` (le morceau a lui-même concouru) | `production` (il sonorise une
+  /// démo classée) | null = les deux.
+  final String? via;
+  /// OU logique sur le genre de compo; vide = tous.
+  final Set<String> kinds;
+  /// OU logique sur `competitions.series` (la chaîne de la facette
+  /// `party_series`, jamais le tag party); vide = toutes.
+  final Set<String> series;
+  /// Bornes INCLUSES sur l'année de la compo.
+  final int? yearMin;
+  final int? yearMax;
+
+  const PodiumCriteria({
+    this.via,
+    this.kinds = const {},
+    this.series = const {},
+    this.yearMin,
+    this.yearMax,
+  });
+
+  static const empty = PodiumCriteria();
+
+  /// Les sept genres que le serveur accepte (`_podium_normalize`).
+  static const kCompoKinds = [
+    'tracked', 'chip', 'streaming', 'executable', 'oldskool', 'combined',
+    'soundtrack',
+  ];
+  static const kVias = ['self', 'production'];
+
+  bool get isEmpty =>
+      via == null && kinds.isEmpty && series.isEmpty &&
+      yearMin == null && yearMax == null;
+
+  /// Les clés JSON à poser sur la RPC — seulement ce qui est posé et valide.
+  Map<String, dynamic> toParams() {
+    final ks = [for (final k in kinds) if (kCompoKinds.contains(k)) k];
+    return {
+      if (via != null && kVias.contains(via)) 'p_podium_via': via,
+      if (ks.isNotEmpty) 'p_compo_kind': ks,
+      if (series.isNotEmpty) 'p_party_series': series.toList(),
+      if (yearMin != null) 'p_compo_year_min': yearMin,
+      if (yearMax != null) 'p_compo_year_max': yearMax,
+    };
+  }
+
+  /// Les noms de paramètres que le serveur doit connaître — tous arrivés par
+  /// la même migration, donc une seule détection de capacité suffit.
+  static const kParams = {
+    'p_podium_via', 'p_compo_kind', 'p_party_series', 'p_compo_year_min',
+    'p_compo_year_max',
+  };
+
+  PodiumCriteria copyWith({
+    Object? via = _unset,
+    Set<String>? kinds,
+    Set<String>? series,
+    Object? yearMin = _unset,
+    Object? yearMax = _unset,
+  }) =>
+      PodiumCriteria(
+        via: identical(via, _unset) ? this.via : via as String?,
+        kinds: kinds ?? this.kinds,
+        series: series ?? this.series,
+        yearMin: identical(yearMin, _unset) ? this.yearMin : yearMin as int?,
+        yearMax: identical(yearMax, _unset) ? this.yearMax : yearMax as int?,
+      );
+  static const _unset = Object();
+
+  /// Ce podium passe-t-il les critères? (repli client sur une page reçue
+  /// d'un serveur qui ne les connaît pas: on ne montre rien de faux.)
+  /// ⚠️ `compo_podium.party` est le NOM de la party (« Revision 2015 »), pas
+  /// sa série: la série se reconnaît en PRÉFIXE du nom — approximation du
+  /// repli, le serveur compare `competitions.series`.
+  bool matches(CompoPodium? p) {
+    if (p == null) return false;
+    if (via != null && p.via != via) return false;
+    if (kinds.isNotEmpty && !kinds.contains(p.compoKind)) return false;
+    if (series.isNotEmpty) {
+      final party = p.party ?? '';
+      if (!series.any((s) => party == s || party.startsWith('$s '))) return false;
+    }
+    if (yearMin != null && (p.year == null || p.year! < yearMin!)) return false;
+    if (yearMax != null && (p.year == null || p.year! > yearMax!)) return false;
+    return true;
+  }
+}
+
+/// Une ligne de `podium_hall_of_fame` (mig serveur 286): une clé de l'axe
+/// (artiste, série de party ou année) avec ses médailles. `keyId` est l'uuid
+/// d'artiste ou la série / l'année en chaîne — jamais le libellé aplati.
+/// `totalCount` n'est rendu qu'à l'offset 0 (−1 ensuite, convention maison).
+class HallOfFameRow {
+  final String keyId;
+  final String label;
+  final int gold, silver, bronze, total;
+  final String? sampleSongId;
+  final String? artworkUrl;
+  final int totalCount;
+
+  const HallOfFameRow({
+    required this.keyId,
+    required this.label,
+    this.gold = 0,
+    this.silver = 0,
+    this.bronze = 0,
+    this.total = 0,
+    this.sampleSongId,
+    this.artworkUrl,
+    this.totalCount = -1,
+  });
+
+  factory HallOfFameRow.fromJson(Map<String, dynamic> j) => HallOfFameRow(
+        keyId:        (j['key_id'] ?? '').toString(),
+        label:        (j['label'] ?? j['key_id'] ?? '').toString(),
+        gold:         (j['gold'] as num?)?.toInt() ?? 0,
+        silver:       (j['silver'] as num?)?.toInt() ?? 0,
+        bronze:       (j['bronze'] as num?)?.toInt() ?? 0,
+        total:        (j['total'] as num?)?.toInt() ?? 0,
+        sampleSongId: j['sample_song_id'] as String?,
+        artworkUrl:   j['artwork_url'] as String?,
+        totalCount:   (j['total_count'] as num?)?.toInt() ?? -1,
+      );
 }
 
 /// One ranked entry of a competition (`get_competition_entries`, mig 183): a
@@ -2213,9 +2354,15 @@ class CompetitionEntry {
     this.albumIds = const [],
   });
 
-  /// Numeric rank parsed out of [ranking] ("2=" → 2), for the podium colours.
+  /// Numeric rank parsed out of [ranking], for the podium colours.
+  ///
+  /// Same reading as the server's `podium_rank(text)` (mig 282): demozoo
+  /// writes ties as "2=" but ALSO as "=2" or "#2", and "1st" happens. A leading
+  /// "=" or "#" is skipped; the number must be whole ("10" is 10, never 1 —
+  /// the server counted ranks 10-19 as gold until the 282 for reading the
+  /// first character only). Anything that is not a rank ("Block 3", "") → null.
   int? get rankNumber {
-    final m = RegExp(r'^(\d+)').firstMatch(ranking);
+    final m = RegExp(r'^[=#]?\s*(\d+)').firstMatch(ranking);
     return m == null ? null : int.tryParse(m.group(1)!);
   }
 
@@ -3903,8 +4050,9 @@ class RewampDb {
     int? yearMax,
     num? ratingMin, // 0..5; rating derives from plays, unrated songs excluded
     int? podium, // p_podium: null = aucun, 0 = tout podium, 1-3 = ce rang (podium_filter.dart)
+    PodiumCriteria? podiumCriteria, // mig 285: nature / genre / série / année de la COMPO
     String? seed, // for sortBy 'random': fixed seed = stable paginated order
-    String sortBy = 'relevance', // relevance|name|popularity|year|random (+title/rating aliases)
+    String sortBy = 'relevance', // relevance|name|popularity|year|random|podium (+title/rating aliases)
     String? sortDir, // asc|desc; server default per sort_by
     int limit = 50,
     int offset = 0,
@@ -3929,13 +4077,14 @@ class RewampDb {
             if (yearMax != null) 'year_max': yearMax,
             if (ratingMin != null) 'rating_min': ratingMin,
             if (podium != null && podium >= 0 && podium <= 3) 'p_podium': podium,
+            ...?podiumCriteria?.toParams(),
             if (seed != null) 'seed': seed,
             'sort_by': sortBy,
             if (sortDir != null) 'sort_dir': sortDir,
             'lim': limit,
             'from_offset': offset,
           },
-          optional: const {'p_collections', 'p_podium'},
+          optional: const {'p_collections', 'p_podium', ...PodiumCriteria.kParams},
         );
 
     if (response.statusCode != 200) {
@@ -3946,9 +4095,25 @@ class RewampDb {
         .map((e) => SearchResult.fromJson(e as Map<String, dynamic>))
         .toList();
     // Serveur sans p_podium: la page reçue n'est PAS filtrée — on filtre ici.
-    return podium != null && serverLacks('p_podium')
-        ? [for (final r in rows) if (r.podium != null && (podium == 0 || r.podium!.rank == podium)) r]
-        : rows;
+    return _podiumFallbackFilter(rows, podium, podiumCriteria);
+  }
+
+  /// Page reçue d'un serveur qui ne connaît pas `p_podium` ou les critères de
+  /// podium (404 rejoué sans eux): elle n'est PAS filtrée — on filtre ici pour
+  /// ne rien montrer de faux, et l'écran l'apprend par [serverLacksChanged].
+  static List<SearchResult> _podiumFallbackFilter(
+      List<SearchResult> rows, int? podium, PodiumCriteria? criteria) {
+    final lacksRank = podium != null && serverLacks('p_podium');
+    final lacksDims = criteria != null && !criteria.isEmpty &&
+        PodiumCriteria.kParams.any(serverLacks);
+    if (!lacksRank && !lacksDims) return rows;
+    return [
+      for (final r in rows)
+        if (r.podium != null &&
+            (!lacksRank || podium == 0 || r.podium!.rank == podium) &&
+            (!lacksDims || criteria.matches(r.podium)))
+          r,
+    ];
   }
 
   // ---- Browse (no text query) -----------------------------------------------
@@ -3969,6 +4134,7 @@ class RewampDb {
     int? yearMax,
     num? ratingMin,
     int? podium, // p_podium — voir search()
+    PodiumCriteria? podiumCriteria, // mig 285 — voir search()
     String? seed, // for sortBy 'random': fixed seed = stable paginated order
     // Folder-subtree filter (migration 113): songs.path LIKE prefix || '%',
     // scoped to [collection]. Must end with '/' to target a folder (not a
@@ -3997,6 +4163,7 @@ class RewampDb {
             if (yearMax != null) 'year_max': yearMax,
             if (ratingMin != null) 'rating_min': ratingMin,
             if (podium != null && podium >= 0 && podium <= 3) 'p_podium': podium,
+            ...?podiumCriteria?.toParams(),
             if (seed != null) 'seed': seed,
             if (pathPrefix != null) 'path_prefix': pathPrefix,
             'sort_by': sortBy,
@@ -4004,7 +4171,7 @@ class RewampDb {
             'lim': limit,
             'from_offset': offset,
           },
-          optional: const {'p_collections', 'p_podium'},
+          optional: const {'p_collections', 'p_podium', ...PodiumCriteria.kParams},
           timeout: const Duration(seconds: 15),
         );
 
@@ -4015,9 +4182,7 @@ class RewampDb {
     final rows = list
         .map((e) => SearchResult.fromJson(e as Map<String, dynamic>))
         .toList();
-    return podium != null && serverLacks('p_podium')
-        ? [for (final r in rows) if (r.podium != null && (podium == 0 || r.podium!.rank == podium)) r]
-        : rows;
+    return _podiumFallbackFilter(rows, podium, podiumCriteria);
   }
 
   /// One page of a collection's folder tree via `browse_folder` (migration
@@ -4915,6 +5080,18 @@ class RewampDb {
   static String collectionLabel(String slug) =>
       _collectionNames[slug] ?? slug;
 
+  /// La collection à AFFICHER pour un album ou un fichier: le nom lisible de
+  /// son slug, [localLabel] pour ce que l'utilisateur a importé lui-même
+  /// (aucune identité catalogue) — `l10n.playerSourceLocal`, le mot que le
+  /// lecteur affiche déjà à la même place — null quand on ne sait pas: une
+  /// ligne du catalogue arrivée sans sa collection n'est pas pour autant
+  /// locale.
+  static String? displayCollection(String? slug,
+      {required bool isLocal, required String localLabel}) {
+    if (slug != null && slug.isNotEmpty) return collectionLabel(slug);
+    return isLocal ? localLabel : null;
+  }
+
   static Future<List<Collection>> fetchCollections() async {
     final uri = Uri.parse('$_baseUrl/collections').replace(queryParameters: {
       'select': 'slug,name,files_count',
@@ -5116,6 +5293,11 @@ class RewampDb {
     int? yearMax,
     num? ratingMin,
     int? podium, // p_podium: null = aucun, 0 = tout podium, 1-3 = ce rang (podium_filter.dart)
+    /// Mig 285: avec un podium posé (ou impliqué par un critère), le serveur
+    /// rend AUSSI les facettes `podium_via`, `compo_kind`, `party_series` et
+    /// `compo_year` — au grain song seulement, chacune filtrée par tous les
+    /// critères sauf le sien.
+    PodiumCriteria? podiumCriteria,
   }) async {
     final uri = Uri.parse('$_baseUrl/rpc/search_facets');
     final response = await _postJsonOptional(
@@ -5137,8 +5319,9 @@ class RewampDb {
             if (yearMax != null) 'year_max': yearMax,
             if (ratingMin != null) 'rating_min': ratingMin,
             if (podium != null && podium >= 0 && podium <= 3) 'p_podium': podium,
+            ...?podiumCriteria?.toParams(),
           },
-          optional: const {'p_collections', 'p_podium'},
+          optional: const {'p_collections', 'p_podium', ...PodiumCriteria.kParams},
         );
     if (response.statusCode != 200) {
       throw Exception('search_facets HTTP ${response.statusCode}');
@@ -5148,6 +5331,48 @@ class RewampDb {
         .map((e) => FacetCount.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  /// Palmarès des podiums (`podium_hall_of_fame`, mig serveur 286) par
+  /// [axis] = 'artist' | 'party' | 'year', sous les mêmes critères que
+  /// [browse]. Option 1 du serveur: le MEILLEUR podium de chaque morceau
+  /// seulement (biais ≤ 2 %, 434 morceaux sur 19 052 ont plusieurs podiums).
+  /// Une coop compte pour chaque artiste; les crédits STIL sont exclus. Tri
+  /// strict or ↓ argent ↓ bronze ↓ libellé — pagination stable.
+  /// Un serveur sans la RPC (404) rend une liste VIDE: le hub masque la carte.
+  static Future<List<HallOfFameRow>> podiumHallOfFame(
+    String axis, {
+    int podium = 0,
+    PodiumCriteria? criteria,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/rpc/podium_hall_of_fame');
+    final response = await http
+        .post(uri,
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'p_axis': axis,
+              'p_podium': podiumParamOf(podium),
+              ...?criteria?.toParams(),
+              'lim': limit,
+              'from_offset': offset,
+            }))
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 404) {
+      if (_serverLacks.add('podium_hall_of_fame')) serverLacksChanged.value++;
+      return const [];
+    }
+    if (response.statusCode != 200) {
+      throw Exception('podium_hall_of_fame HTTP ${response.statusCode}');
+    }
+    final list = jsonDecode(response.body) as List;
+    return list
+        .map((e) => HallOfFameRow.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// `p_podium` borné à 0-3 (toute autre valeur = HTTP 400 côté serveur).
+  static int podiumParamOf(int v) => v < 0 || v > 3 ? 0 : v;
 
   /// Returns distinct albums for [artistName] via `get_artist_albums` RPC.
   static Future<List<ArtistAlbum>> fetchArtistAlbums(
@@ -5947,6 +6172,17 @@ class RewampDb {
   // the target path.
   static final Map<String, Future<String>> _inFlightDownloads = {};
 
+  /// Le FICHIER que télécharge chaque entrée de [_inFlightDownloads] (uuid
+  /// sans `#rang`). Les sous-chansons d'un même fichier ne dérivent pas
+  /// toujours le même chemin: celles de la tracklist serveur portent pour
+  /// album le titre du conteneur (`subsongRowsFromServer`), la ligne d'un
+  /// palmarès n'en porte aucun — `…/amiga/Gunship 2000/Gunship 2000.sc68`
+  /// contre `…/amiga/Gunship 2000.sc68`. Après avoir attendu le téléchargement
+  /// en vol, l'autre ligne ne trouvait ni SON chemin ni la ligne `tracks` (que
+  /// `_persistPlay` n'écrit qu'après la lecture) et retéléchargeait: deux
+  /// copies, et les récents, qui regroupent par fichier, en montraient deux.
+  static final Map<String, String> _inFlightSongIds = {};
+
   /// Deletes the stale local copy of a song whose server file was replaced, so
   /// the caller re-downloads the new one. Removes the recorded played file, the
   /// old + new derived paths, AND — because the previous attempt may have
@@ -6274,9 +6510,19 @@ class RewampDb {
     final key = (r.downloadUrl != null && r.downloadUrl!.isNotEmpty)
         ? r.downloadUrl!
         : lp;
+    final fileId = r.songId.split('#').first;
     final inflight = _inFlightDownloads[key];
     if (!force && inflight != null) {
-      try { await inflight; } catch (_) {}
+      final sameFile =
+          fileId.isNotEmpty && _inFlightSongIds[key] == fileId;
+      String? got;
+      try { got = await inflight; } catch (_) {}
+      // MÊME fichier: ses octets sont là où l'autre ligne les a posés.
+      if (sameFile && got != null && await File(got).exists()) {
+        _statusClear();
+        await _ensureAuxFiles(r, got);
+        return got;
+      }
       return run();
     }
     // NB block body, NOT `=> _inFlightDownloads.remove(key)`: Map.remove returns
@@ -6286,8 +6532,10 @@ class RewampDb {
     // caller hangs forever on "downloading…"). The block discards the value.
     final fut = run().whenComplete(() {
       _inFlightDownloads.remove(key);
+      _inFlightSongIds.remove(key);
     });
     _inFlightDownloads[key] = fut;
+    _inFlightSongIds[key] = fileId;
     return fut;
   }
 
@@ -7224,6 +7472,63 @@ class RewampDb {
     return null;
   }
 
+  /// Fichier, dans un dossier d'extraction, qui nomme l'ARCHIVE d'origine.
+  static const _kArchiveSourceFile = '.source';
+
+  /// Une archive REMPLACÉE sous le même chemin (rip régénéré, re-téléchargé)
+  /// change de taille, donc de clé (`<radical>_<taille>`, voir
+  /// [localArchiveCacheDir]): sans ça l'ancienne extraction restait, avec ses
+  /// pistes et son entrée dans « Écoutés récemment » — deux albums au même
+  /// nom. L'extraction qui porte le même NOM et la même ORIGINE (chemin
+  /// exact de l'archive, même dossier) est périmée: son dossier part, et ce
+  /// que la base en sait passe à la nouvelle (♥, écoutes, entrée récente —
+  /// [LocalDb.supersedeArchiveExtraction]).
+  ///
+  /// ⚠️ Le nom seul ne suffit pas: deux archives homonymes venues de deux
+  /// dossiers sont deux albums. D'où l'origine notée dans chaque extraction;
+  /// une extraction antérieure à cette règle n'en a pas et n'est jamais
+  /// touchée (on ne devine pas d'où elle venait).
+  static Future<void> _supersedeOlderArchiveExtractions(
+      String archivePath, String destDir) async {
+    try {
+      final source = p.normalize(p.absolute(archivePath));
+      final mine = File(p.join(destDir, _kArchiveSourceFile));
+      if (!await mine.exists() || (await mine.readAsString()) != source) {
+        await mine.writeAsString(source, flush: true);
+      }
+      final root = Directory(p.dirname(destDir));
+      final stem = '${_sanitize(p.basenameWithoutExtension(archivePath))}_';
+      var purged = false;
+      await for (final e in root.list(followLinks: false)) {
+        if (e is! Directory || p.equals(e.path, destDir)) continue;
+        final name = p.basename(e.path);
+        if (!name.startsWith(stem) ||
+            int.tryParse(name.substring(stem.length)) == null) {
+          continue;
+        }
+        final src = File(p.join(e.path, _kArchiveSourceFile));
+        if (!await src.exists() || (await src.readAsString()) != source) {
+          continue;
+        }
+        debugPrint('[RewampDb] archive remplacée: ${e.path} périmée');
+        await LocalDb.instance.supersedeArchiveExtraction(e.path, destDir);
+        await e.delete(recursive: true);
+        purged = true;
+      }
+      // Toujours, pas seulement après une fusion: c'est aussi ce qui répare
+      // une base fusionnée avant que cette règle n'existe.
+      final names = <String>{};
+      await for (final e in Directory(destDir).list(recursive: true)) {
+        if (e is! File || p.basename(e.path).startsWith('.')) continue;
+        names.add(p.relative(e.path, from: destDir));
+      }
+      await LocalDb.instance.reconcileArchiveRows(destDir, names);
+      if (purged) invalidateLocalPresence();
+    } catch (e) {
+      debugPrint('[RewampDb] supersede archive extractions: $e');
+    }
+  }
+
   /// Extracts a LOCALLY-opened archive (UnExotica `.lha`, or any container in
   /// [kLocalArchiveExts]) into a per-archive cache dir and returns one
   /// TrackRecord per playable module inside. Companions (TFMX `smpl.*`, etc.)
@@ -7252,6 +7557,7 @@ class RewampDb {
       }
       await marker.writeAsString('1', flush: true);
     }
+    await _supersedeOlderArchiveExtractions(archivePath, destDir);
 
     // Enumerate playable modules recursively. A file is playable when its
     // suffix OR its Amiga prefix token is an audio format (the prefix rule is
@@ -9441,8 +9747,28 @@ class RewampDb {
     }
     if (id.isNotEmpty) {
       await LocalDb.instance.clearDownloadSourceUrl(id);
+      markIdentityStale(id);
     }
     LocalDb.instance.notifyListenersNow();
+  }
+
+  /// Ids de morceaux dont l'identité SERVEUR doit être relue à la prochaine
+  /// lecture (pochette surtout), même si la ligne locale semble complète.
+  ///
+  /// « Re-télécharger » dit « ce que j'ai est périmé », et la pochette en fait
+  /// partie: le serveur la republie sous une url VERSIONNÉE, mais la ligne
+  /// `tracks` (et la file, les récents) gardaient l'ancienne, que rien ne
+  /// redemandait — le lecteur rafraîchi montrait la nouvelle, « Écoutés
+  /// récemment » et le lecteur après relance l'ancienne.
+  static final Set<String> _identityStale = <String>{};
+  static void markIdentityStale(String songId) {
+    final id = catalogueSongId(songId);
+    if (id != null) _identityStale.add(id);
+  }
+  /// Consomme la marque: vrai une fois après [markIdentityStale].
+  static bool takeIdentityStale(String songId) {
+    final id = catalogueSongId(songId);
+    return id != null && _identityStale.remove(id);
   }
 
   /// Tous les dossiers portant une copie de l'album de [containerId] d'après

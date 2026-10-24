@@ -489,6 +489,9 @@ static int ds_to_ring_frames(RewampDataSource* ds, int nativeGot) {
     return (int)totalOut;
 }
 
+static int  ds_handoff_open(RewampDataSource* ds, int commitNow);
+static void ds_handoff_commit_locked(RewampDataSource* ds);
+
 /* Crossfade trigger — producer thread. When the end of the current track is
  * inside the crossfade window and a next track is staged, pull the WHOLE
  * remaining tail out of the decoder in one burst (the producer decodes far
@@ -523,9 +526,14 @@ static void ds_maybe_start_crossfade(RewampDataSource* ds) {
         if (g_loop_fadeout_start_frame < 0 && !ds->endFadeArmed) {
             /* La fenêtre vit en temps du MORCEAU: les xf secondes JOUÉES valent
              * xf × vitesse secondes de morceau. */
-            const int64_t xfSong = (int64_t)llround((double)xfFrames * ds->effectiveSpeed);
+            /* Même borne que le recouvrement: jamais plus du quart de la
+             * piste, sinon une dernière piste plus courte que le fondu
+             * démarrerait déjà à mi-gain. */
+            const int64_t endSong = ds_effective_end_song(ds);
+            int64_t xfSong = (int64_t)llround((double)xfFrames * ds->effectiveSpeed);
+            if (xfSong > endSong / 4) xfSong = endSong / 4;
             g_loop_fadeout_track        = ds->trackId;
-            g_loop_fadeout_start_frame  = ds_effective_end_song(ds) - xfSong;
+            g_loop_fadeout_start_frame  = endSong - xfSong;
             g_loop_fadeout_total_frames = xfSong;
             ds->endFadeArmed = 1;
         }
@@ -588,10 +596,38 @@ static void ds_maybe_start_crossfade(RewampDataSource* ds) {
     ds->xfTail = tail;
     ds->xfTailLen = n;
     ds->xfTailPos = 0;
-    /* Hand off NOW (the boundary lands at the overlap's start — that is where
-     * the UI flips, like every streaming player). Failure → DRAIN: the pulled
-     * tail plays untouched and the plain end-of-track path follows. */
-    ds->xfMode = (sawEof && rewamp_handoff_attempt(ds)) ? 1 : 2;
+    ds->xfMixStart = 0;
+    /* Longueur de la piste SORTANTE, en trames jouées, lue avant le relais. */
+    const int64_t outSong = ds_effective_end_song(ds);
+    const int64_t outLen = outSong > 0
+        ? (int64_t)llround((double)outSong / ds->effectiveSpeed) : 0;
+    /* Open the next track NOW, but publish its boundary only where it starts
+     * being heard (the overlap's start — that is where the UI flips, like
+     * every streaming player). Failure → DRAIN: the pulled tail plays
+     * untouched and the plain end-of-track path follows. */
+    if (!sawEof || !ds_handoff_open(ds, 0)) { ds->xfMode = 2; return; }
+
+    /* Le recouvrement ne dépasse jamais le QUART de l'une ou l'autre piste.
+     * Sans cette borne une piste plus courte que le fondu (jingle d'une
+     * seconde sous un crossfade de 3 s, Darius Gaiden) jouait tout entière
+     * sous la queue de la précédente, à un gain qui ne dépassait pas 0,5,
+     * puis disparaissait: inaudible. Bornée, elle est entendue seule entre
+     * ses deux recouvrements. La longueur ENTRANTE n'est connue qu'après son
+     * open(), d'où le relais en deux temps: la part de queue en trop joue
+     * d'abord seule, à plein gain, et la piste entrante démarre après. */
+    int64_t overlap = n;
+    const int64_t inSong = ds_effective_end_song(ds);
+    const int64_t inLen = inSong > 0
+        ? (int64_t)llround((double)inSong / ds->effectiveSpeed) : 0;
+    if (outLen > 0 && overlap > outLen / 4) overlap = outLen / 4;
+    if (inLen  > 0 && overlap > inLen  / 4) overlap = inLen  / 4;
+    ds->xfMixStart = n - overlap;
+    ds->xfMode = 1;
+    if (ds->xfMixStart == 0) {
+        pthread_mutex_lock(&ds->decodeLock);
+        ds_handoff_commit_locked(ds);
+        pthread_mutex_unlock(&ds->decodeLock);
+    }
 }
 
 /* The decoder now lives HERE, on its own thread — never on the audio callback.
@@ -726,6 +762,7 @@ static void* ds_producer_main(void* arg) {
         int curOrd[DS_CURSOR_MAX];
         int curRow[DS_CURSOR_MAX];
         int curCount = 0;
+        int preOverlap = 0;   // step played the tail alone (deferred handoff)
 
         if (syntheticEof) {
             // Rien à lire: la piste est finie par décision de calendrier. Le
@@ -748,6 +785,19 @@ static void* ds_producer_main(void* arg) {
                 free(ds->xfTail); ds->xfTail = NULL;
                 ds->xfMode = 0;
             }
+        } else if (ds->xfMode == 1 && ds->xfCommitPending) {
+            // Crossfade, part de queue AVANT le recouvrement (la piste
+            // entrante est plus courte que le fondu): la queue seule, à plein
+            // gain. Le décodeur entrant n'est pas lu, et rien n'est capturé —
+            // les captures de la queue ont été prises à sa lecture.
+            int64_t remain = ds->xfMixStart - ds->xfTailPos;
+            int n = step < (int)remain ? step : (int)remain;
+            memcpy(ds->stepBuf, ds->xfTail + (size_t)ds->xfTailPos * ds->channels,
+                   (size_t)n * ds->channels * sizeof(float));
+            ds->xfTailPos += n;
+            ringGot     = n;
+            nativeGot   = 1;   // not EOF
+            preOverlap  = 1;
         } else {
             nativeGot = ds_read_native_step(ds, step, curOff, curOrd, curRow,
                                             &curCount, DS_CURSOR_MAX);
@@ -767,9 +817,10 @@ static void* ds_producer_main(void* arg) {
                     nativeGot = 1;   // still audio to publish, not an EOF
                 }
                 int mixN = n < (int)remain ? n : (int)remain;
+                const int64_t mixLen = ds->xfTailLen - ds->xfMixStart;
                 for (int i = 0; i < mixN; i++) {
-                    const double th = (double)(ds->xfTailPos + i) /
-                                      (double)ds->xfTailLen * 1.5707963267948966;
+                    const double th = (double)(ds->xfTailPos - ds->xfMixStart + i) /
+                                      (double)mixLen * 1.5707963267948966;
                     const float gOut = (float)cos(th);
                     const float gIn  = (float)sin(th);
                     const float* t = ds->xfTail +
@@ -791,7 +842,7 @@ static void* ds_producer_main(void* arg) {
             ring_push(ds, ds->stepBuf, ringGot);
             ds->producerPos += ringGot;
         }
-        if (nativeGot > 0 && ds->xfMode != 2) {
+        if (nativeGot > 0 && ds->xfMode != 2 && !preOverlap) {
             // Look-ahead state captured at PRODUCER time, keyed by absolute
             // NATIVE frame position: the note column and the per-voice
             // oscilloscope samples. The consumer side replays them at its own
@@ -809,6 +860,10 @@ static void* ds_producer_main(void* arg) {
             }
         }
         ring_unlock(&ds->ringLock);
+        // Fin de la part de queue jouée seule: la piste entrante commence ICI,
+        // après la poussée (la frontière est producerPos).
+        if (preOverlap && ds->xfTailPos >= ds->xfMixStart)
+            ds_handoff_commit_locked(ds);
         pthread_mutex_unlock(&ds->decodeLock);
 
         int got = nativeGot;
@@ -848,7 +903,42 @@ static void* ds_producer_main(void* arg) {
  * UI thread) block on decodeLock — holding it across the open would jank the
  * UI at every track boundary. While the open runs, ds->decoder is NULL and
  * every dereference site guards on it. */
-int rewamp_handoff_attempt(RewampDataSource* ds) {
+/* Publie la frontière d'un relais: la nouvelle piste commence à la position
+ * courante du producteur. decodeLock tenu. Séparé de l'ouverture parce que le
+ * crossfade peut décider APRÈS l'open (il connaît alors la longueur de la piste
+ * entrante) de faire jouer encore un bout de la queue sortante seule. */
+static void ds_handoff_commit_locked(RewampDataSource* ds) {
+    ring_lock(&ds->ringLock);
+    ds->handoffPending = 1;
+    ds->handoffFrame   = ds->producerPos;
+    g_handoff_pending  = 1;
+    // La nouvelle piste ouvre son segment d'horloge: morceau à 0, ses taux.
+    ds->trackId++;
+    ds_seg_push(ds, 0);
+    ring_unlock(&ds->ringLock);
+    ds->xfCommitPending = 0;
+    // The fadeout window the open computed is relative to the NEW track's own
+    // song time; it belongs to that track from now on.
+    if (g_loop_fadeout_start_frame >= 0)
+        g_loop_fadeout_track = ds->trackId;
+
+    // ⚠️ **Ces états viz ne se remettent PAS à zéro sur une frontière gapless.**
+    // Le relais a lieu des SECONDES avant que l'oreille n'y arrive (le
+    // viz-pattern demande lui-même une avance d'une demi-hauteur d'écran), et
+    // les effacer ici jetait la queue du morceau EN COURS: le motif s'arrêtait
+    // avant la fin, la timeline des notes perdait ce qui n'était pas encore
+    // entendu. Les deux réserves sont clefées par position ABSOLUE, donc elles
+    // portent les DEUX morceaux à la fois; ce qui change, c'est la FORME d'une
+    // capture (table d'ordres pour les motifs, nombre de voix pour les notes),
+    // et c'est ce que l'époque étiquette. La bascule se fait quand l'oreille
+    // franchit, comme le reste du gapless.
+    rewamp_notes_new_epoch(rewamp_channel_count(), (int)ds->nativeRate);
+    rewamp_pattern_cursor_new_epoch();
+}
+
+/* commitNow = 0: ouvrir sans publier la frontière (crossfade, voir
+ * ds_maybe_start_crossfade) — l'appelant la publiera. */
+static int ds_handoff_open(RewampDataSource* ds, int commitNow) {
     ring_lock(&ds->ringLock);
     const int alreadyPending = ds->handoffPending;
     ring_unlock(&ds->ringLock);
@@ -918,33 +1008,24 @@ int rewamp_handoff_attempt(RewampDataSource* ds) {
         ds->trackLenRing = lenN
             ? (int64_t)(lenN * (uint64_t)DS_RING_RATE / fmt.sampleRate) : 0;
     }
-    ring_lock(&ds->ringLock);
-    ds->handoffPending = 1;
-    ds->handoffFrame   = ds->producerPos;
-    g_handoff_pending  = 1;
-    // La nouvelle piste ouvre son segment d'horloge: morceau à 0, ses taux.
-    ds->trackId++;
-    ds_seg_push(ds, 0);
-    ring_unlock(&ds->ringLock);
-    // The fadeout window the open computed is relative to the NEW track's own
-    // song time; it belongs to that track from now on.
-    if (g_loop_fadeout_start_frame >= 0)
-        g_loop_fadeout_track = ds->trackId;
+    if (commitNow) {
+        ds_handoff_commit_locked(ds);
+    } else {
+        // Relais DIFFÉRÉ (crossfade): le décodeur entrant est en place mais
+        // il ne joue pas encore — la queue sortante passe d'abord seule. La
+        // frontière (segment, piste, époques) se publie quand il commence
+        // VRAIMENT (ds_handoff_commit_locked depuis le producteur). D'ici là,
+        // une fenêtre de fondu calculée par son open() n'appartient à aucune
+        // piste: sans ça elle s'appliquerait à la queue sortante.
+        ds->xfCommitPending = 1;
+        if (g_loop_fadeout_start_frame >= 0) g_loop_fadeout_track = -1;
+    }
     pthread_mutex_unlock(&ds->decodeLock);
-
-    // ⚠️ **Ces états viz ne se remettent PAS à zéro sur une frontière gapless.**
-    // Le relais a lieu des SECONDES avant que l'oreille n'y arrive (le
-    // viz-pattern demande lui-même une avance d'une demi-hauteur d'écran), et
-    // les effacer ici jetait la queue du morceau EN COURS: le motif s'arrêtait
-    // avant la fin, la timeline des notes perdait ce qui n'était pas encore
-    // entendu. Les deux réserves sont clefées par position ABSOLUE, donc elles
-    // portent les DEUX morceaux à la fois; ce qui change, c'est la FORME d'une
-    // capture (table d'ordres pour les motifs, nombre de voix pour les notes),
-    // et c'est ce que l'époque étiquette. La bascule se fait quand l'oreille
-    // franchit, comme le reste du gapless.
-    rewamp_notes_new_epoch(rewamp_channel_count(), (int)fmt.sampleRate);
-    rewamp_pattern_cursor_new_epoch();
     return 1;
+}
+
+int rewamp_handoff_attempt(RewampDataSource* ds) {
+    return ds_handoff_open(ds, 1);
 }
 
 /* Called at every exit of ds_read: the callback only memcpys, so anything past
@@ -1142,6 +1223,10 @@ static ma_result ds_seek(ma_data_source* pDataSource, ma_uint64 frameIndex) {
     // below makes the consumer hear the new track immediately anyway, and the
     // serial bump tells Dart to flip the UI. The seek then lands in the new
     // track (a user dragging within the last look-ahead of a track is rare).
+    // Relais de crossfade ouvert mais pas encore publié (la queue sortante
+    // jouait seule): le décodeur en place est déjà l'ENTRANT — publier la
+    // frontière, puis la promouvoir comme ci-dessous.
+    if (ds->xfCommitPending) ds_handoff_commit_locked(ds);
     ring_lock(&ds->ringLock);
     if (ds->handoffPending) {
         ds->trackBase       = ds->handoffFrame;
@@ -1328,6 +1413,8 @@ ma_result rewamp_data_source_init(RewampDataSource* ds,
     ds->xfTailLen         = 0;
     ds->xfTailPos         = 0;
     ds->xfMode            = 0;
+    ds->xfMixStart        = 0;
+    ds->xfCommitPending   = 0;
     ds->endFadeArmed      = 0;
     ds->appliedSpeed      = 1.0;
     ds->genericSpeed      = 1.0;

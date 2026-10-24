@@ -283,19 +283,19 @@ apart from the engines and libraries it bundles. Recomputed at every snapshot.
 [ LANGUAGES BREAKDOWN — lines of code ]
 
                     Rewamp      Bundled        Total
-C                   10,406    1,797,777    1,808,183
-C/C++ Header         1,816    1,325,734    1,327,550
-C++                 21,140      979,692    1,000,832
-Dart                80,513            0       80,513
-Assembly                 0       36,451       36,451
+C                   10,641    1,798,767    1,809,408
+C/C++ Header         1,823    1,327,144    1,328,967
+C++                 21,278      981,946    1,003,224
+Dart                83,327            0       83,327
+Assembly                 0       36,627       36,627
 Objective-C++          763        3,044        3,807
 GLSL                   362          989        1,351
 Swift                  460            0          460
 Kotlin                 453            0          453
 Objective-C             26            0           26
-Others               8,544      262,158      270,702
+Others               8,668      262,158      270,826
 
-TOTAL              124,483    4,405,845    4,530,328
+TOTAL              127,801    4,410,675    4,538,476
 ```
 <!-- CODE STATS END -->
 

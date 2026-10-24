@@ -1,0 +1,26 @@
+--- a/src/Filter.h
++++ b/src/Filter.h
+@@ -23,6 +23,10 @@
+ #ifndef FILTER_H
+ #define FILTER_H
+ 
++//TODO:  MODIZER changes start / YOYOFR
++extern "C" int sid_v4;
++//TODO:  MODIZER changes end / YOYOFR
++
+ #include "FilterModelConfig.h"
+ #include "Integrator.h"
+ #include "Voice.h"
+@@ -252,6 +256,12 @@
+     Vmix += (filt3 || voice3off) ? 0 : getNormalizedMixerVoice(wav3, env3);
+     Vmix += filtE ? 0 : getNormalizedMixerVoice(extin, 0);
+     Vmix += Vfilt;
++
++    //TODO:  MODIZER changes start / YOYOFR
++    // Digi voice: what the mixer outputs from the external input alone, i.e.
++    // the volume-register DAC that sample players drive.
++    sid_v4 = currentVolume[currentMixer[filtE ? 0 : getNormalizedMixerVoice(extin, 0)]];
++    //TODO:  MODIZER changes end / YOYOFR
+ 
+     return currentVolume[currentMixer[Vmix]];
+ }

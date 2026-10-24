@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/modules/emu2149/kss_emu2149.h	2026-07-06 09:48:52
-+++ modules/emu2149/kss_emu2149.h	2026-07-06 09:44:22
+--- third_party/libkss/upstream/modules/emu2149/kss_emu2149.h	2026-10-22 00:44:15
++++ third_party/libkss/modules/emu2149/kss_emu2149.h	2026-10-22 00:47:34
 @@ -1,17 +1,17 @@
  /* emu2149.h */
 -#ifndef _EMU2149_H_
@@ -22,7 +22,7 @@
    {
  
      /* Volume Table */
-@@ -64,31 +64,31 @@
+@@ -64,33 +64,33 @@
      /* output of channels */
      int16_t ch_out[3];
  
@@ -44,6 +44,8 @@
 -  void PSG_setVolumeMode (PSG * psg, int type);
 -  uint32_t PSG_setMask (PSG *, uint32_t mask);
 -  uint32_t PSG_toggleMask (PSG *, uint32_t mask);
+-  int PSG_save_state (PSG *, uint8_t *out); /* save state to out; out=NULL -> required size */
+-  void PSG_load_state (PSG *, const uint8_t *in, int size);
 +  void PSGKSS_setQuality (PSGKSS * psg, uint8_t q);
 +  void PSGKSS_setClock(PSGKSS *psg, uint32_t clk);
 +  void PSGKSS_setClockDivider(PSGKSS *psg, uint8_t enable);
@@ -59,6 +61,8 @@
 +  void PSGKSS_setVolumeMode (PSGKSS * psg, int type);
 +  uint32_t PSGKSS_setMask (PSGKSS *, uint32_t mask);
 +  uint32_t PSGKSS_toggleMask (PSGKSS *, uint32_t mask);
++  int PSGKSS_save_state (PSGKSS *, uint8_t *out); /* save state to out; out=NULL -> required size */
++  void PSGKSS_load_state (PSGKSS *, const uint8_t *in, int size);
      
  #ifdef __cplusplus
  }

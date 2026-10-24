@@ -27,8 +27,9 @@
 extern "C" int sid_v4;
 //TODO:  MODIZER changes end / YOYOFR
 
-
 #include "siddefs-fp.h"
+
+#include <cstdint>
 
 namespace reSIDfp
 {
@@ -39,6 +40,11 @@ namespace reSIDfp
  * acts as a high-pass filter with a cutoff dependent on the attached audio
  * equipment impedance. Here we suppose an impedance of 10kOhm resulting
  * in a 3 dB attenuation at 1.6Hz.
+ * The STC networks are connected with a [BJT] based [common collector]
+ * used as a voltage follower (featuring a 2SC1815 NPN transistor).
+ *
+ * To operate properly the 6581 audio output needs a pull-down resistor,
+ * 1KOhm is the recommended value.
  *
  * ~~~
  *                                 9/12V
@@ -47,7 +53,7 @@ namespace reSIDfp
  *      +---o----R---o--------o-----(K)          +-----
  *  out |   |        |        |      |           |audio
  * -----+   R 1k     C 1000   |      |    10 uF  |
- *          |        |  pF    +-C----o-----C-----+ 10k
+ *          |        |  pF    +-C----o-----C-----+ ~10k
  *                             470   |           |
  *         GND      GND         pF   R 1K        | amp
  *          *                   **   |           +-----
@@ -55,13 +61,27 @@ namespace reSIDfp
  *                                  GND
  * ~~~
  *
- * The STC networks are connected with a [BJT] based [common collector]
- * used as a voltage follower (featuring a 2SC1815 NPN transistor).
- *
- * * To operate properly the 6581 audio output needs a pull-down resistor
- *   (1KOhm recommended, not needed on 8580)
- * ** The C64c board additionally includes a [bootstrap] condenser to increase
+ * * Pulldown resistor, only for the 6581.
+ * ** The C64c board additionally includes a [bootstrap] capacitor to increase
  *    the input impedance of the common collector.
+ *
+ * The C128 boards include an additional capacitor and a resistor
+ * to the ouptput stage.
+ *
+ * ~~~
+ *                                 9/12V
+ * -----+
+ * audio|       10k                  |
+ *      +---o----R---o--------o-----(K)                    +-----
+ *  out |   |        |        |      |                     |audio
+ * -----+   R 1k     C 1000   |      |        10 uF        |
+ *          |        |  pF    +-C----o-----o----C---o------+ ~10k
+ *                             470   |     |        |      |
+ *         GND      GND         pF   R 1K  C 220pF  R 47K  | amp
+ *          *                        |     |        |      +-----
+ *
+ *                                  GND   GND      GND
+ * ~~~
  *
  * [BJT]: https://en.wikipedia.org/wiki/Bipolar_junction_transistor
  * [common collector]: https://en.wikipedia.org/wiki/Common_collector
@@ -69,19 +89,29 @@ namespace reSIDfp
  */
 class ExternalFilter
 {
+    friend class State;
+
 private:
     /// Lowpass filter voltage
-    int Vlp;
+    int32_t Vlp;
 
     /// Highpass filter voltage
-    int Vhp;
+    int32_t Vhp;
+
+    //YOYOFR: the same two stages for the digi voice (sid_v4)
+    int32_t Vlp2 = 0, Vhp2 = 0;
     //YOYOFR
-        int Vlp2,Vhp2;
-        //YOYOFR
 
-    int w0lp_1_s7 = 0;
+    int32_t w0lp_1_s7 = 0;
 
-    int w0hp_1_s17 = 0;
+    int32_t w0hp_1_s17 = 0;
+
+    double m_frequency;
+
+    double m_ext_res = 10e3;
+
+private:
+    void recalcParams();
 
 public:
     /**
@@ -90,7 +120,7 @@ public:
      * @param input input sample, signed 16 bit
      * @return filtered sample, signed 16 bit
      */
-    int clock(int input);
+    int32_t clock(int32_t input);
 
     /**
      * Constructor.
@@ -100,9 +130,16 @@ public:
     /**
      * Setup of the external filter sampling parameters.
      *
-     * @param frequency the main system clock frequency
+     * @param frequency the main system clock frequency in Hertz
      */
     void setClockFrequency(double frequency);
+
+    /**
+     * Setup of the external filter sampling parameters.
+     *
+     * @param res the resistance value in Ohms
+     */
+    void setExtResistance(double res);
 
     /**
      * SID reset.
@@ -118,37 +155,30 @@ namespace reSIDfp
 {
 
 RESIDFP_INLINE
-int ExternalFilter::clock(int input)
+int32_t ExternalFilter::clock(int32_t input)
 {
-    //    const int Vi = input << 11;
-    //    const int dVlp = (w0lp_1_s7 * (Vi - Vlp) >> 7);
-    //    const int dVhp = (w0hp_1_s17 * (Vlp - Vhp) >> 17);
-    //    Vlp += dVlp;
-    //    Vhp += dVhp;
-    //    return (Vlp - Vhp) >> 11;
-    //TODO:  MODIZER changes start / YOYOFR
-    //    const int Vi = input << 11;
-    //    const int dVlp = (w0lp_1_s7 * (Vi - Vlp) >> 7);
-    //    const int dVhp = (w0hp_1_s17 * (Vlp - Vhp) >> 17);
-    
-    int Vi = input << 11;
-    int dVlp = (w0lp_1_s7 * (Vi - Vlp) >> 7);
-    int dVhp = (w0hp_1_s17 * (Vlp - Vhp) >> 17);
+#if __cplusplus >= 202002L
+    const int32_t Vi = input << 11;
+#else
+    // Left shift of negative values is undefined
+    const int32_t Vi = input * (1 << 11);
+#endif
+    const int32_t dVlp = (w0lp_1_s7 * (Vi - Vlp)) >> 7;
+    const int32_t dVhp = (w0hp_1_s17 * (Vlp - Vhp)) >> 17;
     Vlp += dVlp;
     Vhp += dVhp;
-    
-    int ret=(Vlp - Vhp) >> 11;
-    
-    Vi = (sid_v4<<11);
-    dVlp = (w0lp_1_s7 * (Vi - Vlp2) >> 7);
-    dVhp = (w0hp_1_s17 * (Vlp2 - Vhp2) >> 17);
-    Vlp2 += dVlp;
-    Vhp2 += dVhp;
-    
-    sid_v4=(Vlp2 - Vhp2) >> 11;
-    
-    return ret;
+
+    //TODO:  MODIZER changes start / YOYOFR
+    // The digi voice (volume-register DAC, published by Filter::clock in
+    // sid_v4) goes through the same low-pass + DC blocker, so its scope is
+    // centred like the other voices.
+    const int32_t Vi2 = sid_v4 * (1 << 11);
+    Vlp2 += (w0lp_1_s7 * (Vi2 - Vlp2)) >> 7;
+    Vhp2 += (w0hp_1_s17 * (Vlp2 - Vhp2)) >> 17;
+    sid_v4 = (Vlp2 - Vhp2) >> 11;
     //TODO:  MODIZER changes end / YOYOFR
+
+    return (Vlp - Vhp) >> 11;
 }
 
 } // namespace reSIDfp

@@ -12,6 +12,7 @@
   2004 10-21 : Version 1.14 -- Fixed the problem where SCC+ is disabled.
   2015 12-13 : Version 1.15 -- Changed own integer types to C99 stdint.h types.
   2016 09-06 : Version 1.16 -- Support per-channel output.
+  2026 07-22 : Version 1.17 -- Added SCC_{save,load}State().
 
   Registar map for SCC_writeReg()
 
@@ -135,7 +136,7 @@ SCC_reset (SCC * scc)
 
   for (i = 0; i < 5; i++)
   {
-    for (j = 0; j < 5; j++)
+    for (j = 0; j < 32; j++)
       scc->wave[i][j] = 0;
     scc->count[i] = 0;
     scc->freq[i] = 0;
@@ -488,4 +489,12 @@ void
 SCC_set_type (SCC * scc, uint32_t type)
 {
   scc->type = type;
+}
+
+int SCC_save_state(SCC *scc, uint8_t *out) {
+  if (out) memcpy(out, scc, sizeof(SCC));
+  return (int)sizeof(SCC);
+}
+void SCC_load_state(SCC *scc, const uint8_t *in, int size) {
+  if (size >= (int)sizeof(SCC)) memcpy(scc, in, sizeof(SCC)); /* scalar-only state */
 }

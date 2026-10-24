@@ -81,6 +81,8 @@ extern "C"
   void PSGKSS_setVolumeMode (PSGKSS * psg, int type);
   uint32_t PSGKSS_setMask (PSGKSS *, uint32_t mask);
   uint32_t PSGKSS_toggleMask (PSGKSS *, uint32_t mask);
+  int PSGKSS_save_state (PSGKSS *, uint8_t *out); /* save state to out; out=NULL -> required size */
+  void PSGKSS_load_state (PSGKSS *, const uint8_t *in, int size);
     
 #ifdef __cplusplus
 }

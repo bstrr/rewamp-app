@@ -225,7 +225,11 @@ public:
 		for (std::size_t i = 0, n = Module::RewampTrackModelsCount(); i < n && i < 3; ++i)
 			_trackModels.push_back(Module::RewampTrackModelAt(i));
 		Module::RewampTrackModelsClear();
-		for (int m = 0; m < (int)_trackModels.size(); ++m) build_timeline(m);
+		_modelChans.clear();
+		for (int m = 0; m < (int)_trackModels.size(); ++m) {
+			build_timeline(m);
+			_modelChans.push_back(model_channels(m));
+		}
 				
 		if(!_player)
 			throw  std::invalid_argument("io unsupported format"); 	
@@ -429,15 +433,53 @@ public:
         return tl[lo].tick < from + span ? &tl[lo] : 0;
     }
 
+    //Line width of model `m`: what GetChannel() accepts on its lines. Read from
+    //the first line the model has (a model's lines all share one width — the
+    //players build them from one MultichannelMutableLine<N>, or TSLine for a
+    //TurboSound pair). 0 when the model has no line at all.
+    uint_t model_channels(int m) const {
+        const Module::TrackModel::Ptr model = model_at(m);
+        if (!model) return 0;
+        const Module::PatternsSet& pats = model->GetPatterns();
+        for (uint_t p = 0, np = pats.GetSize(); p < np; ++p) {
+            const Module::Pattern::Ptr pat = pats.Get(p);
+            if (!pat) continue;
+            for (uint_t r = 0, nr = pat->GetSize(); r < nr; ++r)
+                if (const Module::Line::Ptr line = pat->GetLine(r))
+                    return line->GetChannelsCount();
+        }
+        return 0;
+    }
+
+    //Grid column of model `m`'s first channel.
+    int model_offset(int m) const {
+        int off = 0;
+        for (int i = 0; i < m && (std::size_t)i < _modelChans.size(); ++i)
+            off += (int)_modelChans[(std::size_t)i];
+        return off;
+    }
+
+    //The grid is published only when every hardware voice is covered by a
+    //track model, one column each, in order — the pattern view maps columns
+    //onto voices (mute, colour, oscilloscope). `hw / models` used to stand for
+    //the per-model width; it is wrong as soon as a multi-track container has a
+    //delegate with voices but no model (an .mtc of a PT3 and an AY register
+    //dump: 6 voices, 1 model, 3-channel lines ⇒ GetChannel(3) ⇒ boost::array
+    //assertion, app killed — 2026-10-18). Widths are now ASKED of the lines,
+    //and a container they do not account for simply has no grid.
     int pattern_channels() {
         const int models = pattern_models();
         if (models <= 0 || !_player) return 0;
         const int hw = _player->GetRenderer()->GetHWChannels();
-        if (hw <= 0 || hw % models) return 0;
+        if (hw <= 0) return 0;
         if (!pattern_orders()) return 0;
-        for (int m = 0; m < models; ++m)
+        int sum = 0;
+        for (int m = 0; m < models; ++m) {
             if (_timeline[m].empty()) return 0;
-        return hw;
+            if ((std::size_t)m >= _modelChans.size() || _modelChans[(std::size_t)m] == 0) return 0;
+            sum += (int)_modelChans[(std::size_t)m];
+        }
+        return sum == hw ? hw : 0;
     }
 
     int pattern_orders() {
@@ -464,7 +506,6 @@ public:
         if (cells > maxCells) cells = maxCells - (maxCells % chans);
         if (cells <= 0) return 0;
         const int usableRows = cells / chans;
-        const int perModel = chans / models;
         if ((std::size_t)pattern >= _posStart[0].size()) return 0;
         const uint_t base = _posStart[0][(std::size_t)pattern];
 
@@ -492,13 +533,19 @@ public:
                 if (!pat) continue;
                 const Module::Line::Ptr line = pat->GetLine(e->row);
                 if (!line) continue;
+                //Bounded by THIS line's width, never by a share of the voices:
+                //GetChannel past it is an out-of-range boost::array read.
+                const int off = model_offset(mi);
+                int width = (int)_modelChans[(std::size_t)mi];
+                if ((int)line->GetChannelsCount() < width) width = (int)line->GetChannelsCount();
+                if (off + width > chans) width = chans - off;
                 if (const uint_t tempo = line->GetTempo())
-                    for (int c = 0; c < perModel; ++c)
-                        out[(size_t)r * chans + mi * perModel + c].lineTempo = (int)tempo;
-                for (int c = 0; c < perModel; ++c) {
+                    for (int c = 0; c < width; ++c)
+                        out[(size_t)r * chans + off + c].lineTempo = (int)tempo;
+                for (int c = 0; c < width; ++c) {
                     const Module::Cell::Ptr cell = line->GetChannel((uint_t)c);
                     if (!cell) continue;
-                    ZxPatternCell &dst = out[(size_t)r * chans + mi * perModel + c];
+                    ZxPatternCell &dst = out[(size_t)r * chans + off + c];
                     if (const uint_t *v = cell->GetNote())     dst.note = (int)*v;
                     if (const uint_t *v = cell->GetSample())   dst.sample = (int)*v;
                     if (const uint_t *v = cell->GetOrnament()) dst.ornament = (int)*v;
@@ -618,6 +665,7 @@ private:
 	//YOYOFR (rewamp): the track models this instance owns, one per chip, and the
 	//tick timeline of each — see the pattern view above.
 	std::vector<Module::TrackModel::Ptr> _trackModels;
+	std::vector<uint_t> _modelChans;   //line width of each model (see model_channels)
 	std::vector<TimelineEntry> _timeline[3];
 	std::vector<uint_t>        _posStart[3];
 	uint_t                     _loopTick[3];

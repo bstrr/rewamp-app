@@ -267,6 +267,73 @@ static unsigned char* uade_max_unfill(const char* path, size_t* outSize) {
     return buf;
 }
 
+/* SoundTracker 2.6 / Ice Tracker (« MTN\0 » ou « IT10 » à l'offset $5b8) —
+ * une BOUCLE D'ÉCHANTILLON qui déborde de l'échantillon FIGE le convertisseur.
+ *
+ * UADE joue ce format par PTK-Prowiz, un binaire 68k qui le CONVERTIT en
+ * Protracker dans son InitPlayer, avant que le score ne signale le démarrage
+ * audio (`AMIGAMSG_START_OUTPUT`). Sur « Soundtracker 2.6/Starbuck/test.mod »
+ * (modland) le sample 2 porte début de boucle 36 + longueur de boucle 14110
+ * = 14146 octets pour 14126 de longueur: la conversion ne rend jamais la main
+ * (le 68k part écrire des registres au hasard — « blitter stroken »,
+ * « dsklen striken » en boucle), uadecore attend son plafond de démarrage
+ * puis l'ouverture échoue; `uade123` 3.05 amont fait exactement pareil, et
+ * son `-i` n'y change rien puisque ce n'est pas le contrôle qui refuse. Les
+ * cinq autres champs suspects du fichier (4 octets de queue, table de
+ * positions non vide après la longueur, nom d'instrument mal terminé…) ont
+ * été corrigés un à un sans effet; ramener la boucle dans l'échantillon suffit
+ * (RMS normal, aucun autre changement). Protracker, libopenmpt et libxmp
+ * tolèrent ce débordement en le tronquant: on fait pareil, dans le tampon
+ * remis à UADE — le FICHIER n'est pas modifié (son md5 est la clé du songdb).
+ * Vérifié sur trois modules ST2.6 propres de modland: aucun champ touché. */
+static bool uade_is_st26(const unsigned char* h, size_t n) {
+    return h != NULL && n >= 0x5bc &&
+           (memcmp(h + 0x5b8, "MTN\0", 4) == 0 || memcmp(h + 0x5b8, "IT10", 4) == 0);
+}
+
+/* Le fichier entier, boucles ramenées dans leur échantillon — NULL quand ce
+ * n'est pas un ST2.6 ou qu'aucune boucle ne déborde (le cas courant). */
+static unsigned char* uade_st26_clamp_loops(const char* path, size_t* outSize) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    unsigned char head[0x5bc];
+    size_t got = fread(head, 1, sizeof(head), f);
+    if (!uade_is_st26(head, got)) { fclose(f); return NULL; }
+    bool broken = false;
+    for (int i = 0; i < 31 && !broken; i++) {
+        const unsigned char* s = head + 20 + i * 30;
+        const unsigned len = (unsigned)((s[22] << 8) | s[23]);   /* en mots */
+        const unsigned rs  = (unsigned)((s[26] << 8) | s[27]);
+        const unsigned rl  = (unsigned)((s[28] << 8) | s[29]);
+        if (len > 0 && rs + rl > len) broken = true;
+    }
+    if (!broken) { fclose(f); return NULL; }
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
+    long size = ftell(f);
+    /* 31 échantillons de 64 Ko au plus, 128 positions, 256 octets par piste. */
+    if (size < 0x5bc || size > (long)(4 * 1024 * 1024)) { fclose(f); return NULL; }
+    rewind(f);
+    unsigned char* buf = (unsigned char*)malloc((size_t)size);
+    if (!buf) { fclose(f); return NULL; }
+    if (fread(buf, 1, (size_t)size, f) != (size_t)size) {
+        free(buf); fclose(f); return NULL;
+    }
+    fclose(f);
+    for (int i = 0; i < 31; i++) {
+        unsigned char* s = buf + 20 + i * 30;
+        const unsigned len = (unsigned)((s[22] << 8) | s[23]);
+        unsigned rs = (unsigned)((s[26] << 8) | s[27]);
+        unsigned rl = (unsigned)((s[28] << 8) | s[29]);
+        if (len == 0 || rs + rl <= len) continue;
+        if (rs >= len) { rs = 0; rl = 1; }      /* début hors échantillon: pas de boucle */
+        else rl = len - rs;                     /* boucle tronquée à la fin de l'échantillon */
+        s[26] = (unsigned char)(rs >> 8); s[27] = (unsigned char)rs;
+        s[28] = (unsigned char)(rl >> 8); s[29] = (unsigned char)rl;
+    }
+    *outSize = (size_t)size;
+    return buf;
+}
+
 static int uade_probe(const char* ext, const uint8_t* hdr, size_t n) {
     /* Règle NÉGATIVE, avant tout le reste: `.sng` n'est pas UNE chose. C'est
      * l'extension d'un module ZoundMonitor AMIGA (`eagleplayer.conf`,
@@ -597,7 +664,8 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
     };
 
     /* Modules RÉPARÉS en mémoire avant UADE: BP SoundMon V1 → V.2 (voir
-     * [uade_bpsm_v1_to_v2]) et Maximum Effect bourré ([uade_max_unfill]).
+     * [uade_bpsm_v1_to_v2]), Maximum Effect bourré ([uade_max_unfill]) et
+     * SoundTracker 2.6 à boucle débordante ([uade_st26_clamp_loops]).
      * NULL pour tout le reste, qui passe par le CHEMIN comme toujours.
      *
      * Les compagnons suivent dans les deux cas: `uade_play_from_buffer` garde
@@ -607,6 +675,7 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
     size_t patchedSize = 0;
     unsigned char* patched = uade_bpsm_v1_to_v2(clean, &patchedSize);
     if (!patched) patched = uade_max_unfill(clean, &patchedSize);
+    if (!patched) patched = uade_st26_clamp_loops(clean, &patchedSize);
     auto playSong = [&](struct uade_state* s) -> int {
         const int sub = subsong > 0 ? subsong : -1;
         return patched ? uade_play_from_buffer(clean, patched, patchedSize, sub, s)

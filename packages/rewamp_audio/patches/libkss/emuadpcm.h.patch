@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/modules/emu8950/emuadpcm.h	2026-07-06 09:48:52
-+++ modules/emu8950/emuadpcm.h	2026-07-06 09:44:22
+--- third_party/libkss/upstream/modules/emu8950/emuadpcm.h	2026-10-22 00:44:15
++++ third_party/libkss/modules/emu8950/emuadpcm.h	2026-10-22 00:47:45
 @@ -1,9 +1,9 @@
 -#ifndef _EMUADPCM_H_
 -#define _EMUADPCM_H_
@@ -13,7 +13,7 @@
    uint32_t clk;
  
    uint8_t reg[0x20];
-@@ -25,15 +25,15 @@
+@@ -25,19 +25,19 @@
    int32_t output[2];
    uint32_t diff;
  
@@ -38,4 +38,10 @@
 +void OPLKSS_ADPCM_resetStatus(OPLKSS_ADPCM *);
 +void OPLKSS_ADPCM_writeRAM(OPLKSS_ADPCM *, uint32_t start, uint32_t length, const uint8_t *data);
 +void OPLKSS_ADPCM_writeROM(OPLKSS_ADPCM *, uint32_t start, uint32_t length, const uint8_t *data);
+ /* Save/restore state (engine only; the RAM/ROM sample buffers are kept, not
+  * copied, so the state can be restored into a different instance). out=NULL -> size. */
+-int OPL_ADPCM_save_state(OPL_ADPCM *, uint8_t *out);
+-void OPL_ADPCM_load_state(OPL_ADPCM *, const uint8_t *in, int size);
++int OPLKSS_ADPCM_save_state(OPLKSS_ADPCM *, uint8_t *out);
++void OPLKSS_ADPCM_load_state(OPLKSS_ADPCM *, const uint8_t *in, int size);
  #endif

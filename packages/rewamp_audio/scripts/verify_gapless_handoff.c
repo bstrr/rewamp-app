@@ -8,7 +8,7 @@
 #include "rewamp_datasource.h"
 
 /* ── stubs des captures/globals ── */
-unsigned int generic_mute_mask = 0;
+int64_t generic_mute_mask = 0;   /* int64_t comme ModizerVoicesData.h: un stub plus etroit deborde */
 int64_t g_loop_fadeout_start_frame = -1;
 int64_t g_loop_fadeout_total_frames = 0;
 int64_t g_loop_fadeout_track = 0;
@@ -245,6 +245,65 @@ int main(void) {
           "la frontiere (serial) tombe au DEBUT du recouvrement");
     CHECK(total > 78000 && total < 80000,
           "duree totale = A + B - recouvrement (~79380 frames)");
+    rewamp_data_source_uninit(&ds);
+
+    /* ── cas 3b: CROSSFADE plus LONG qu'une piste — la piste courte s'entend ──
+     * A 2 s, B 0,25 s, C 1 s, fondu 1 s. Sans borne, B jouait tout entiere
+     * sous la queue de A a un gain < 0,5 puis disparaissait (jingle de Darius
+     * Gaiden sous un crossfade de 3 s). Le recouvrement est borne au QUART de
+     * chaque piste: B = 2756 trames de chaque cote, et entendue SEULE au
+     * milieu, a plein niveau. Le fondu de fin de file (C) suit la meme borne. */
+    printf("== crossfade plus long qu'une piste ==\n");
+    fake_closed = 0;
+    g_crossfade_seconds = 1.0;   /* 44100 frames */
+    FakeDec* a3b = calloc(1, sizeof *a3b);
+    a3b->left = a3b->total = 88200; a3b->value = 0.25f;
+    memset(&ds, 0, sizeof ds);
+    rewamp_data_source_init(&ds, &kFakeVt, (RewampDecoder*)a3b, fmt, NULL);
+    g_staged = 1; g_next_value = 0.75f; g_next_frames = 11025; g_next_rate = 44100;
+    int64_t s3b = rewamp_handoff_serial();
+    usleep(300000);
+    total = 0;
+    int64_t bPure = 0, cPure = 0, aPure3b = 0;
+    float vB0 = 0, vB1 = 0, vC = 0;   /* echantillons a des positions cles */
+    int64_t serialB = -1, serialC = -1;
+    int cStaged = 0;
+    for (int it = 0; it < 6000; it++) {
+        if (!cStaged && fake_closed >= 1) {   /* A ferme: B ouverte, armer C */
+            g_next_value = 0.5f; g_next_frames = 44100; g_next_rate = 44100;
+            g_staged = 1; cStaged = 1;
+        }
+        ma_uint64 got = 0;
+        ma_result r = ma_data_source_read_pcm_frames(&ds.base, buf, 512, &got);
+        for (ma_uint64 i = 0; i < got; i++) {
+            float v = buf[i * 2];
+            int64_t pos = total + (int64_t)i;
+            if (v > 0.74f && v < 0.76f) bPure++;
+            else if (v > 0.49f && v < 0.51f) cPure++;
+            else if (v > 0.24f && v < 0.26f) aPure3b++;
+            if (pos == 88200 + 300)         vB0 = v;   /* B seule: debut */
+            if (pos == 88200 + 5513 - 300)  vB1 = v;   /* B seule: fin */
+            if (pos == 88200 + 8269 + 5000) vC  = v;   /* C seule */
+        }
+        total += (int64_t)got;
+        int64_t sv = rewamp_handoff_serial();
+        if (serialB < 0 && sv == s3b + 1) serialB = total;
+        if (serialC < 0 && sv == s3b + 2) serialC = total;
+        if (r == MA_AT_END) break;
+        usleep(11000);
+    }
+    g_crossfade_seconds = 0.0;
+    printf("   (A pur=%lld B pur=%lld C pur=%lld vB=%.3f/%.3f vC=%.3f serialB=%lld serialC=%lld total=%lld)\n",
+           (long long)aPure3b, (long long)bPure, (long long)cPure, vB0, vB1, vC,
+           (long long)serialB, (long long)serialC, (long long)total);
+    CHECK(aPure3b > 88200 - 2756 - 600, "A joue seule jusqu'a un quart de B de sa fin");
+    CHECK(bPure > 11025 - 2 * 2756 - 1200, "B (0,25 s) s'entend SEULE, a plein niveau, entre ses deux recouvrements");
+    CHECK(vB0 == 0.75f && vB1 == 0.75f, "B seule a plein niveau de la fin de A au debut de C (5513 trames)");
+    CHECK(vC == 0.5f, "C seule apres son recouvrement avec B");
+    CHECK(serialB >= 88200 - 2756 - 600 && serialB <= 88200 - 2756 + 1200,
+          "la frontiere de B tombe au debut de SON recouvrement, pas a celui du fondu entier");
+    CHECK(serialC > serialB, "C prend le relais apres B");
+    CHECK(cPure > 44100 - 2756 - 11025 - 1200, "C a plein niveau hors recouvrement et fondu de fin (borne au quart)");
     rewamp_data_source_uninit(&ds);
 
     /* ── cas 4: moteur SANS FIN (SID/NSF) + fin posée par Dart ── */

@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/modules/emu2413/kss_emu2413.h	2026-07-06 09:48:52
-+++ modules/emu2413/kss_emu2413.h	2026-07-06 09:44:22
+--- third_party/libkss/upstream/modules/emu2413/kss_emu2413.h	2026-10-22 00:44:16
++++ third_party/libkss/modules/emu2413/kss_emu2413.h	2026-10-22 00:47:34
 @@ -1,5 +1,5 @@
 -#ifndef _EMU2413_H_
 -#define _EMU2413_H_
@@ -40,7 +40,7 @@
  
    /* slot output */
    int32_t output[2]; /* output value, latest and previous. */
-@@ -55,36 +55,36 @@
+@@ -55,22 +55,22 @@
  
    uint32_t update_requests; /* flags to debounce update */
  
@@ -71,10 +71,12 @@
 -typedef struct __OPLL_RateConv {
 +typedef struct __OPLLKSS_RateConv {
    int ch;
-   double timer;
-   double f_ratio;
+   uint32_t timer; /* fractional phase of the output in 0.32 fixed point */
+   uint32_t timer_step; /* fractional part of f_ratio in 0.32 fixed point */
+@@ -78,15 +78,15 @@
    int16_t *sinc_table;
-   int16_t **buf;
+   int16_t **buf; /* ring buffer of LW samples per channel, stored twice so that the latest LW samples are contiguous */
+   int *pos;
 -} OPLL_RateConv;
 +} OPLLKSS_RateConv;
  
@@ -94,7 +96,7 @@
    uint32_t clk;
    uint32_t rate;
  
-@@ -112,8 +112,8 @@
+@@ -118,8 +118,8 @@
    uint8_t short_noise;
  
    int32_t patch_number[9];
@@ -104,8 +106,8 @@
 +  OPLLKSS_PATCH patch[19 * 2];
  
    uint8_t pan[16];
-   float pan_fine[16][2];
-@@ -126,27 +126,27 @@
+   int32_t pan_fine[16][2]; /* 4.12 fixed point */
+@@ -132,27 +132,27 @@
  
    int16_t mix_out[2];
  
@@ -141,7 +143,7 @@
  
  /**
   * Set pan pot (extra function - not YM2413 chip feature)
-@@ -158,7 +158,7 @@
+@@ -164,7 +164,7 @@
   *            +-- bit 0: enable Right output
   * ```
   */
@@ -150,7 +152,7 @@
  
  /**
   * Set fine-grained panning
-@@ -166,69 +166,69 @@
+@@ -172,72 +172,72 @@
   * @param pan output strength of left/right channel.
   *            pan[0]: left, pan[1]: right. pan[0]=pan[1]=1.0f for center.
   */
@@ -195,6 +197,11 @@
   */
 -void OPLL_forceRefresh(OPLL *);
 +void OPLLKSS_forceRefresh(OPLLKSS *);
+ 
+-int OPLL_save_state(OPLL *, uint8_t *out); /* save state to out; out=NULL -> required size */
+-void OPLL_load_state(OPLL *, const uint8_t *in, int size);
++int OPLLKSS_save_state(OPLLKSS *, uint8_t *out); /* save state to out; out=NULL -> required size */
++void OPLLKSS_load_state(OPLLKSS *, const uint8_t *in, int size);
  
 -void OPLL_dumpToPatch(const uint8_t *dump, OPLL_PATCH *patch);
 -void OPLL_patchToDump(const OPLL_PATCH *patch, uint8_t *dump);

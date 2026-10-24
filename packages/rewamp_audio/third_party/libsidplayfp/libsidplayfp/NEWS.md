@@ -1,3 +1,45 @@
+3.1.1 2026-08-30
+* USBSID-Pico: Fix issue in reset and delay routine
+* Fixed serial port for test sdr-icr-test2-0_7f
+
+
+
+3.1.0 2026-08-10
+* Improved BSD support in configure script
+* Cleaned up shadow warnings
+* Support new residfp tunables
+
+
+
+3.0.2 2026-06-21
+* Fix build on older macOS (#262)
+
+
+
+3.0.1 2026-05-24
+* residfp: added library version to credits (#260)
+* Properly check for pthreads, only error out if exsid or usbsid are required
+* Updated USBSID-Pico driver
+
+
+
+3.0.0 2026-05-02
+* removed deprecated stuff and cleaned up API
+* dropped hardsid support
+* dropped resid emulation
+* added new lightweigth sid emulation based on cRSID by Mihály Horváth
+* moved residfp engine to an external library
+* improved kernal stub compatibility (#224)
+* changed the default sampling freq to 48KHz
+
+
+
+2.16.1 2026-02-15
+* Fixed MinGW build issues
+* Fixed warnings in USBSID builder
+
+
+
 2.16.0 2025-12-23
 * Fix opening STIL on MacOS (#225)
 * Expose the SID models actually used

@@ -2497,6 +2497,13 @@ class AppLocalizationsHu extends AppLocalizations {
       'A VGM-címkék japán mezőit (cím, játék, előadó) részesíti előnyben, ha léteznek.';
 
   @override
+  String get settingsVgmLoopFade => 'Elhalkulás ismétlődő számoknál';
+
+  @override
+  String get settingsVgmLoopFadeHelp =>
+      'A VGM formátum nem ismer elhalkulást: az ismétlődő szám kétszer játssza le a hurkot, majd ennyi idő alatt elhalkul. Ki = éles leállás. A hurok nélküli számok változatlanul érnek véget.';
+
+  @override
   String get localImportFolder => 'Mappa importálása';
 
   @override
@@ -3878,6 +3885,120 @@ class AppLocalizationsHu extends AppLocalizations {
   }
 
   @override
+  String get podiumBrowserTitle => 'Dobogók';
+
+  @override
+  String get podiumHubBias =>
+      'Minden szám egyszer számít, a legjobb helyezésével.';
+
+  @override
+  String get podiumRecentWinners => 'Friss győztesek';
+
+  @override
+  String get podiumRecentWinnersSubtitle =>
+      'Az utolsó két év aranyai, a legújabb compók elöl';
+
+  @override
+  String get podiumViaSelf => 'Zenei compók';
+
+  @override
+  String get podiumViaSelfSubtitle => 'A szám maga versenyzett';
+
+  @override
+  String get podiumViaProduction => 'Demózenék';
+
+  @override
+  String get podiumViaProductionSubtitle =>
+      'Az általa aláfestett demó vagy játék helyezést ért el';
+
+  @override
+  String get podiumByKind => 'Compó fajtája szerint';
+
+  @override
+  String get podiumByEra => 'Korszak szerint';
+
+  @override
+  String get podiumByParty => 'Party szerint';
+
+  @override
+  String get podiumByPartySubtitle =>
+      'Party-sorozatok érmek szerint rangsorolva';
+
+  @override
+  String get podiumTopArtists => 'A legtöbbet díjazott előadók';
+
+  @override
+  String get podiumAll => 'Minden dobogó';
+
+  @override
+  String get podiumAllSubtitle =>
+      'A legújabb compók elöl, majd helyezés szerint';
+
+  @override
+  String get podiumChipVia => 'Jelleg';
+
+  @override
+  String get podiumChipKind => 'Compó fajtája';
+
+  @override
+  String get podiumChipSeries => 'Party';
+
+  @override
+  String get podiumChipEra => 'Korszak';
+
+  @override
+  String get compoKindTracked => 'Tracked';
+
+  @override
+  String get compoKindChip => 'Chip';
+
+  @override
+  String get compoKindStreaming => 'Streaming';
+
+  @override
+  String get compoKindExecutable => 'Futtatható';
+
+  @override
+  String get compoKindOldskool => 'Oldskool';
+
+  @override
+  String get compoKindCombined => 'Vegyes';
+
+  @override
+  String get compoKindSoundtrack => 'Soundtrack';
+
+  @override
+  String get compoKindTrackedHint => 'Tracker modulok: MOD, XM, IT…';
+
+  @override
+  String get compoKindChipHint => 'Chipzene: SID, AY, NES, Game Boy…';
+
+  @override
+  String get compoKindStreamingHint => 'Streamelt hang: MP3, OGG, WAV…';
+
+  @override
+  String get compoKindExecutableHint => 'Apró program által generált zene';
+
+  @override
+  String get compoKindOldskoolHint =>
+      'Korabeli hardver vagy tracked, streaming nélkül';
+
+  @override
+  String get compoKindCombinedHint => 'Formátummegkötés nélküli compó';
+
+  @override
+  String get compoKindSoundtrackHint =>
+      'Helyezést elért demó vagy játék zenéje';
+
+  @override
+  String podiumDecadeLabel(String decade) {
+    return 'Évtized $decade';
+  }
+
+  @override
+  String get podiumSortPodium => 'A legújabb compók elöl';
+
+  @override
   String get competitionEmpty => 'Ennek a versenynek nincsenek nevezései';
 
   @override
@@ -3905,11 +4026,11 @@ class AppLocalizationsHu extends AppLocalizations {
   String get onboardingStart => 'Kezdés';
 
   @override
-  String get onboardingBetaTitle => 'Béta verzió';
+  String get onboardingWelcomeTitle => 'Üdvözöl a Rewamp';
 
   @override
-  String get onboardingBetaBody =>
-      'A Rewamp még épül. A helyi adatok — könyvtár, lejátszási listák, kedvencek, statisztikák — a 1.0-s verzió előtt törlődhetnek. A letöltéseidet nem fenyegeti veszély, de ami fontos, azt tartsd meg máshol is.';
+  String get onboardingWelcomeBody =>
+      'Lejátszó chiptune-okhoz, tracker modulokhoz és játékzenékhez — Amiga, Atari, C64, konzolok, játéktermi gépek és PC. Hallgass a nagy online archívumokból, vagy nyisd meg a saját fájljaidat.';
 
   @override
   String onboardingVersion(String version, String build) {
@@ -3941,8 +4062,7 @@ class AppLocalizationsHu extends AppLocalizations {
   String get onboardingReplayTitle => 'Bemutató';
 
   @override
-  String get onboardingReplaySubtitle =>
-      'A béta figyelmeztetés és a bemutató újranézése';
+  String get onboardingReplaySubtitle => 'A bevezető és a bemutató újranézése';
 
   @override
   String get settingsPatternTitle => 'Patternek';
@@ -4128,52 +4248,56 @@ class AppLocalizationsHu extends AppLocalizations {
   String get releaseNotesTitle => 'Újdonságok';
 
   @override
-  String get releaseNotesV9Speed =>
-      'Lejátszási sebesség 0,2× és 3× között, a Szólamok panelen. A legtöbb motor a tempót változtatja és megtartja a hangmagasságot; a többi újramintavételez.';
+  String get releaseNotesV10Loading =>
+      'A lassan betöltődő szám már nem fagyasztja le az alkalmazást: a lejátszás/szünet körüli vékony gyűrű jelzi, hogy még töltődik.';
 
   @override
-  String get releaseNotesV9Windows =>
-      'Windows: a médiabillentyűk és a rendszer médiavezérlői (hangerő-ablak, tálca) irányítják a lejátszást, a teljes képernyős vizualizáció pedig most kitölti az egész képernyőt.';
+  String get releaseNotesV10Piano =>
+      'Zongora-megjelenítő: a sok egyidejű szólamot vagy hangszert tartalmazó dalok több billentyűzetre oszlanak el.';
 
   @override
-  String get releaseNotesV9Formats =>
-      'Új lejátszók: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) és a SAM Coupé .cop programjai.';
+  String get releaseNotesV10Amiga =>
+      'Amiga: a StoneTracker, a SUNtronic (TSM-ripek) és további Soundtracker 2.6 modulok már lejátszhatók, a SoundPlayer dalok pedig iOS-en is szólnak.';
 
   @override
-  String get releaseNotesV9Amiga =>
-      'Amiga és Atari ST: a SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory és egyes Maximum Effect modulok mostantól lejátszhatók.';
+  String get releaseNotesV10ZxSpectrum =>
+      'ZX Spectrum: a zxart .mt3 fájljai lejátszhatók, Linuxon pedig elérhetők a ZXTune formátumok és a SAM Coupé .cop programok.';
 
   @override
-  String get releaseNotesV9MoonBlaster =>
-      'MSX MoonBlaster: a dalok betöltik a mintakészletüket ahelyett, hogy zajt játszanának, és a szerkesztő módban mentett fájlok helyesen szólnak.';
+  String get releaseNotesV10OpenWith =>
+      'macOS és iOS: minden támogatott formátum megjelenik a „Megnyitás ezzel” menüben.';
 
   @override
-  String get releaseNotesV9HideElsewhere =>
-      'Könyvtár: „Az ezen az eszközön nem lévő elemek elrejtése” elrejti azokat a helyi bejegyzéseket, amelyek fájlja egy másik eszközön van.';
+  String get releaseNotesV10MtcCrash =>
+      'Javítva: egyes, PT3-at TFM-mel vagy PSG-vel keverő .mtc fájlok összeomlasztották az alkalmazást.';
 
   @override
-  String get releaseNotesV9ArtworkFullscreen =>
-      'A lejátszóban a borítóra hosszan nyomva teljes képernyőn jelenik meg.';
+  String get releaseNotesV10Podiums =>
+      'Új „Dobogók” böngésző: a demoszcéna versenyeinek győztesei party, év vagy compo-típus szerint, dicsőségcsarnokkal.';
 
   @override
-  String get releaseNotesV9Viz =>
-      'Vizualizációk: alapértelmezésben szólamonkénti oszcilloszkóp (vonalspektrum a streamelt formátumokhoz), a rács és a szólamnevek az oszcilloszkópról kapcsolhatók, és stabilabb sztereó oszcilloszkóp.';
+  String get releaseNotesV10Arcade =>
+      'Arcade: az Ensoniq ES5505/ES5506 zene (Taito F3…) lejátszható, az Apple IIGS VGM-fájlok már nem omlasztják össze az alkalmazást, és a motorok frissek (új: FM-Kingtracker .fmk).';
 
   @override
-  String get releaseNotesV9PsfTrack =>
-      'Javítva: egyes PSF-albumok egy számára koppintva egy másik szólalhatott meg.';
+  String get releaseNotesV10InfoPanel =>
+      'Információs panel: formátum, motor, csatornák és hurokpontok elöl, a mezőnevek kiemelve.';
 
   @override
-  String get releaseNotesV9Playlists =>
-      'Egy több lejátszási listát tartalmazó mappa mostantól egyetlen albumot alkot az összes számukkal, ismétlődés nélkül.';
+  String get releaseNotesV10LocalAlbums =>
+      'Az album- és alszám-képernyő mutatja a gyűjteményt; egy behúzott archívum minden számát listázza, „helyi” jelölést kap, és cseréje után már nem jelenik meg kétszer.';
 
   @override
-  String get releaseNotesV9AmigaInfo =>
-      'Az ismeretlen hosszúságú vagy szerzőjű Amiga-dalok egy hét után újra lekérdezik a szervert, ahelyett hogy soha többé nem tennék.';
+  String get releaseNotesV10Crossfade =>
+      'Javítva: átúsztatással az átúsztatásnál rövidebb szám nem hallatszott.';
+
+  @override
+  String get releaseNotesV10Artwork =>
+      'Javítva: a szerveren lecserélt borító mindenhol megjelenik a „Fájl újraletöltése” után.';
 
   @override
   String get releaseNotesDataReset =>
-      'A helyi adatok törlődtek ehhez a bétához. A könyvtár és a lejátszási listák a fiókból épülnek újra; a letöltéseket meg kell ismételni.';
+      'A helyi adatok törlődtek ehhez a verzióhoz. A könyvtár és a lejátszási listák a fiókból épülnek újra; a letöltéseket meg kell ismételni.';
 
   @override
   String get releaseNotesDismiss => 'Tovább';

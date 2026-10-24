@@ -38,7 +38,7 @@ class WavGen
 public:
     WavGen(settings *s, unsigned char *regs);
     void reset();
-    wg_output_t clock(ADSR *adsr);
+    wg_output_t clock(const ADSR *adsr);
 
     inline unsigned char getOsc3() const { return oscReg; }
     inline unsigned char getEnv3() const { return envReg; }
@@ -46,8 +46,8 @@ public:
     int  ChannelFreq[3]; //YOYOFR
     int  ChannelEnv[3]; //YOYOFR
 private:
-    unsigned char *regs;
-    settings      *s;
+    unsigned char *m_regs;
+    settings      *m_settings;
 
     int           PhaseAccu[3];       // 28bit precision instead of 24bit
     int           PrevPhaseAccu[3];   // (integerized ClockRatio fractionals, WebSID has similar solution)

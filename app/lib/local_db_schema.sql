@@ -1,5 +1,5 @@
 -- ============================================================
--- Rewamp — schéma SQLite local (sur l'appareil) — version 77
+-- Rewamp — schéma SQLite local (sur l'appareil) — version 78
 -- ============================================================
 --
 -- ⚠️ CE FICHIER EST UNE DOCUMENTATION, généré depuis `_kSchemaStatements`
@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS tracks (
     ext_key          TEXT,
     local_rel_path   TEXT,
     local_origin     TEXT,        -- (mig 45) identité hors catalogue du fichier
+    -- (mig 78) empreinte du fichier à sa dernière lecture (hors catalogue):
+    -- taille, mtime en ms, CRC32 de son début et de sa fin.
+    file_size        INTEGER,
+    file_mtime_ms    INTEGER,
+    file_crc         INTEGER,
     UNIQUE (file_path, entry_path, subsong_idx)
   );
 

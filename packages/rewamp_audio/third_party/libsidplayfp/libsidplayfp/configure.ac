@@ -1,6 +1,6 @@
 m4_define([lib_major], [3])
-m4_define([lib_minor], [0])
-m4_define([lib_level], [0a])
+m4_define([lib_minor], [1])
+m4_define([lib_level], [1])
 m4_define([lib_version], [lib_major.lib_minor.lib_level])
 
 AC_PREREQ([2.62])
@@ -87,34 +87,31 @@ AC_CHECK_DECL(
     [AC_CHECK_FUNCS([strncasecmp])]
 )
 
-AC_CHECK_PROGS([XA], [xa])
+AC_CHECK_PROGS([XA], [xa xa65])
 
-# od on macOS doesn't support the -w parameter
-AC_CACHE_CHECK([for od that supports -w], [ac_cv_path_OD],
-  [AC_PATH_PROGS_FEATURE_CHECK([OD], [od god],
-    [[$ac_path_OD -w > /dev/null 2>&1 && ac_cv_path_OD=$ac_path_OD ac_path_OD_found=:]])]
-)
-AC_SUBST([OD], [$ac_cv_path_OD])
-
-AX_PTHREAD([], [AC_MSG_ERROR("pthreads not found")])
+AC_CHECK_PROGS([OD], [od god])
 
 dnl libtool-style version-info number
 #
-# https://autotools.io/libtool/version.html
+# https://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 #
-# Always increase the revision value.
+# Update the version information only immediately before a public release of your software.
 #
-# Increase the current value whenever an interface has been added, removed or changed.
+# If the library source code has changed at all since the last update, then increment revision.
 #
-# Increase the age value only if the changes made to the ABI are backward compatible.
+# If any interfaces have been added, removed, or changed since the last update, increment current, and set revision to 0.
+#
+# If any interfaces have been added since the last public release, then increment age.
+#
+# If any interfaces have been removed or changed since the last public release, then set age to 0.
 
-LIBSIDPLAYCUR=13
-LIBSIDPLAYREV=44
-LIBSIDPLAYAGE=7
+LIBSIDPLAYCUR=15
+LIBSIDPLAYREV=1
+LIBSIDPLAYAGE=8
 LIBSIDPLAYVERSION=$LIBSIDPLAYCUR:$LIBSIDPLAYREV:$LIBSIDPLAYAGE
 
 LIBSTILVIEWCUR=0
-LIBSTILVIEWREV=7
+LIBSTILVIEWREV=8
 LIBSTILVIEWAGE=0
 LIBSTILVIEWVERSION=$LIBSTILVIEWCUR:$LIBSTILVIEWREV:$LIBSTILVIEWAGE
 
@@ -191,7 +188,7 @@ AC_ARG_ENABLE([tests],
 AM_CONDITIONAL([ENABLE_TEST], [test x$enable_tests = xyes])
 
 PKG_CHECK_MODULES([RESIDFP],
-    [libresidfp >= 0.9],
+    [libresidfp >= 1.0.0],
     [AC_DEFINE([HAVE_RESIDFP], 1, [Define to 1 if you have libresidfp (-lresidfp).])],
     [AC_MSG_WARN([$RESIDFP_PKG_ERRORS])]
 )
@@ -202,6 +199,13 @@ AC_SUBST(HAVE_BUILTIN_EXPECT)
 
 AC_SUBST(LIBSIDPLAYVERSION)
 AC_SUBST(LIBSTILVIEWVERSION)
+
+# used by exsid and usbsid
+AX_PTHREAD(
+    [AC_DEFINE([EXSID_THREADED], 1, [Define for threaded driver])]
+    [AC_DEFINE([HAVE_PTHREAD_H], 1, [Define to 1 if you have pthread.h])]
+    [have_pthreads=yes]
+)
 
 # USBSID support
 AC_ARG_WITH(
@@ -226,7 +230,7 @@ AS_IF(
                 build_usbsid_builder=yes
                 build_usbsid_driver=yes
                 AC_MSG_RESULT([yes])],
-                [AC_MSG_WARN([libsub.h not found, support will not be available])]
+                [AC_MSG_WARN([libusb.h not found, support will not be available])]
             )]
 
        )]
@@ -235,6 +239,11 @@ AS_IF(
 AS_IF(
     [test "x$with_usbsid" = "xyes" -a "x$build_usbsid_builder" != xyes],
     [AC_MSG_ERROR([libusb not found])]
+)
+
+AS_IF(
+    [test "x$with_usbsid" = "xyes" -a "x$have_pthreads" != xyes],
+    [AC_MSG_ERROR([pthreads not found])]
 )
 
 AC_SUBST([USBSID_CFLAGS])
@@ -286,22 +295,24 @@ AS_IF(
     [AC_MSG_ERROR([Neither libexsid nor ftd2xx nor libftdi1 found])]
 )
 
+AS_IF(
+    [test "x$with_exsid" = "xyes" -a "x$have_pthreads" != xyes],
+    [AC_MSG_ERROR([pthreads not found])]
+)
+
 AC_SUBST([FTDI_CFLAGS])
 
 AM_CONDITIONAL([EXSID_SUPPORT], [ test "x${build_exsid_builder}" = xyes])
 AM_CONDITIONAL([EXSID_DRIVER], [ test "x${build_exsid_driver}" = xyes])
 
-# check for thread model if available
-AS_IF([test "x$build_exsid_driver" = xyes],
-        [AX_PTHREAD(
-                [AC_DEFINE([EXSID_THREADED], 1, [Define for threaded driver])]
-                [AC_DEFINE([HAVE_PTHREAD_H], 1, [Define to 1 if you have pthread.h])]
-        )]
-)
-
 eval loadable_shrext=$shrext_cmds
 AC_DEFINE_UNQUOTED([SHLIBEXT], ["${loadable_shrext}"], [Shared library extension])
 
+
+# for demo
+DEMO_HEADERS=1
+AC_CHECK_HEADERS([fcntl.h sys/soundcard.h sys/ioctl.h unistd.h], [], [DEMO_HEADERS=0])
+AM_CONDITIONAL([BUILD_DEMO], [test "$DEMO_HEADERS" -eq 1])
 
 AC_CONFIG_FILES([
 Makefile

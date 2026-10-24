@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/kss/mpk2kss.c	2026-07-06 09:48:52
-+++ src/kss/mpk2kss.c	2026-07-06 09:44:22
+--- third_party/libkss/upstream/src/kss/mpk2kss.c	2026-10-22 00:44:16
++++ third_party/libkss/src/kss/mpk2kss.c	2026-10-22 00:44:21
 @@ -22,7 +22,7 @@
      0xCD, 0x10, 0x40, /* CALL 04010H */
      0x3E, 0x01,       /* LD A,01H */

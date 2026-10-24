@@ -1,0 +1,163 @@
+Short:        Full, free edition of StoneTracker; disk 1/3
+Author:       emarty@nexwave-solutions.com (Emmanuel Marty), michael@deibus.com (Michael Lavaire)
+Uploader:     emarty nexwave-solutions com (Emmanuel Marty)
+Type:         mus/edit
+Version:      1.26-full
+Replaces:     stone126.lha
+Architecture: m68k-amigaos
+
+Welcome to the full-featured yet free edition of StoneTracker.
+
+This is a music composing program, belonging to the "tracker" kind.
+Back then, before MP3, CD music and other formats, it was the popular
+way of packaging demo and game tracks.
+
+This Amiga software was written by Michael Lavaire and myself (Emmanuel
+Marty) in 1994-1995, and sold through a reseller, Quartz, in
+1995-96. A demo (with file saving code removed) has been available
+on Aminet since then. Today is february 2001. By popular demand,
+and as a tribute to the still active Amiga communauty, the full
+program is re-released for free, where the demo always was, on
+Aminet. Michael has been contacted and also agreed to this release.
+
+StoneTracker is comparable in concept to earlier work such as ProTracker,
+NoiseTracker, Art Of Noise, Octamed and others, although everything has
+been written from scratch.
+
+The main features, taken from the original README, are :
+
+        - System friendly, OS 2.0 look compliance (adding our personal
+          touch), no enforcer hit!, installs as a commodity, AppIcon,
+          AppMenuItem... Allocates channels, can deallocate without
+          quitting. Compatible with all screens (PAL, VGA, multisync..)
+          Makes use of the best features of AmigaOS and puts you in
+          a safe environment.
+
+        - Locale support. English and French are available. Feel free to
+          add more.
+
+        - "Everything on screen" and ergonomic user interface, designed
+          together with a tracker musician. Protection against unwanted
+          actions.
+
+        - Full-featured AREXX port
+
+        - Extreme configurability.
+
+        - Noise/ProTracker keyboard shortcuts emulation.
+
+        - Custom module format, allows compression of sample banks with
+          three different and dedicated methods.
+
+        - Import of 13 existing formats (e.g. ProTracker, FastTracker,
+          OctaMed, Oktalyzer, ThePlayer...)
+
+        - Export of ProTracker and FastTracker formats in addition to
+          its own format (full version only)
+
+        - XPK support. Passwords supported.
+
+        - XFD support (allows for decrunching of more than 100 packers,
+          like CrunchMania, StoneCracker...).
+
+        - Built-in decompression routines for Powerpacker and
+          CrunchMania (if XFD is not available).
+
+        - Multi-song: 65.535 possible ! Available song-syncing
+          commands in the player for interactive music.
+
+        - Up to 65.535 patterns! Shared between songs.
+
+        - Patterns seperated for each track, allowing you, for insta,ce
+          to reuse beats, or a bass line, from a position to another !
+          Command for "remapping" duplicate patterns in imported
+          modules that don't have this feature (ex. ProTracker), saving
+          a lot of memory.
+
+        - Up to 255 samples! Can be loaded in FAST memory : no size
+          limit except the size of your fastmem.
+
+        - 4 ("native") tracks or 5,6,7,8 tracks, all with configurable
+          mixing quality, from 4 to 50 Khz (28 Khz on PAL/NTSC "basic"
+          displays). All effects can be used in all modes, no
+          restrictions! Mixing technique is more alike TFMX than OctaMed
+          or ArtOfNoise resulting in high quality sound. Each song
+          can have its own number of tracks, and you can jump from
+          one song in 4 tracks to one in 7, for instance, without hearing a
+          single glitch in the sound.
+
+        - Each track has its own volume. General volume for the music.
+          Master volume on top of all controlled by the programmer.
+
+        - Loads samples in CHIP or FAST memory, makes no difference.
+
+        - Up to SEVEN effects per note per track!
+
+        - Special "FX" track with up to EIGHT effects per line,
+          dedicated to speed and general control commands.
+
+        - Extended effects!
+
+        - Effect for syncing your program to the music (calls a user
+          function when this effect is reached). Ideal for game intros,
+          demos, etc.
+
+        - Command for MIXING a position into a sample ! Make your arpeggios,
+          drums or whatever...
+
+        - Command for timing a song; no need to play the whole song to know
+          its duration anymore.
+
+        - Highly optimized routines for playing and mixing.
+
+        - Player is an AmigaOS shared library, used even by the editor!
+
+        - AmigaGuide Documentation in English and French (German planned).
+
+        - Nice example musics in 4 to 8 tracks, composed by Jerôme
+          Angelot, the musician who helped us designing this tracker.
+          (more musics in the full version)
+
+        - Harddisk-installation Installer script provided.
+
+        - Full developer documentation for player and file format, with
+          examples in Assembler and C, link library for SAS; you can
+          use the player library or include the player in your
+          programs ("system friendly" and "no operating system" (for
+          games and demos) versions provided)
+
+        - Players for DeliTracker and EaglePlayer, as well as independant
+          player.
+
+        - Editor, player and packers fully programmed in Assembler.
+
+        - Constant support. Most user requests have been satisfied yet and
+          we will continue to do so.
+
+This re-release also includes modules that weren't part of the
+original distribution. Composed by Mytholog using StoneTracker,
+they make full use of the special features available in the program.
+We hope you enjoy them, and send our thanks to the author, after
+so many years.
+
+We hope this full release will be appreciated by the undying Amiga
+enthusiasts. Feel free to provide these archives for download on
+your own site, as long as you retain this document.
+
+I recommend the following site as an excellent source of information
+about trackers and music formats (including StoneTracker):
+http://hangar18.campus.luth.se/exotica/
+
+Thanks to Michael <michael@deibus.com> for agreeing on this
+re-release; good luck with your life.
+
+Thanks to :
+  Nicolas Daire <ndaire@ubisoft.fr>
+  Laurent Clevy <lclevy@club-internet.fr>
+for bugging me enough for me to clean the dust off my Amiga and
+generate this re-release.
+
+--
+Emmanuel Marty <emarty@nexwave-solutions.com>
+Montpellier, France
+February 12, 2001

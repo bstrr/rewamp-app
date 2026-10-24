@@ -39,8 +39,6 @@
 #define RAM_SIZE (256 * 1024)
 #define ROM_SIZE (256 * 1024)
 
-FILE *fp;
-
 OPLKSS_ADPCM *OPLKSS_ADPCM_new(uint32_t clk) {
   OPLKSS_ADPCM *_this;
 
@@ -95,6 +93,28 @@ void OPLKSS_ADPCM_reset(OPLKSS_ADPCM *_this) {
   _this->wave = _this->memory[0];
   _this->play_addr_mask = _this->reg[0x08] & R08_64K ? (1 << 17) - 1 : (1 << 19) - 1;
   _this->output[0] = _this->output[1] = 0;
+}
+
+int OPLKSS_ADPCM_save_state(OPLKSS_ADPCM *_this, uint8_t *out) {
+  /* Engine state only; the 256K RAM/ROM sample buffers are loaded once and not
+   * part of the snapshot (see OPLKSS_ADPCM_load_state, which keeps this instance's). */
+  if (out)
+    memcpy(out, _this, sizeof(OPLKSS_ADPCM));
+  return (int)sizeof(OPLKSS_ADPCM);
+}
+
+void OPLKSS_ADPCM_load_state(OPLKSS_ADPCM *_this, const uint8_t *in, int size) {
+  if (size < (int)sizeof(OPLKSS_ADPCM))
+    return;
+  /* keep this instance's own RAM/ROM buffers across the copy */
+  uint8_t *ram = _this->memory[0];
+  uint8_t *rom = _this->memory[1];
+  memcpy(_this, in, sizeof(OPLKSS_ADPCM));
+  _this->memory[0] = ram;
+  _this->memory[1] = rom;
+  /* `wave` is the RAM/ROM base selected by reg 0x08 — re-point at this instance's
+   * buffers so a snapshot restored into a different instance is valid. */
+  _this->wave = (_this->reg[0x08] & R08_ROM) ? _this->memory[1] : _this->memory[0];
 }
 
 #define DELTA_ADDR_MAX (1 << 16)
@@ -161,11 +181,14 @@ int16_t OPLKSS_ADPCM_calc(OPLKSS_ADPCM *_this) {
   if (_this->reg[0x07] & R07_SP_OFF)
     return 0;
 
+  if (!_this->play_start)
+    return 0;
+
   return calc(_this);
 }
 
 /* mode= 0:RAM256k 1:ROM 2:RAM64k */
-uint32_t decode_start_address(uint8_t mode, uint8_t l, uint8_t h) {
+static uint32_t decode_start_address(uint8_t mode, uint8_t l, uint8_t h) {
   switch (mode) {
   case 0:
     return ((h << 8) | l) << 2;
@@ -174,7 +197,7 @@ uint32_t decode_start_address(uint8_t mode, uint8_t l, uint8_t h) {
   }
 }
 
-uint32_t decode_stop_address(uint8_t mode, uint8_t l, uint8_t h) {
+static uint32_t decode_stop_address(uint8_t mode, uint8_t l, uint8_t h) {
   switch (mode) {
   case 0:
     return (((h << 8) | l) << 2) | 3;
@@ -201,6 +224,8 @@ void OPLKSS_ADPCM_writeReg(OPLKSS_ADPCM *_this, uint32_t adr, uint32_t data) {
       _this->output[1] = 0;
       _this->diff = DDEF;
       _this->status |= STATUS_PCM_BSY; 
+    } else {
+      _this->play_start = 0;
     }
     _this->reg[0x07] = data;
     break;

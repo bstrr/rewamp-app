@@ -82,7 +82,11 @@ struct RewampDecoder {
     uint8_t  envShape[PT3_MAX_CHIPS];
 };
 
-static const char* const kPt3Exts[] = { "pt3", NULL };
+// `.mt3`: zxart range sous cette extension des modules PT3 ordinaires
+// (ProTracker 3.x / Vortex Tracker II, TurboSound compris) — tous ceux de
+// Chaos Constructions 2012-2013 (les 12 de zxart, typés PT3/TS par zxart
+// lui-même) vérifiés à verify_pt3_patterns.sh. Même format, autre nom.
+static const char* const kPt3Exts[] = { "pt3", "mt3", NULL };
 
 static int pt3_probe(const char* ext, const uint8_t* h, size_t n) {
     (void)h; (void)n;

@@ -1,5 +1,5 @@
---- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/modules/emu8950/emu8950.h	2026-07-06 09:48:52
-+++ modules/emu8950/emu8950.h	2026-07-06 09:44:22
+--- third_party/libkss/upstream/modules/emu8950/emu8950.h	2026-10-22 00:44:15
++++ third_party/libkss/modules/emu8950/emu8950.h	2026-10-22 00:47:34
 @@ -1,5 +1,5 @@
 -#ifndef _EMU8950_H_
 -#define _EMU8950_H_
@@ -8,7 +8,7 @@
  
  #include "emuadpcm.h"
  #include <stdint.h>
-@@ -8,40 +8,40 @@
+@@ -8,25 +8,25 @@
  extern "C" {
  #endif
  
@@ -44,10 +44,12 @@
 -typedef struct __OPL_RateConv {
 +typedef struct __OPLKSS_RateConv {
    int ch;
-   double timer;
-   double f_ratio;
+   uint32_t timer; /* fractional phase of the output in 0.32 fixed point */
+   uint32_t timer_step; /* fractional part of f_ratio in 0.32 fixed point */
+@@ -34,16 +34,16 @@
    int16_t *sinc_table;
-   int16_t **buf;
+   int16_t **buf; /* ring buffer of LW samples per channel, stored twice so that the latest LW samples are contiguous */
+   int *pos;
 -} OPL_RateConv;
 +} OPLKSS_RateConv;
  
@@ -68,7 +70,7 @@
    uint8_t number;
  
    /* type flags:
-@@ -51,8 +51,8 @@
+@@ -53,8 +53,8 @@
     */
    uint8_t type;
  
@@ -79,7 +81,7 @@
  
    /* slot output */
    int32_t output[2]; /* output value, latest and previous. */
-@@ -77,13 +77,13 @@
+@@ -79,13 +79,13 @@
  
    uint32_t update_requests; /* flags to debounce update */
  
@@ -97,7 +99,7 @@
    uint32_t clk;
    uint32_t rate;
  
-@@ -116,7 +116,7 @@
+@@ -122,7 +122,7 @@
    uint32_t noise;
    uint8_t short_noise;
  
@@ -106,7 +108,7 @@
    uint8_t ch_alg[9]; // alg for each channels
  
    uint8_t pan[16];
-@@ -132,7 +132,7 @@
+@@ -138,7 +138,7 @@
  
    int16_t mix_out[2];
  
@@ -115,7 +117,7 @@
  
    uint32_t timer1_counter; //  80us counter
    uint32_t timer2_counter; // 320us counter
-@@ -142,30 +142,30 @@
+@@ -148,30 +148,30 @@
    void (*timer2_func)(void *user);
    uint8_t status;
  
@@ -154,7 +156,7 @@
  
  /** 
   * Set pan pot (extra function - not YM2413 chip feature)
-@@ -177,7 +177,7 @@
+@@ -183,7 +183,7 @@
   *            +-- bit 0: enable Right output
   * ```
   */
@@ -163,7 +165,7 @@
  
  /**
   * Set fine-grained panning
-@@ -185,42 +185,42 @@
+@@ -191,42 +191,42 @@
   * @param pan output strength of left/right channel. 
   *            pan[0]: left, pan[1]: right. pan[0]=pan[1]=1.0f for center.
   */
@@ -222,7 +224,7 @@
   * @returns
   * 76543210
   * |||||  +- D0: PCM/BSY
-@@ -230,16 +230,16 @@
+@@ -236,24 +236,24 @@
   * |+------- D6: TIMER1
   * +-------- D7: IRQ
   */
@@ -231,6 +233,17 @@
  
 -void OPL_writeADPCMData(OPL *opl, uint8_t type, uint32_t start, uint32_t length, const uint8_t *data);
 +void OPLKSS_writeADPCMData(OPLKSS *opl, uint8_t type, uint32_t start, uint32_t length, const uint8_t *data);
+ 
+-/* Save/restore the emulator state. Serialises the OPL core plus the Y8950 ADPCM
++/* Save/restore the emulator state. Serialises the OPLKSS core plus the Y8950 ADPCM
+  * engine state (a separately malloc'd object). The 256K ADPCM RAM/ROM buffers
+  * are NOT included — they are treated as constant sample data loaded once. A
+  * load keeps this instance's live RAM/ROM (and conv) allocations. out=NULL
+  * returns the required size. */
+-int OPL_save_state(OPL *opl, uint8_t *out);
+-void OPL_load_state(OPL *opl, const uint8_t *in, int size);
++int OPLKSS_save_state(OPLKSS *opl, uint8_t *out);
++void OPLKSS_load_state(OPLKSS *opl, const uint8_t *in, int size);
  
  /* for compatibility */
 -#define OPL_set_rate OPL_setRate

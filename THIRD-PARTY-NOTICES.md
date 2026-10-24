@@ -23,7 +23,7 @@ and for the two that constrain what may be redistributed.
 
 ## Playback engines (45)
 
-1248 file extensions across all of them.
+1250 file extensions across all of them.
 
 | Engine | Licence | Authors | Role |
 | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ and for the two that constrain what may be redistributed.
 | [vio2sf (Cog / melonDS)](https://github.com/losnoco/Cog) | GPL-3.0 | Chris Moeller (kode54) ; melonDS : Arisotura | Nintendo DS .2sf/.mini2sf |
 | [ZXTune](https://zxtune.bitbucket.io/) | GPL-3.0 | Vitamin/CAIG | ZX Spectrum / AY (.ay/.vtx/.pt3/.stc/…) + .chp |
 
-## Bundled components (22)
+## Bundled components (23)
 
 Everything the binary redistributes that is not a decoder:
 archive handling, the visualizer, fonts, shaders, data sets.
@@ -97,6 +97,7 @@ archive handling, the visualizer, fonts, shaders, data sets.
 | [ProWizard (libxmp)](https://xmp.sourceforge.net/) | MIT | Claudio Matsuoka ; ProWizard : Sylvain 'Asle' Chipaux |
 | [ScummVM (table MT-32 → General MIDI)](https://github.com/scummvm/scummvm) | GPL-2.0-or-later | ScummVM team |
 | [stb_truetype (rastérisation)](https://github.com/nothings/stb) | domaine public / MIT | Sean Barrett |
+| [StoneTracker (stonepacker.library)](https://aminet.net/package/mus/edit/stonefree1) | gratuiciel, redistribution libre avec son readme | Michael Lavaire, Emmanuel Marty |
 | [UnRAR](https://www.rarlab.com/license.htm) | licence UnRAR (décompression uniquement) | Alexander Roshal |
 | [unscii-16 (police bitmap)](http://viznut.fi/unscii/) | domaine public / CC0 | Viznut |
 | [webUADE (patches audio.device)](https://www.wothke.ch/) | GPL-2.0 | Jürgen Wothke |

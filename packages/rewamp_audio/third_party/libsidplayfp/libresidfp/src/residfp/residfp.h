@@ -78,11 +78,21 @@ public:
     /**
      * 16-bit input (EXT IN). Write 16-bit sample to audio input. NB! The caller
      * is responsible for keeping the value within 16 bits. Note that to mix in
-     * an external audio signal the signal should be resampled to 1MHz first.
+     * an external audio signal the signal should be resampled to ~1MHz first.
      *
      * @param value input level to set
      */
     void input(int value);
+
+    /**
+     * Read registers without altering state.
+     *
+     * @param offset SID register to read
+     * @return value read from chip
+     *
+     * @since 1.1
+     */
+    unsigned char peek(int offset) const;
 
     /**
      * Read registers.
@@ -147,13 +157,41 @@ public:
 
     /**
      * Clock SID forward producing audio
-     * using chosen output sampling algorithm.
+     * using chosen output resampling algorithm.
      *
-     * @param cycles c64 clocks to clock
+     * @note
+     * User must make sure to have enough space
+     * for the buffer.
+     * The number of samples produced can be approximated
+     * with this formula:
+     * std::ceil(cycles/clockFrequency*samplingFrequency)
+     *
+     * @param cycles c64 clocks to run
      * @param buf audio output buffer
-     * @return number of samples produced
+     * @return number of 16bit samples produced
      */
     int clock(unsigned int cycles, short* buf);
+
+    /**
+     * Clock SID forward producing audio
+     * using chosen output resampling algorithm.
+     *
+     * @param buf audio output buffer
+     * @param bufSize the buffer size as number of 16bit samples
+     * @return number of c64 clocks run
+     */
+    int clock(short* buf, int bufSize);
+
+    /**
+     * Clock SID forward with no audio production.
+     * Only the digital parts are emulated,
+     * the analog stage is ignored.
+     *
+     * @param cycles c64 clocks to clock.
+     *
+     * @since 1.1
+     */
+    void clockDigital(unsigned int cycles);
 
     /**
      * Clock SID forward with no audio production.
@@ -175,7 +213,7 @@ public:
     void setFilter6581Curve(double filterCurve);
 
     /**
-    * Set filter range parameter for 6581 model
+    * Set filter range parameter for 6581 model.
     *
     * @see Filter6581::setFilterRange(double)
     */
@@ -194,6 +232,84 @@ public:
      * @param enable false to turn off filter emulation
      */
     void enableFilter(bool enable);
+
+    /**
+     * Enable/disable old caps for 6581 model.
+     * When enabled the filter cutoff is lower.
+     *
+     * @param enable true to enable old 2200pF caps used on ASSY 326298
+     *               false to use the standard 470pF caps. (default off)
+     */
+    void enableOld6581caps(bool enable);
+
+    /**
+     * Set paddle coordinates.
+     *
+     * @since 1.1
+     */
+    void setPaddle(unsigned char x, unsigned char y);
+
+    /**
+     * Get the save-state size in bytes.
+     *
+     * @note: the size may depend on configuration.
+     *
+     * @since 1.1
+     */
+    int stateSize() const;
+
+    /**
+     * Save current state.
+     *
+     * @note: the save state is not portable across different builds
+     * and may change in future versions.
+     *
+     * @param buffer the buffer where state will be saved to
+     * @param size size of the buffer in bytes
+     *
+     * @since 1.1
+     */
+    int saveState(char* buffer, int size) const;
+
+    /**
+     * Restore saved state.
+     *
+     * @param buffer the buffer containig the saved state
+     * @param size size of the buffer in bytes
+     *
+     * @since 1.1
+     */
+    void restoreState(char* buffer, int size);
+
+    /**
+     * Set the DAC leakage level.
+     * Affects the envelope and waveforms.
+     *
+     * @param level the leakage level, between 0 (no leakage) and 1 (standard leakage) (default 1.0)
+     *
+     * @since 1.2
+     */
+    void setDacLeakage(double level);
+
+    /**
+     * Set the 6581 wave offset.
+     * Affects the volume of digi samples.
+     *
+     * @param offset the waveform offset, between 0 (average digis) and 1 (loud digis) (default 1.0)
+     *
+     * @since 1.2
+     */
+    void setOffset6581(double offset);
+
+    /**
+     * Set the DC-Blocker resistance.
+     * Affects the highpass cutoff frequency.
+     *
+     * @param res the resistance value, between 0 (10KOhm => ~1.6Hz) and 1 (1KOhm => ~16Hz) (default 0.0)
+     *
+     * @since 1.2
+     */
+    void setDCBRes(double res);
 };
 
 }

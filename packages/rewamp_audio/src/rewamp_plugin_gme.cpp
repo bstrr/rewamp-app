@@ -214,6 +214,12 @@ static RewampDecoder* gme_open_fn(const char* path, RewampAudioFormat* outFormat
                 rewamp_track_message_append("%s: %s\n",
                                             kFields[k].label, kFields[k].v);
         }
+        /* intro_length / loop_length: -1 quand le format ne les connaît pas
+         * (seuls quelques-uns les portent — en-tête VGM/GYM, tag SPC). */
+        if (info->loop_length > 0)
+            rewamp_track_message_append_loop(
+                (info->intro_length > 0 ? info->intro_length : 0) / 1000.0,
+                info->loop_length / 1000.0, -1, -1);
         if (info->comment && info->comment[0])
             rewamp_track_message_append("\n%s\n", info->comment);
         gme_free_info(info);

@@ -32,6 +32,7 @@
 
 #include "sidcxx11.h"
 
+#include <cmath>
 #include <ctime>
 
 namespace libsidplayfp
@@ -56,6 +57,9 @@ const char ERR_UNSUPPORTED_SIZE[]     = "SIDPLAYER ERROR: Size of music data exc
 const char ERR_INVALID_PERCENTAGE[]   = "SIDPLAYER ERROR: Percentage value out of range.";
 const char ERR_BAD_BUF_SIZE[]         = "SIDPLAYER ERROR: Bad buffer size";
 const char ERR_INVALID_CONF[]         = "SIDPLAYER ERROR: Invalid configuration";
+
+// Limit to roughly 20ms
+constexpr unsigned int MAX_CYCLES = 20000;
 
 /**
  * Configuration error exception.
@@ -243,11 +247,9 @@ int Player::play(unsigned int cycles)
         return -1;
     }
 
-    // Limit to roughly 20ms
-    constexpr unsigned int max_cycles = 20000;
-    if (cycles > max_cycles)
+    if (cycles > MAX_CYCLES)
     {
-        cycles = max_cycles;
+        cycles = MAX_CYCLES;
     }
 
     try
@@ -363,9 +365,6 @@ bool Player::config(const SidConfig &cfg, bool force)
             return false;
         }
     }
-
-    const bool isStereo = cfg.playback == SidConfig::STEREO;
-    m_info.m_channels = isStereo ? 2 : 1;
 
     // Update Configuration
     m_cfg = cfg;
@@ -531,15 +530,15 @@ void Player::sidCreate(sidbuilder *builder, SidConfig::sid_model_t defaultModel,
 
         // Setup base SID
         const SidConfig::sid_model_t userModel = getSidModel(tuneInfo->sidModel(0), defaultModel, forced);
-        sidemu *s = builder->lock(m_c64.getEventScheduler(), userModel, digiboost);
-        if (!s) UNLIKELY
+        sidemu *emu = builder->lock(m_c64.getEventScheduler(), userModel, digiboost);
+        if (!emu) UNLIKELY
         {
             throw configError(builder->error());
         }
 
 
-        m_c64.setBaseSid(s);
-        m_chips.push_back(s);
+        m_c64.setBaseSid(emu);
+        m_chips.push_back(emu);
         m_info.m_sidModels.push_back(getSidModel(userModel));
 
         // Setup extra SIDs if needed
@@ -553,19 +552,19 @@ void Player::sidCreate(sidbuilder *builder, SidConfig::sid_model_t defaultModel,
 
             for (unsigned int i = 0; i < extraSidChips; i++)
             {
-                const SidConfig::sid_model_t userModel = getSidModel(tuneInfo->sidModel(i+1), defaultModel, forced);
+                const SidConfig::sid_model_t extraUserModel = getSidModel(tuneInfo->sidModel(i+1), defaultModel, forced);
 
-                sidemu *s = builder->lock(m_c64.getEventScheduler(), userModel, digiboost);
-                if (!s) UNLIKELY
+                sidemu *extraEmu = builder->lock(m_c64.getEventScheduler(), extraUserModel, digiboost);
+                if (!extraEmu) UNLIKELY
                 {
                     throw configError(builder->error());
                 }
 
-                if (!m_c64.addExtraSid(s, extraSidAddresses[i])) UNLIKELY
+                if (!m_c64.addExtraSid(extraEmu, extraSidAddresses[i])) UNLIKELY
                     throw configError(ERR_UNSUPPORTED_SID_ADDR);
 
-                m_chips.push_back(s);
-                m_info.m_sidModels.push_back(getSidModel(userModel));
+                m_chips.push_back(extraEmu);
+                m_info.m_sidModels.push_back(getSidModel(extraUserModel));
             }
         }
     }
@@ -587,6 +586,20 @@ bool Player::getSidStatus(unsigned int sidNum, uint8_t regs[32])
 
     m_chips[sidNum]->getStatus(regs);
     return true;
+}
+
+int Player::getBufSize(unsigned int cycles)
+{
+    if (!m_simpleMixer)
+        return 0;
+
+    if (cycles > MAX_CYCLES)
+    {
+        cycles = MAX_CYCLES;
+    }
+
+    double size = static_cast<double>(m_cfg.frequency) / m_c64.getMainCpuSpeed() * cycles;
+    return  static_cast<int>(std::ceil(size)) * m_simpleMixer->channels();
 }
 
 }

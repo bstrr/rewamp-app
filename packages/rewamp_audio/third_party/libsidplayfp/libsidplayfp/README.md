@@ -1,12 +1,12 @@
 libsidplayfp
 ============
 
-https://github.com/libsidplayfp/libsidplayfp
-
 libsidplayfp is a C64 music player library which integrates
-the reSIDfp SID chip emulation engine into a cycle-based emulator
+the SID chip emulation engine into a cycle-based emulator
 environment, constantly aiming to improve emulation of the
-C64 system and the SID chips.
+C64 system for audio playback.
+
+https://github.com/libsidplayfp/libsidplayfp
 
 Copyright (c) 2000-2001 Simon White  
 Copyright (c) 2007-2010 Antti Lankila  
@@ -53,7 +53,7 @@ is required.
 
 In addition to the standard build options the following are available:
 
-* `--enable-debug[=no/yes/full]`:
+* `--enable-debug[=no/yes]`:
 compile with debugging messages
 (disabled by default)
 
@@ -71,7 +71,7 @@ enables unit tests. Use `make check` to launch the testsuite
 Build with exsid support. Requires either libexsid or one of libfdti1 or libftd2xx
 
 * `--with-usbsid`:
-Build with usbsid support. Requires either libusb
+Build with usbsid support. Requires libusb
 
 
 If [doxygen](https://doxygen.nl) is installed and detected by the configure script, the documentation
@@ -86,6 +86,6 @@ Known bugs/limitations:
 
 # 3rd party software
 
-* hashlib
-  https://github.com/Cra3z/hashlib
+* hashlib 1.1.2  
+  https://github.com/Cra3z/hashlib  
   distributed under MIT license

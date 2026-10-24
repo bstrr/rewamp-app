@@ -2559,6 +2559,13 @@ class AppLocalizationsCs extends AppLocalizations {
       'Upřednostní japonská pole (název, hra, umělec) VGM tagů, pokud existují.';
 
   @override
+  String get settingsVgmLoopFade => 'Zeslabení skladeb se smyčkou';
+
+  @override
+  String get settingsVgmLoopFadeHelp =>
+      'Formát VGM nezná zeslabení: skladba se smyčkou ji přehraje dvakrát a pak po tuto dobu zeslabuje. Vypnuto = ostré ukončení. Skladby bez smyčky skončí tak, jak jsou.';
+
+  @override
   String get localImportFolder => 'Importovat složku';
 
   @override
@@ -3954,6 +3961,117 @@ class AppLocalizationsCs extends AppLocalizations {
   }
 
   @override
+  String get podiumBrowserTitle => 'Stupně vítězů';
+
+  @override
+  String get podiumHubBias =>
+      'Každá skladba se počítá jednou, za své nejlepší umístění.';
+
+  @override
+  String get podiumRecentWinners => 'Nedávní vítězové';
+
+  @override
+  String get podiumRecentWinnersSubtitle =>
+      'Zlata z posledních dvou let, nejnovější compa první';
+
+  @override
+  String get podiumViaSelf => 'Hudební compa';
+
+  @override
+  String get podiumViaSelfSubtitle => 'Skladba soutěžila sama';
+
+  @override
+  String get podiumViaProduction => 'Soundtracky dem';
+
+  @override
+  String get podiumViaProductionSubtitle =>
+      'Demo nebo hra, kterou ozvučuje, se umístila';
+
+  @override
+  String get podiumByKind => 'Podle druhu compa';
+
+  @override
+  String get podiumByEra => 'Podle éry';
+
+  @override
+  String get podiumByParty => 'Podle party';
+
+  @override
+  String get podiumByPartySubtitle => 'Série party seřazené podle medailí';
+
+  @override
+  String get podiumTopArtists => 'Nejoceňovanější umělci';
+
+  @override
+  String get podiumAll => 'Všechny stupně vítězů';
+
+  @override
+  String get podiumAllSubtitle => 'Nejnovější compa první, pak podle umístění';
+
+  @override
+  String get podiumChipVia => 'Povaha';
+
+  @override
+  String get podiumChipKind => 'Druh compa';
+
+  @override
+  String get podiumChipSeries => 'Party';
+
+  @override
+  String get podiumChipEra => 'Éra';
+
+  @override
+  String get compoKindTracked => 'Tracked';
+
+  @override
+  String get compoKindChip => 'Chip';
+
+  @override
+  String get compoKindStreaming => 'Streaming';
+
+  @override
+  String get compoKindExecutable => 'Spustitelná';
+
+  @override
+  String get compoKindOldskool => 'Oldskool';
+
+  @override
+  String get compoKindCombined => 'Kombinovaná';
+
+  @override
+  String get compoKindSoundtrack => 'Soundtrack';
+
+  @override
+  String get compoKindTrackedHint => 'Trackerové moduly: MOD, XM, IT…';
+
+  @override
+  String get compoKindChipHint => 'Chip hudba: SID, AY, NES, Game Boy…';
+
+  @override
+  String get compoKindStreamingHint => 'Streamovaný zvuk: MP3, OGG, WAV…';
+
+  @override
+  String get compoKindExecutableHint => 'Hudba generovaná drobným programem';
+
+  @override
+  String get compoKindOldskoolHint =>
+      'Dobový hardware nebo tracked, bez streamingu';
+
+  @override
+  String get compoKindCombinedHint => 'Compo bez omezení formátu';
+
+  @override
+  String get compoKindSoundtrackHint => 'Hudba z umístěného dema nebo hry';
+
+  @override
+  String podiumDecadeLabel(String decade) {
+    return '$decade. léta';
+  }
+
+  @override
+  String get podiumSortPodium => 'Nejnovější compa první';
+
+  @override
   String get competitionEmpty => 'Tato soutěž nemá žádné příspěvky';
 
   @override
@@ -3983,11 +4101,11 @@ class AppLocalizationsCs extends AppLocalizations {
   String get onboardingStart => 'Začít';
 
   @override
-  String get onboardingBetaTitle => 'Beta verze';
+  String get onboardingWelcomeTitle => 'Vítejte v Rewampu';
 
   @override
-  String get onboardingBetaBody =>
-      'Rewamp se stále staví. Místní data — knihovna, playlisty, oblíbené, statistiky — mohou být před verzí 1.0 vymazána. Stažené soubory nic neohrožuje, ale to, na čem vám záleží, si uložte i jinam.';
+  String get onboardingWelcomeBody =>
+      'Přehrávač chiptunů, trackerových modulů a herní hudby — Amiga, Atari, C64, konzole, automaty a PC. Poslouchejte z velkých online archivů nebo otevřete vlastní soubory.';
 
   @override
   String onboardingVersion(String version, String build) {
@@ -4019,8 +4137,7 @@ class AppLocalizationsCs extends AppLocalizations {
   String get onboardingReplayTitle => 'Představení';
 
   @override
-  String get onboardingReplaySubtitle =>
-      'Znovu zobrazit upozornění na beta verzi a průvodce';
+  String get onboardingReplaySubtitle => 'Znovu zobrazit úvod a průvodce';
 
   @override
   String get settingsPatternTitle => 'Patterny';
@@ -4205,52 +4322,56 @@ class AppLocalizationsCs extends AppLocalizations {
   String get releaseNotesTitle => 'Novinky';
 
   @override
-  String get releaseNotesV9Speed =>
-      'Rychlost přehrávání od 0,2× do 3× v panelu Hlasy. Většina enginů mění tempo a zachovává výšku tónu; ostatní převzorkovávají.';
+  String get releaseNotesV10Loading =>
+      'Otevření pomalu se načítající skladby už aplikaci nezamrazí: tenký kroužek kolem tlačítka přehrát/pozastavit ukazuje, že se stále načítá.';
 
   @override
-  String get releaseNotesV9Windows =>
-      'Windows: multimediální klávesy a systémové ovládání médií (okno hlasitosti, hlavní panel) ovládají přehrávání a vizualizace na celou obrazovku nyní vyplní celou obrazovku.';
+  String get releaseNotesV10Piano =>
+      'Vizualizace piana: skladby s mnoha současnými hlasy nebo nástroji se rozloží na více klaviatur.';
 
   @override
-  String get releaseNotesV9Formats =>
-      'Nové přehrávače: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) a programy .cop pro SAM Coupé.';
+  String get releaseNotesV10Amiga =>
+      'Amiga: StoneTracker, SUNtronic (ripy TSM) a další moduly Soundtracker 2.6 se nyní přehrávají a skladby SoundPlayer hrají na iOS.';
 
   @override
-  String get releaseNotesV9Amiga =>
-      'Amiga a Atari ST: SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory a některé moduly Maximum Effect se nyní přehrávají.';
+  String get releaseNotesV10ZxSpectrum =>
+      'ZX Spectrum: soubory .mt3 ze zxart se přehrávají a v Linuxu jsou zahrnuty formáty ZXTune a programy .cop pro SAM Coupé.';
 
   @override
-  String get releaseNotesV9MoonBlaster =>
-      'MSX MoonBlaster: skladby načítají svou sadu samplů místo přehrávání šumu a soubory v režimu úprav se přehrávají správně.';
+  String get releaseNotesV10OpenWith =>
+      'macOS a iOS: všechny podporované formáty se nyní zobrazují v nabídce „Otevřít v aplikaci“.';
 
   @override
-  String get releaseNotesV9HideElsewhere =>
-      'Knihovna: „Skrýt položky, které nejsou v tomto zařízení“ skryje místní položky, jejichž soubor je v jiném zařízení.';
+  String get releaseNotesV10MtcCrash =>
+      'Opraveno: některé soubory .mtc kombinující PT3 s TFM nebo PSG shazovaly aplikaci.';
 
   @override
-  String get releaseNotesV9ArtworkFullscreen =>
-      'Dlouhé stisknutí obalu v přehrávači ho zobrazí na celou obrazovku.';
+  String get releaseNotesV10Podiums =>
+      'Nový prohlížeč „Stupně vítězů“: vítězové soutěží demoscény podle party, roku nebo druhu soutěže, se síní slávy.';
 
   @override
-  String get releaseNotesV9Viz =>
-      'Vizualizace: ve výchozím stavu osciloskop pro každý hlas (čárové spektrum pro streamované formáty), mřížka a názvy hlasů přepínatelné přímo z osciloskopu a stabilnější stereo osciloskop.';
+  String get releaseNotesV10Arcade =>
+      'Arkády: hudba Ensoniq ES5505/ES5506 (Taito F3…) se přehrává, soubory VGM z Apple IIGS už aplikaci neshazují a enginy jsou aktuální (přibyl FM-Kingtracker .fmk).';
 
   @override
-  String get releaseNotesV9PsfTrack =>
-      'Opraveno: klepnutí na skladbu některých alb PSF mohlo přehrát jinou.';
+  String get releaseNotesV10InfoPanel =>
+      'Panel informací: formát, engine, kanály a body smyčky jsou nahoře a názvy polí vynikají.';
 
   @override
-  String get releaseNotesV9Playlists =>
-      'Složka s několika playlisty nyní tvoří jedno album se všemi jejich skladbami, bez duplicit.';
+  String get releaseNotesV10LocalAlbums =>
+      'Obrazovky alba a podskladeb ukazují kolekci; přetažený archiv vypíše všechny skladby, je označen „místní“ a po nahrazení se už nezobrazuje dvakrát.';
 
   @override
-  String get releaseNotesV9AmigaInfo =>
-      'Skladby z Amigy bez známé délky či autora se po týdnu znovu zeptají serveru, místo aby se už nikdy nezeptaly.';
+  String get releaseNotesV10Crossfade =>
+      'Opraveno: při prolínání nebyla slyšet skladba kratší než prolínání.';
+
+  @override
+  String get releaseNotesV10Artwork =>
+      'Opraveno: obal nahrazený na serveru se po „Stáhnout soubor znovu“ zobrazí všude.';
 
   @override
   String get releaseNotesDataReset =>
-      'Místní data byla pro tuto betu vymazána. Knihovna a playlisty se obnoví z účtu; stahování je třeba zopakovat.';
+      'Místní data byla pro tuto verzi vymazána. Knihovna a playlisty se obnoví z účtu; stahování je třeba zopakovat.';
 
   @override
   String get releaseNotesDismiss => 'Pokračovat';

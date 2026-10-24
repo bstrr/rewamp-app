@@ -32,12 +32,15 @@ if [ -n "${1:-}" ]; then
   git -C "$TMP/adplug" checkout --quiet "$REF"
   HASH="$(git -C "$TMP/adplug" rev-parse HEAD)"
   # Re-vendor the whole src/ (drop the x86 hardware backends realopl/analopl).
+  # version.h is configure-generated upstream — keep our committed stub (the
+  # rm below took it along with every other header until 2026-10-22).
+  cp "$ADPLUG_DIR/src/version.h" "$TMP/version.h"
   rm -f "$ADPLUG_DIR"/src/*.cpp "$ADPLUG_DIR"/src/*.c "$ADPLUG_DIR"/src/*.h
   cp "$TMP/adplug"/src/*.cpp "$TMP/adplug"/src/*.c "$TMP/adplug"/src/*.h "$ADPLUG_DIR/src/"
   rm -f "$ADPLUG_DIR"/src/realopl.cpp "$ADPLUG_DIR"/src/realopl.h \
         "$ADPLUG_DIR"/src/analopl.cpp "$ADPLUG_DIR"/src/analopl.h
   cp "$TMP/adplug/COPYING" "$ADPLUG_DIR/" 2>/dev/null || true
-  # version.h is configure-generated upstream — keep our committed stub.
+  cp "$TMP/version.h" "$ADPLUG_DIR/src/version.h"
   # Refresh the pristine copies of the patched files.
   for f in $PATCHED_FILES; do cp "$TMP/adplug/src/$f" "$ADPLUG_DIR/upstream/$f"; done
   echo "$HASH" > "$PATCH_DIR/UPSTREAM_VERSION"

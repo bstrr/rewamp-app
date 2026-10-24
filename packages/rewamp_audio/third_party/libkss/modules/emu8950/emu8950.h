@@ -28,10 +28,12 @@ typedef struct __OPLKSS_PATCH {
 /* rate conveter */
 typedef struct __OPLKSS_RateConv {
   int ch;
-  double timer;
+  uint32_t timer; /* fractional phase of the output in 0.32 fixed point */
+  uint32_t timer_step; /* fractional part of f_ratio in 0.32 fixed point */
   double f_ratio;
   int16_t *sinc_table;
-  int16_t **buf;
+  int16_t **buf; /* ring buffer of LW samples per channel, stored twice so that the latest LW samples are contiguous */
+  int *pos;
 } OPLKSS_RateConv;
 
 OPLKSS_RateConv *OPLKSS_RateConv_new(double f_inp, double f_out, int ch);
@@ -95,9 +97,13 @@ typedef struct __OPLKSS {
   uint8_t csm_key_count;
   uint8_t notesel;
 
+  /* in units of 1/(clk * rate) sec, so that all steps are integers */
   uint32_t inp_step;
   uint32_t out_step;
   uint32_t out_time;
+  /* inp_recip = ceil(2^inp_shift / inp_step), to get the rate converter phase without division */
+  uint32_t inp_recip;
+  uint32_t inp_shift;
 
   uint8_t reg[0x100];
   uint8_t test_flag;
@@ -120,7 +126,7 @@ typedef struct __OPLKSS {
   uint8_t ch_alg[9]; // alg for each channels
 
   uint8_t pan[16];
-  float pan_fine[16][2];
+  int32_t pan_fine[16][2]; /* 4.12 fixed point */
 
   uint32_t mask;
   uint8_t am_mode;
@@ -233,6 +239,14 @@ uint8_t OPLKSS_readIO(OPLKSS *opl);
 uint8_t OPLKSS_status(OPLKSS *opl);
 
 void OPLKSS_writeADPCMData(OPLKSS *opl, uint8_t type, uint32_t start, uint32_t length, const uint8_t *data);
+
+/* Save/restore the emulator state. Serialises the OPLKSS core plus the Y8950 ADPCM
+ * engine state (a separately malloc'd object). The 256K ADPCM RAM/ROM buffers
+ * are NOT included — they are treated as constant sample data loaded once. A
+ * load keeps this instance's live RAM/ROM (and conv) allocations. out=NULL
+ * returns the required size. */
+int OPLKSS_save_state(OPLKSS *opl, uint8_t *out);
+void OPLKSS_load_state(OPLKSS *opl, const uint8_t *in, int size);
 
 /* for compatibility */
 #define OPLKSS_set_rate OPLKSS_setRate

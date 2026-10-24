@@ -157,8 +157,17 @@ static void check_sound_buffers (void)
 	 * The argument passed for UADE_COMMAND_READ IPC determines how much
 	 * audio data is produced before sending the results back to the
 	 * frontend.
+	 *
+	 * Rewamp: no read outstanding means nobody will ever drain this
+	 * buffer, so drop it instead of writing past its end. Not reachable
+	 * in the protocol as written (the frontend's first uade_get_event()
+	 * posts a read before any init message, and audio_output only rises
+	 * after START_OUTPUT or a song end), kept as a belt against a
+	 * sndbuffer overflow should that ever change.
 	 */
-	if (bytes == uadecore_read_size) {
+	if (uadecore_read_size == 0 || bytes > uadecore_read_size) {
+	    sndbufpt = sndbuffer;
+	} else if (bytes == uadecore_read_size) {
 	    uadecore_check_sound_buffers(uadecore_read_size);
 	    sndbufpt = sndbuffer;
 	    //YOYOFR: decay note/vol each output buffer so the overlays release
@@ -182,20 +191,40 @@ static void check_sound_buffers (void)
     } else {
 	uadecore_audio_skip += bytes;
 	/*
-	 * If sound core doesn't report audio output start in 600 (virtual) seconds from
-	 * the reboot, begin audio output anyway.
+	 * Upstream: if the sound core doesn't report audio output start in
+	 * 600 (virtual) seconds from the reboot, log it and carry on.
+	 *
+	 * Rewamp: end the song instead, after 60 virtual seconds. START_OUTPUT
+	 * is sent by the score right after InitPlayer + InitSound, so a healthy
+	 * player reaches it within a virtual second or two (a ProWizard
+	 * conversion of a 1 MB module included); only a player whose init never
+	 * returns gets here. Upstream's log line changed nothing: the frontend
+	 * keeps waiting, before its playloop, for a token that only comes once
+	 * the init finishes — i.e. whenever the runaway 68k happens to trip a
+	 * reboot. Measured on an M-series Mac with a SoundTracker 2.6 module
+	 * whose sample loop overran (PTK-Prowiz never returns): 27-40 s with
+	 * the 600 s log, 62-77 s with a 60 s log, every one of them spent in
+	 * uade_play() — and our open() runs on the UI thread, which iOS's
+	 * watchdog turns into a kill. So: a song end (the frontend's "Song
+	 * ended prematurely" path, the same one the PC guard of newcpu.c
+	 * uses) and NOTHING else: the frontend already has a read request
+	 * outstanding (its first uade_get_event() sends one before the init
+	 * messages arrive), song_end raises audio_output, so the regular data
+	 * path below serves that read, hands the token back, and the frontend
+	 * answers with its reboot. Sending a token here instead made the
+	 * frontend issue a second read ("Read not allowed when
+	 * uadecore_read_size > 0", exit(1) — the core thread died and the
+	 * frontend blocked for ever on a pipe nobody wrote to). From the
+	 * timeout, the whole thing takes 0.5 s of real time.
 	 */
 	if (uadecore_audio_start_slow == 0 &&
-	    uadecore_audio_skip >= (sound_bytes_per_second * 600)) {
-		fprintf(stderr, "Warning: slow audio output start\n");
-		uadecore_audio_start_slow = 1;
-		if (uade_send_string(UADE_COMMAND_SEND_UADECORE_LOGS,
-				     "{'uadecore:audio_start_slow': True}",
-				     &uadecore_ipc)) {
-			fprintf(stderr, "uadecore: Unable to send logs: "
-				"audio start slow\n");
-			exit(1);
-		}
+	    uadecore_audio_skip >= (sound_bytes_per_second * 60)) {
+		fprintf(stderr, "uadecore: player init did not finish in 60 "
+			"virtual seconds, giving up\n");
+		uadecore_audio_start_slow = 2;
+		sndbufpt = sndbuffer;
+		uadecore_song_end("player init timeout", 1);
+		return;
 	}
 	sndbufpt = sndbuffer;
     }

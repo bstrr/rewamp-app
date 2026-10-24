@@ -149,7 +149,7 @@ Pod::Spec.new do |s|
       SNDDEV_SAA1099 SNDDEV_ES5503 SNDDEV_ES5506 SNDDEV_X1_010 SNDDEV_C352
       SNDDEV_GA20 SNDDEV_MIKEY
       SNDDEV_K007232 SNDDEV_K005289 SNDDEV_MSM5205 SNDDEV_MSM5232 SNDDEV_BSMT2000
-      SNDDEV_ICS2115
+      SNDDEV_ICS2115 SNDDEV_ZSG2
       SNDDEV_SELECT
       EC_AY8910_EMU2149 EC_AY8910_MAME EC_GB_SAMEBOY EC_GB_MAME EC_C6280_MAME EC_C6280_OOTAKE
       EC_NES_MAME EC_NES_NSFP_FDS EC_NES_NSFPLAY EC_QSOUND_CTR EC_QSOUND_MAME
@@ -218,6 +218,11 @@ Pod::Spec.new do |s|
       for name in playerbase vgmplayer vgmplayer_cmdhandler s98player droplayer gymplayer playera; do
         emit_mm "player" "$name"
       done
+
+      # C++ core of the ZSG-2: the TMS57002 DSP, its own .mm TU
+      # (tms57002_ops.hxx is #included by it, never compiled alone). By NAME:
+      # emu/cores also holds ymfmintf.cpp (YM2414), whose ymfm we do not build.
+      emit_mm "emu/cores" "tms57002"
 
       # Channel-data globals (rewamp source, separate TU)
       printf '#include "../../src/rewamp_channel_data.c"\n' > "$CLASSES/rewamp_channel_data.c"

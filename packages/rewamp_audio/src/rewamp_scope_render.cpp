@@ -8,7 +8,9 @@
 #include <stdio.h>
 
 #define SCOPE_SAMPLES  512
-#define MAX_VOICES     32
+// 64, not 32: the ZSG-2 has 48 voices (and the OPL4 42) — a 32 cap silently
+// dropped the cells past 32. Same bound as generic_mute_mask (64 bits).
+#define MAX_VOICES     64
 
 static unsigned g_scope_gen = 0;
 static GLuint g_scope_prog     = 0;

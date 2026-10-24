@@ -63,6 +63,8 @@ void SCCKSS_writeReg(SCCKSS *scc, uint32_t adr, uint32_t val) ;
 uint32_t SCCKSS_read(SCCKSS *scc, uint32_t adr) ;
 uint32_t SCCKSS_setMask(SCCKSS *scc, uint32_t adr) ;
 uint32_t SCCKSS_toggleMask(SCCKSS *scc, uint32_t adr) ;
+int SCCKSS_save_state(SCCKSS *, uint8_t *out) ; /* save state to out; out=NULL -> required size */
+void SCCKSS_load_state(SCCKSS *, const uint8_t *in, int size) ;
 
 #ifdef __cplusplus
 }

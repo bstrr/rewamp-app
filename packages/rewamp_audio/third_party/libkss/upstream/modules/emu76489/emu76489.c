@@ -8,6 +8,7 @@
   2004 06-07 : Version 1.20 -- Improved the noise emulation.
   2015 12-13 : Version 1.21 -- Changed own integer types to C99 stdint.h types.
   2016 09-06 : Version 1.22 -- Support per-channel output.
+  2026 07-22 : Version 1.23 -- Added save/load state functionality.
 
   References: 
     SN76489 data sheet   
@@ -300,4 +301,12 @@ void
 SNG_writeGGIO(SNG *sng, uint32_t val)
 {
   sng->stereo = val;
+}
+
+int SNG_save_state(SNG *sng, uint8_t *out) {
+  if (out) memcpy(out, sng, sizeof(SNG));
+  return (int)sizeof(SNG);
+}
+void SNG_load_state(SNG *sng, const uint8_t *in, int size) {
+  if (size >= (int)sizeof(SNG)) memcpy(sng, in, sizeof(SNG)); /* scalar-only state */
 }

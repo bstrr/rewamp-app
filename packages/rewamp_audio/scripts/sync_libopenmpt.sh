@@ -12,6 +12,11 @@
 #
 # After any change here, rebuild the prebuilt libs:
 #   ./scripts/build_libopenmpt_macos.sh && ./scripts/build_libopenmpt_ios.sh
+#
+# When moving to a NEWER upstream, read its release notes for Startrekker AM
+# instruments: libopenmpt only renders them under MPT_EXTERNAL_SAMPLES and from
+# a file PATH, which its API does not pass, so they are left to UADE (decision
+# of 2026-10-19). If upstream lifts either restriction, reconsider.
 set -euo pipefail
 
 PKG_DIR="$(cd "$(dirname "$0")/.." && pwd)"

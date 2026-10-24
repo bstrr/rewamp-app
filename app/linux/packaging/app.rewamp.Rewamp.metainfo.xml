@@ -118,6 +118,24 @@
   </screenshots>
 
   <releases>
+    <release version="1.0.0" date="2026-10-24">
+      <description>
+        <p>Out of beta.</p>
+        <ul>
+          <li>New "Podiums" browser: demoscene competition winners by party, year or kind of compo, with a hall of fame</li>
+          <li>Opening a slow track no longer freezes the app; a thin ring around play/pause shows it is still loading</li>
+          <li>Arcade: Ensoniq ES5505/ES5506 (Taito F3) and ZSG-2 (Taito Zoom) music now plays, and the engines are up to date (FM-Kingtracker .fmk added)</li>
+          <li>VGM: looping tracks end with an adjustable fade-out (0 to 16 s, 5 by default)</li>
+          <li>Info panel: format, engine, channels and loop points come first</li>
+          <li>Per-voice oscilloscope shows up to 64 voices</li>
+          <li>Piano visualizer: songs with many voices or instruments at once are spread over more keyboards</li>
+          <li>Amiga: StoneTracker, SUNtronic (TSM rips) and more Soundtracker 2.6 modules now play</li>
+          <li>ZX Spectrum: zxart .mt3 files play, and the ZXTune formats and SAM Coupé .cop programs are included</li>
+          <li>Dropped files are queued in the order they were displayed</li>
+          <li>Fixed: crashes with some .mtc files and with Apple IIGS VGM files; with crossfade on, tracks shorter than the fade can be heard again</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-10-11">
       <description>
         <ul>

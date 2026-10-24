@@ -192,6 +192,80 @@ int uade_find_amiga_file(char *realname, size_t maxlen, const char *aname,
 			}
 		}
 
+		/* rewamp: même nom, autre CASSE, dans le dossier du fichier SEULEMENT.
+		   Des players écrivent le préfixe du compagnon en MAJUSCULES quelle
+		   que soit la casse du module: SoundPlayer (Scott Johnston) teste
+		   « sjs. » sans casse puis écrit « SMP. » en dur, alors que modland
+		   livre « smp.NOM ». Sur un système de fichiers insensible à la casse
+		   (macOS) le stat exact ci-dessus réussit; sur iOS il échoue, et le
+		   parcours générique plus bas, qui part de « / », est refusé par le
+		   bac à sable (opendir des ancêtres) — le morceau ne jouait pas.
+		   On ne lit ici QUE le dossier qui contient le fichier demandé (le
+		   nôtre), jamais ses ancêtres. */
+		for (int _rw_i = 0; _rw_i < _rw_n; _rw_i++) {
+			const char *slash = strrchr(_rw_try[_rw_i], '/');
+			if (slash == NULL || slash == _rw_try[_rw_i] || slash[1] == '\0')
+				continue;
+			char _rw_dir[PATH_MAX];
+			char _rw_real[PATH_MAX];
+			char _rw_full[PATH_MAX];
+			size_t dlen = (size_t)(slash - _rw_try[_rw_i]);
+			if (dlen + 1 >= sizeof(_rw_dir))
+				continue;
+			memcpy(_rw_dir, _rw_try[_rw_i], dlen);
+			_rw_dir[dlen] = '/';
+			_rw_dir[dlen + 1] = '\0';
+			if (!uade_amiga_scandir(_rw_real, _rw_dir, (char *)(slash + 1),
+					       sizeof(_rw_real)))
+				continue;
+			int wrote = snprintf(_rw_full, sizeof(_rw_full), "%s%s",
+					     _rw_dir, _rw_real);
+			if (wrote <= 0 || (size_t)wrote >= sizeof(_rw_full) ||
+			    stat(_rw_full, &_rw_st) != 0 || !S_ISREG(_rw_st.st_mode))
+				continue;
+			FILE *_rw_f = fopen(_rw_full, "rb");
+			if (_rw_f == NULL)
+				continue;
+			fclose(_rw_f);
+			strlcpy(realname, _rw_full, maxlen);
+			rewamp_loaded_files_add(realname);
+			return 0;
+		}
+
+		/* rewamp: bibliothèque AmigaOS qu'un player charge depuis le disque
+		   (OpenLibrary d'un nom nu ou « LIBS:nom »): StoneTracker 1.6 ouvre
+		   « stonepacker.library » et refuse de jouer sans. Sur Amiga elle vit
+		   dans LIBS:, donc ni à côté du module ni dans le dossier courant, les
+		   deux seuls endroits essayés jusqu'ici: on la cherche dans
+		   <playerdir>/LIBS/ (casse indifférente, ce dossier SEULEMENT). Pas de
+		   rewamp_loaded_files_add: une bibliothèque n'est pas un fichier du
+		   morceau, le panneau ⓘ n'a pas à la lister. */
+		if (playerdir != NULL && playerdir[0]) {
+			const char *lib = aname;
+			if (strncasecmp(lib, "LIBS:", 5) == 0)
+				lib += 5;
+			size_t llen = strlen(lib);
+			if (llen > 8 && strchr(lib, '/') == NULL &&
+			    strchr(lib, ':') == NULL &&
+			    strcasecmp(lib + llen - 8, ".library") == 0) {
+				char _rw_dir[PATH_MAX];
+				char _rw_real[PATH_MAX];
+				char _rw_full[PATH_MAX];
+				snprintf(_rw_dir, sizeof(_rw_dir), "%s/LIBS/", playerdir);
+				if (uade_amiga_scandir(_rw_real, _rw_dir, (char *)lib,
+						       sizeof(_rw_real))) {
+					int wrote = snprintf(_rw_full, sizeof(_rw_full),
+							     "%s%s", _rw_dir, _rw_real);
+					if (wrote > 0 && (size_t)wrote < sizeof(_rw_full) &&
+					    stat(_rw_full, &_rw_st) == 0 &&
+					    S_ISREG(_rw_st.st_mode)) {
+						strlcpy(realname, _rw_full, maxlen);
+						return 0;
+					}
+				}
+			}
+		}
+
 		/* rewamp: SUFFIX-convention companion. Amiga multifile formats use the
 		   PREFIX convention ("mdat.NAME" + "smpl.NAME"), and the eagleplayer
 		   derives the companion by swapping the prefix token. When the user
@@ -215,6 +289,22 @@ int uade_find_amiga_file(char *realname, size_t maxlen, const char *aname,
 						"%s/%.*s.%.*s",
 						(moduledir && moduledir[0]) ? moduledir : ".",
 						(int)stemlen, rest, (int)toklen, base);
+					/* Le jeton vient du PLAYER, souvent en majuscules
+					   (StoneTracker demande « SPS.NOM.spm », modland livre
+					   « NOM.sps »): même règle de casse que plus haut, le
+					   dossier du module SEULEMENT. */
+					if (wrote > 0 && (size_t)wrote < sizeof(_rw_comp) &&
+					    stat(_rw_comp, &_rw_st) != 0) {
+						const char *mdir = (moduledir && moduledir[0]) ? moduledir : ".";
+						char _rw_dir[PATH_MAX];
+						char _rw_real[PATH_MAX];
+						snprintf(_rw_dir, sizeof(_rw_dir), "%s/", mdir);
+						if (uade_amiga_scandir(_rw_real, _rw_dir,
+								       _rw_comp + strlen(mdir) + 1,
+								       sizeof(_rw_real)))
+							wrote = snprintf(_rw_comp, sizeof(_rw_comp),
+									 "%s%s", _rw_dir, _rw_real);
+					}
 					if (wrote > 0 && (size_t)wrote < sizeof(_rw_comp) &&
 					    stat(_rw_comp, &_rw_st) == 0 && S_ISREG(_rw_st.st_mode)) {
 						FILE *_rw_f = fopen(_rw_comp, "rb");

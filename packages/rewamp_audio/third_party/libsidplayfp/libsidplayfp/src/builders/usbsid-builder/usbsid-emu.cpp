@@ -30,7 +30,6 @@ USBSID::USBSID(sidbuilder *builder) :
     m_sid(*(new USBSID_NS::USBSID_Class)),
     m_handle(-1),
     sidno(0),
-    m_status(false),
     busValue(0)
 {
 
@@ -39,6 +38,7 @@ USBSID::USBSID(sidbuilder *builder) :
     if (m_handle < 0)
     {
         m_error = "USBSID init failed";
+        m_status = false;
         return;
     }
 
@@ -70,6 +70,8 @@ void USBSID::reset(uint8_t)
 
     m_delayClk = 0;
     if (sidno == 0) {
+        m_sid.USBSID_ResetRingBuffer();
+        m_sid.USBSID_ResetAllRegisters();
         m_sid.USBSID_Reset();
         m_sid.USBSID_UnMute();
     }
@@ -80,8 +82,8 @@ void USBSID::reset(uint8_t)
 
 event_clock_t USBSID::delay()
 {
-    event_clock_t cycles = eventScheduler->getTime(EVENT_CLOCK_PHI1) - m_delayClk;
-    // event_clock_t cycles = eventScheduler->getTime(EVENT_CLOCK_PHI1) - (m_delayClk - 1);
+    event_clock_t cycles = (eventScheduler->getTime(EVENT_CLOCK_PHI1) - m_delayClk);
+    cycles = ((cycles > 0) ? (cycles - 1) : cycles);
     m_delayClk += cycles;
     while (cycles > 0xffff)
     {
@@ -140,11 +142,6 @@ void USBSID::event()
         m_sid.USBSID_Flush();
         eventScheduler->schedule(*this, raster_rate, EVENT_CLOCK_PHI1);
     }
-}
-
-void USBSID::filter(bool enable)
-{
- (void) enable;
 }
 
 void USBSID::flush() /* Only gets call on player exit!? */

@@ -140,10 +140,14 @@
 	     recording the app as CLAIMING the type — which is why the old
 	     com.modizer.rewamp.* name looked registered and bound nothing.
 	
-	     Generated from the engines' own extension sets (formats.dart +
-	     kVgmstreamExts + kLocalArchiveExts + m3u), MINUS the extensions a
-	     system type already owns — those are claimed below by their real UTI
-	     instead, because an exported declaration can never take them. -->
+	     GENERATED — the extension array below is rewritten by
+	     tool/plist_extensions.dart from the engine registry (every engine's
+	     formats + kLocalArchiveExts + m3u/m3u8) and test/plist_extensions_sync_test
+	     turns red when it drifts:
+	       cd app && REWAMP_WRITE_PLIST=1 flutter test test/plist_extensions_sync_test.dart
+	     Extensions a system type already owns (mp3, zip, …) stay listed: the
+	     exported declaration is simply ignored for them, and they are ALSO
+	     claimed below by their real UTI, which is what actually binds them. -->
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -160,6 +164,7 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
+					<string>!pm!</string>
 					<string>0cc</string>
 					<string>2dx</string>
 					<string>2dx9</string>
@@ -170,10 +175,10 @@
 					<string>40a</string>
 					<string>40b</string>
 					<string>41a</string>
+					<string>4v</string>
 					<string>50a</string>
 					<string>60a</string>
 					<string>61a</string>
-					<string>4v</string>
 					<string>669</string>
 					<string>7z</string>
 					<string>9tav</string>
@@ -342,6 +347,8 @@
 					<string>cmr</string>
 					<string>cms</string>
 					<string>cnk</string>
+					<string>coco</string>
+					<string>cop</string>
 					<string>core</string>
 					<string>cp</string>
 					<string>cpk</string>
@@ -437,6 +444,7 @@
 					<string>eno</string>
 					<string>ens</string>
 					<string>esf</string>
+					<string>etc</string>
 					<string>eu</string>
 					<string>eup</string>
 					<string>ex</string>
@@ -457,6 +465,8 @@
 					<string>fish</string>
 					<string>flac</string>
 					<string>flx</string>
+					<string>fmk</string>
+					<string>fnk</string>
 					<string>fp</string>
 					<string>fred</string>
 					<string>fsb</string>
@@ -520,6 +530,7 @@
 					<string>hot</string>
 					<string>hps</string>
 					<string>hrt</string>
+					<string>hrt!</string>
 					<string>hsc</string>
 					<string>hsf</string>
 					<string>hsp</string>
@@ -638,6 +649,7 @@
 					<string>lha</string>
 					<string>lin</string>
 					<string>lion</string>
+					<string>liq</string>
 					<string>lm0</string>
 					<string>lm1</string>
 					<string>lm2</string>
@@ -686,6 +698,7 @@
 					<string>mcmd_org</string>
 					<string>mco</string>
 					<string>mcr</string>
+					<string>mct</string>
 					<string>md</string>
 					<string>mdat</string>
 					<string>mdi</string>
@@ -700,6 +713,7 @@
 					<string>mfp</string>
 					<string>mg</string>
 					<string>mgs</string>
+					<string>mgt</string>
 					<string>mhk</string>
 					<string>mi4</string>
 					<string>mib</string>
@@ -780,9 +794,11 @@
 					<string>msvp</string>
 					<string>msx</string>
 					<string>mt2</string>
+					<string>mt3</string>
 					<string>mta</string>
 					<string>mta2</string>
 					<string>mtaf</string>
+					<string>mtc</string>
 					<string>mth</string>
 					<string>mtk</string>
 					<string>mtm</string>
@@ -795,6 +811,7 @@
 					<string>mups</string>
 					<string>mus</string>
 					<string>musc</string>
+					<string>muse</string>
 					<string>musx</string>
 					<string>mvb</string>
 					<string>mw</string>
@@ -832,6 +849,7 @@
 					<string>nsfe</string>
 					<string>nsopus</string>
 					<string>nst</string>
+					<string>ntgs</string>
 					<string>ntp</string>
 					<string>ntpk</string>
 					<string>nub</string>
@@ -1024,6 +1042,7 @@
 					<string>sa-p</string>
 					<string>sa2</string>
 					<string>sa_old</string>
+					<string>saa</string>
 					<string>sab</string>
 					<string>sad</string>
 					<string>saf</string>
@@ -1080,6 +1099,7 @@
 					<string>sfx20</string>
 					<string>sg</string>
 					<string>sgb</string>
+					<string>sgc</string>
 					<string>sgd</string>
 					<string>sgt</string>
 					<string>shaa</string>
@@ -1126,6 +1146,7 @@
 					<string>snsf</string>
 					<string>snsflib</string>
 					<string>snt</string>
+					<string>snt!</string>
 					<string>snu</string>
 					<string>snx</string>
 					<string>snz</string>
@@ -1171,6 +1192,7 @@
 					<string>stc</string>
 					<string>ster</string>
 					<string>sth</string>
+					<string>stim</string>
 					<string>stk</string>
 					<string>stm</string>
 					<string>stp</string>
@@ -1303,6 +1325,7 @@
 					<string>vsf</string>
 					<string>vss</string>
 					<string>vsv</string>
+					<string>vt2</string>
 					<string>vtx</string>
 					<string>vxn</string>
 					<string>waa</string>

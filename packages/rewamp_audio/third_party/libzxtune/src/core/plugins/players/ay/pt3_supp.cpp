@@ -206,6 +206,11 @@ namespace ProTracker3
       return 0;
     }
 
+    virtual uint_t GetChannelsCount() const
+    {
+      return AYM::TRACK_CHANNELS;
+    }
+
     virtual uint_t GetTempo() const
     {
       return 0;
@@ -237,6 +242,11 @@ namespace ProTracker3
     virtual uint_t CountActiveChannels() const
     {
       return First->CountActiveChannels() + Second->CountActiveChannels();
+    }
+
+    virtual uint_t GetChannelsCount() const
+    {
+      return 2 * AYM::TRACK_CHANNELS;
     }
 
     virtual uint_t GetTempo() const

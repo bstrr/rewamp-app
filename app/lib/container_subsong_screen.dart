@@ -818,7 +818,11 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
   Widget _header(BuildContext context, AppLocalizations l10n, ColorScheme cs,
       SearchResult r, int count) {
     final tt = Theme.of(context).textTheme;
+    final collection = RewampDb.displayCollection(r.collection,
+        isLocal: catalogueSongId(r.songId) == null,
+        localLabel: l10n.playerSourceLocal);
     final subline = <String>[
+      if (collection != null) collection,
       if (r.platform != null && r.platform!.isNotEmpty) r.platform!,
       if (r.year != null) r.year.toString(),
     ].join(' · ');
@@ -963,7 +967,11 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                   artworkUrl: r.artworkUrl,
                   formatExt:  r.formatExt,
                   filename:   r.filename,
-                  onDownload: () => RewampDb.downloadToLibrary(r),
+                  // Un fichier LOCAL (sans identité catalogue) est déjà sur
+                  // le disque, et n'a rien à télécharger.
+                  onDownload: catalogueSongId(r.songId) == null
+                      ? null
+                      : () => RewampDb.downloadToLibrary(r),
                 ),
               // "…" menu — same placement as the album screen (right of the
               // action row): queue + playlist for the whole subsong list,

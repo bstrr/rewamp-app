@@ -86,7 +86,13 @@ const _bundledAssetDirs = <String>[
 //     dans eagleplayer.conf — `amifilemagic` classe « SA_old » les .sa qui
 //     embarquent leur replay (4EFA 002A…), que le player SonicArranger refuse
 //     (« module check failed »): silence total sur la plupart de modland.
-const _kBundledAssetsVersion = 10;
+// 11: +uade/players/LIBS/stonepacker.library et `spm` sur Stonetracker1.6:
+//     le player refusait de jouer sans cette bibliothèque AmigaOS, que
+//     ossupport.c cherche désormais dans players/LIBS/.
+// 12: +uade/players/SUNtronic-TSM (notre player, amigasrc/players/) et son
+//     préfixe `sun_tsm` dans eagleplayer.conf: la 3e variante du replay
+//     SUNtronic (les deux rips de TSM), reconnue au contenu par amifilemagic.c.
+const _kBundledAssetsVersion = 12;
 
 /// Copy bundled assets into `{appSupport}/rewamp_data/` (preserving their
 /// sub-path under assets/) and return that root so native code can load them.

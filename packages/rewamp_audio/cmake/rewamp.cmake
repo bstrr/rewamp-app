@@ -365,6 +365,11 @@ function(rewamp_add_libvgm target)
   #   adlibemu_opl_inc.c → included by adlibemu_opl2/3.c
   file(GLOB _cores "${_libvgm}/emu/cores/*.c")
   list(FILTER _cores EXCLUDE REGEX "(scsplfo|adlibemu_opl_inc)\\.c$")
+  # C++ core of the ZSG-2: the TMS57002 DSP (user's fork), its own TU —
+  # `tms57002_ops.hxx` is #included, never compiled alone. Listed by NAME, not
+  # globbed: emu/cores also holds ymfmintf.cpp (YM2414), whose ymfm library we
+  # do not build — a glob pulls it in and the link fails.
+  set(_cores_cpp "${_libvgm}/emu/cores/tms57002.cpp")
 
   # ── Emulator dispatch / resampling / DAC (C) ───────────────────────────────
   set(_emu_c
@@ -421,7 +426,7 @@ function(rewamp_add_libvgm target)
 
   # ── rewamp glue ────────────────────────────────────────────────────────────
   target_sources(${target} PRIVATE
-    ${_cores} ${_emu_c} ${_utils_c} ${_player_c} ${_player_cpp}
+    ${_cores} ${_cores_cpp} ${_emu_c} ${_utils_c} ${_player_c} ${_player_cpp}
     "${REWAMP_SRC_DIR}/rewamp_plugin_vgm.cpp"
   )
 
@@ -445,7 +450,7 @@ function(rewamp_add_libvgm target)
     SNDDEV_SAA1099 SNDDEV_ES5503 SNDDEV_ES5506 SNDDEV_X1_010 SNDDEV_C352
     SNDDEV_GA20 SNDDEV_MIKEY
     SNDDEV_K007232 SNDDEV_K005289 SNDDEV_MSM5205 SNDDEV_MSM5232 SNDDEV_BSMT2000
-    SNDDEV_ICS2115
+    SNDDEV_ICS2115 SNDDEV_ZSG2
     SNDDEV_SELECT
     EC_AY8910_EMU2149 EC_AY8910_MAME EC_GB_SAMEBOY EC_GB_MAME EC_C6280_MAME EC_C6280_OOTAKE
     EC_NES_MAME EC_NES_NSFP_FDS EC_NES_NSFPLAY EC_QSOUND_CTR EC_QSOUND_MAME

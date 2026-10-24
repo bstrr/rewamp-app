@@ -1,0 +1,116 @@
+--- a/src/SID.h
++++ b/src/SID.h
+@@ -404,8 +404,20 @@
+             busValueTtl = 0;
+         }
+     }
++}
++
++} // namespace reSIDfp
++
++//TODO:  MODIZER changes start / YOYOFR
++extern "C" int sid_v4;
++extern "C" {
++#include "../../../../../src/ModizerVoicesData.h"
+ }
++//TODO:  MODIZER changes end / YOYOFR
+ 
++namespace reSIDfp
++{
++
+ RESIDFP_INLINE
+ int SID::clock(unsigned int cycles, int16_t* buf)
+ {
+@@ -414,6 +426,22 @@
+     ageBusValue(cycles);
+     int s = 0;
+ 
++    //TODO:  MODIZER changes start / YOYOFR
++    // Oscilloscope slot of this chip: 4 per chip (3 voices + digi), chips
++    // numbered in order of first clock.
++    int sid_idx=0;
++    while (sid_idx<MAXSID_CHIPS) {
++        if (m_sid_chipId[sid_idx]==NULL) {
++            m_sid_chipId[sid_idx]=(void*)this;
++            break;
++        }
++        if (m_sid_chipId[sid_idx]==(void*)this) break;
++        sid_idx++;
++    }
++    sid_idx=(sid_idx%m_sid_chipNb)*4;
++    const int64_t smplIncr=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++    //TODO:  MODIZER changes end / YOYOFR
++
+     while (cycles != 0)
+     {
+         unsigned int delta_t = std::min(nextVoiceSync, cycles);
+@@ -422,14 +450,47 @@
+         {
+             for (unsigned int i = 0; i < delta_t; i++)
+             {
+-                clockWaveGen();
+-                clockEnvGen();
++                //TODO:  MODIZER changes start / YOYOFR
++                // Playback speed (patch from Modizer): the SID itself is
++                // clocked mdz_ratio_fp_inc/65536 times per C64 cycle.
++                if (mdz_ratio_fp_inc==0) mdz_ratio_fp_cnt+=65536;
++                else mdz_ratio_fp_cnt+=mdz_ratio_fp_inc;
+ 
+-                int32_t output = clockFilt();
+-                if (unlikely(resampler->input(output)))
+-                {
+-                    buf[s++] = resampler->getOutput(scaleFactor);
++                while (mdz_ratio_fp_cnt>=65536) {
++                    mdz_ratio_fp_cnt-=65536;
++
++                    clockWaveGen();
++                    clockEnvGen();
++
++                    const float sid_v1 = voice[0].output();
++                    const float sid_v2 = voice[1].output();
++                    const float sid_v3 = voice[2].output();
++
++                    // During fast-forward seek, skip the expensive analog filter
++                    // and resampler pipelines entirely: only oscillator and
++                    // envelope state need to advance for musical correctness.
++                    if (!mSIDSeekInProgress) {
++                        int32_t output = clockFilt();
++                        if (unlikely(resampler->input(output)))
++                        {
++                            buf[s++] = resampler->getOutput(scaleFactor);
++                            m_voice_buff[sid_idx+0][(m_voice_current_ptr[sid_idx+0]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v1*127));
++                            m_voice_buff[sid_idx+1][(m_voice_current_ptr[sid_idx+1]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v2*127));
++                            m_voice_buff[sid_idx+2][(m_voice_current_ptr[sid_idx+2]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v3*127));
++                            m_voice_buff[sid_idx+3][(m_voice_current_ptr[sid_idx+3]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((sid_v4>>7));
++                            for (int j=0;j<4;j++) m_voice_current_ptr[sid_idx+j]+=smplIncr;
++                        }
++                    } else {
++                        if (unlikely(resampler->input(0))) {
++                            buf[s++]=0;
++                            for (int j=0;j<4;j++) {
++                                m_voice_buff[sid_idx+j][(m_voice_current_ptr[sid_idx+j]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=0;
++                                m_voice_current_ptr[sid_idx+j]+=smplIncr;
++                            }
++                        }
++                    }
+                 }
++                //TODO:  MODIZER changes end / YOYOFR
+             }
+ 
+             cycles -= delta_t;
+@@ -442,6 +503,15 @@
+         }
+     }
+ 
++    //YOYOFR
++    for (int j=0;j<3;j++) {
++        if (voice[j].wave()->readFreq()) {
++            vgm_last_note[sid_idx+j]=voice[j].wave()->readFreq();
++            vgm_last_vol[sid_idx+j]=voice[j].envelope()->readENV();
++        }
++    }
++    //YOYOFR
++
+     return s;
+ }
+ 

@@ -1,5 +1,5 @@
 /**
- * emu2149 v1.41
+ * emu2149 v1.43
  * https://github.com/digital-sound-antiques/emu2149
  * Copyright (C) 2001-2022 Mitsutaka Okazaki
  *
@@ -174,6 +174,8 @@ PSGKSS_reset (PSGKSS * psg)
     psg->edge[i] = 0;
     psg->volume[i] = 0;
     psg->ch_out[i] = 0;
+    psg->tmask[i] = 0;
+    psg->nmask[i] = 0;
   }
 
   psg->mask = 0;
@@ -187,10 +189,17 @@ PSGKSS_reset (PSGKSS * psg)
   psg->noise_count = 0;
   psg->noise_freq = 0;
 
+  psg->env_continue = 0;
+  psg->env_attack = 0;
+  psg->env_alternate = 0;
+  psg->env_hold = 0;
+  psg->env_face = 0;
   psg->env_ptr = 0;
   psg->env_freq = 0;
   psg->env_count = 0;
   psg->env_pause = 1;
+
+  psg->psgtime = 0;
 
   psg->out = 0;
 
@@ -301,7 +310,7 @@ update_output (PSGKSS * psg)
         psg->count[i] = 0;
     }
 
-    if (0 < psg->freq_limit && psg->freq[i] <= psg->freq_limit) 
+    if (0 < psg->freq_limit && psg->freq[i] <= psg->freq_limit && psg->nmask[i]) 
     {
       /* Mute the channel if the pitch is higher than the Nyquist frequency at the current sample rate, 
        * to prevent aliased or broken tones from being generated. Of course, this logic doesn't exist 
@@ -475,4 +484,14 @@ PSGKSS_writeReg (PSGKSS * psg, uint32_t reg, uint32_t val)
   }
 
   return;
+}
+
+int PSGKSS_save_state(PSGKSS *psg, uint8_t *out) {
+  if (out) memcpy(out, psg, sizeof(PSGKSS));
+  return (int)sizeof(PSGKSS);
+}
+void PSGKSS_load_state(PSGKSS *psg, const uint8_t *in, int size) {
+  /* voltbl is the only pointer and targets a static table (same address in every
+     instance), so a plain copy is position-independent (restorable cross-instance). */
+  if (size >= (int)sizeof(PSGKSS)) memcpy(psg, in, sizeof(PSGKSS));
 }

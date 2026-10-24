@@ -1,0 +1,69 @@
+--- a/src/builders/sidlite-builder/sidlite/SID.cpp
++++ b/src/builders/sidlite-builder/sidlite/SID.cpp
+@@ -31,12 +31,38 @@
+ #include <iterator>
+ #include <cstdint>
+ 
++//TODO:  MODIZER changes start / YOYOFR
++extern "C" int sid_v4;
++extern "C" {
++#include "../../../../../src/ModizerVoicesData.h"
++}
++//TODO:  MODIZER changes end / YOYOFR
++
+ namespace SIDLite
+ {
+ 
+ int SID::clock(unsigned int cycles, short* buf)
+ {
+     int i = 0;
++
++    //TODO:  MODIZER changes start / YOYOFR
++    // Oscilloscope slot of this chip: 4 per chip (3 voices + digi), chips
++    // numbered in order of first clock.
++    int sid_idx=0;
++    while (sid_idx<MAXSID_CHIPS) {
++        if (m_sid_chipId[sid_idx]==NULL) {
++            m_sid_chipId[sid_idx]=(void*)this;
++            break;
++        }
++        if (m_sid_chipId[sid_idx]==(void*)this) break;
++        sid_idx++;
++    }
++    sid_idx=(sid_idx%m_sid_chipNb)*4;
++    const int64_t smplIncr=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++    // Playback speed (patch from Modizer): more chip cycles per output sample.
++    if (mdz_ratio_fp_inc!=0) cycles=cycles*mdz_ratio_fp_inc/65536;
++    //TODO:  MODIZER changes end / YOYOFR
++
+     while (cycles > 0)
+     {
+         short output;
+@@ -44,8 +70,27 @@
+         {
+             buf[i] = output;
+             i++;
++
++            //TODO:  MODIZER changes start / YOYOFR
++            const int v[4] = { wavgen.ChannelOutput[0]>>6, wavgen.ChannelOutput[1]>>6,
++                               wavgen.ChannelOutput[2]>>6, sid_v4>>10 };
++            for (int j=0;j<4;j++) {
++                m_voice_buff[sid_idx+j][(m_voice_current_ptr[sid_idx+j]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8(v[j]);
++                m_voice_current_ptr[sid_idx+j]+=smplIncr;
++            }
++            //TODO:  MODIZER changes end / YOYOFR
+         }
+     }
++
++    //YOYOFR
++    for (int j=0;j<3;j++) {
++        if (wavgen.ChannelFreq[j]) {
++            vgm_last_note[sid_idx+j]=wavgen.ChannelFreq[j];
++            vgm_last_vol[sid_idx+j]=wavgen.ChannelEnv[j];
++        }
++    }
++    //YOYOFR
++
+     return i;
+ }
+ 

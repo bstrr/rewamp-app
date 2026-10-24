@@ -73,6 +73,11 @@
 #define PK_EASE_GROW_S    0.3  /* auto range grows: a note is off the keyboard, catch up */
 #define PK_EASE_SHRINK_S  1.2  /* auto range zooms in: unhurried */
 #define PK_SHRINK_WINDOW  8.0  /* zoom in only to what the last N s needed... */
+/* Mode « clavier par voix »: au plus N voix (ou N instruments distincts quand
+ * la couleur suit l'instrument) SIMULTANÉES sur un même clavier. Au-delà, le
+ * nombre de claviers est forcé vers le haut en relevant le plancher de zoom:
+ * les touches rétrécissent, les rangées se multiplient (voir g_pk_rows_min). */
+#define PK_MAX_PER_ROW    4
 #define PK_SHRINK_MIN     3    /* ...only for a gain of at least N white keys */
 
 /* ── options (set from Dart, read on the render thread) ─────────────────── */
@@ -240,6 +245,16 @@ static int    g_pk_range_lo = 21, g_pk_range_hi = 49;   /* white keys, C2..C6 */
 static double g_pk_lo_seen[PK_WHITES + 1], g_pk_hi_seen[PK_WHITES + 1];
 static double g_pk_range_changed = 0.0;                 /* last grow or shrink */
 static int    g_pk_seen_ready = 0;
+/* Charge SIMULTANÉE du morceau: g_pk_load_seen[k] = dernier instant où k
+ * voix (ou instruments) sonnaient dans la même colonne de la fenêtre de rendu.
+ * La charge effective est le plus grand k vu dans les PK_SHRINK_WINDOW
+ * dernières secondes — même asymétrie que le cadrage: un pic relève le
+ * plancher AU TICK, une accalmie ne le rabaisse qu'après la fenêtre, sinon le
+ * nombre de claviers danserait à chaque phrase. Un morceau à 16 voies dont 4
+ * sonnent ensemble reste sur un ou deux claviers; un MIDI à 12 voix
+ * simultanées en impose trois (PK_MAX_PER_ROW). */
+static double       g_pk_load_seen[PK_VOICES + 1];
+static volatile int g_pk_rows_min = 1;
 /* Nouveau morceau: le cadre n'a plus rien vu. Les premières notes le posent
  * SERRÉ d'emblée — sans ça il héritait du morceau précédent (ou du C2..C6 de
  * départ), et un morceau plus étroit n'occupait que la moitié de l'écran
@@ -344,6 +359,27 @@ static void pk_compute_layout(PkLayout* L, int W, int H, int mode, int vc, float
      * per-voice budget made the keys tiny and the zoom impossible. */
     const float budget = (mode == 0) ? ((float)H - gap) : ((float)H * 0.28f);
     float floorSpan = (budget > 8.0f) ? (float)W * 4.0f / budget : PK_SPAN_MIN;
+    /* Minimum de claviers (charge simultanée, voir g_pk_rows_min): une rangée
+     * ne peut pas être plus haute que H / rmin, donc une touche pas plus large
+     * que ce quart de hauteur — c'est un plancher de ZOOM, pas un clamp de
+     * hauteur, pour que la touche garde son 1:4. Les voix se répartissent
+     * ensuite par v % rows comme avant. AUTO seulement: avec 32 voix la charge
+     * impose 8 rangées, et sur une surface ordinaire ce plancher dépassait le
+     * clavier ENTIER (PK_SPAN_MAX) — la vue manuelle ne zoomait plus du tout.
+     * Un zoom DEMANDÉ l'emporte: les voix partagent alors les claviers qui
+     * restent, comme pour le plancher d'un seul clavier. */
+    if (mode == 0 && !g_pk_manual) {
+        int rmin = g_pk_rows_min;
+        if (rmin > vc) rmin = vc;
+        if (rmin > PK_MAXROWS) rmin = PK_MAXROWS;
+        if (rmin > 1) {
+            const float perRow = (float)H / (float)rmin - gap;
+            if (perRow > 8.0f) {
+                const float f = (float)W * 4.0f / perRow;
+                if (f > floorSpan) floorSpan = f;
+            }
+        }
+    }
     if (floorSpan < PK_SPAN_MIN) floorSpan = PK_SPAN_MIN;
     if (floorSpan > PK_SPAN_MAX) floorSpan = PK_SPAN_MAX;
     g_pk_span_floor = floorSpan;
@@ -787,6 +823,8 @@ static void pk_rebase_clock(double now) {
             if (g_pk_lo_seen[k] > -1e17) g_pk_lo_seen[k] += shift;
             if (g_pk_hi_seen[k] > -1e17) g_pk_hi_seen[k] += shift;
         }
+        for (int k = 0; k <= PK_VOICES; k++)
+            if (g_pk_load_seen[k] > -1e17) g_pk_load_seen[k] += shift;
         if (g_pk_ease_t0 >= 0.0) g_pk_ease_t0 += shift;
     }
     g_pk_clock_ref = now;
@@ -798,11 +836,33 @@ static void pk_check_track_change(void) {
     g_pk_track_gen = gen;
     g_pk_range_unset = 1;
     g_pk_seen_ready = 0;   /* oublie les bords vus du morceau précédent */
+    /* Et sa charge: sinon un morceau à 12 voix laissait trois claviers au
+     * morceau suivant pendant 8 s (pk_update_rows_min lit ces instants même
+     * sans note, c'est voulu pour le silence). */
+    for (int k = 0; k <= PK_VOICES; k++) g_pk_load_seen[k] = -1e18;
+    g_pk_rows_min = 1;
+}
+
+/* Charge simultanée EFFECTIVE (voir g_pk_load_seen) → claviers minimaux.
+ * Appelée à chaque frame, silence compris: c'est elle qui laisse la charge
+ * retomber quand plus rien ne sonne. */
+static void pk_update_rows_min(double now) {
+    int load = 0;
+    for (int k = PK_VOICES; k >= 1; k--)
+        if (g_pk_load_seen[k] >= now - PK_SHRINK_WINDOW) { load = k; break; }
+    int rmin = (load + PK_MAX_PER_ROW - 1) / PK_MAX_PER_ROW;
+    if (rmin < 1) rmin = 1;
+    if (rmin > PK_MAXROWS) rmin = PK_MAXROWS;
+    g_pk_rows_min = rmin;
 }
 
 static void pk_update_range(int n, int vc, double now) {
     int mn = 999, mx = -1;
-    for (int c = 0; c < n; c++)
+    int peak = 0;   /* plus forte charge simultanée d'une colonne de la fenêtre */
+    const int byInstr = g_pk_color;
+    for (int c = 0; c < n; c++) {
+        int load = 0;
+        uint32_t seenInstr[8] = {0};   /* 256 instruments, un bit chacun */
         for (int v = 0; v < vc; v++) {
             if (pk_voice_muted(v)) continue;
             float hz = g_pk_hz[c * vc + v];
@@ -811,12 +871,27 @@ static void pk_update_range(int n, int vc, double now) {
             if (m < 0 || m >= PK_NOTES) continue;
             if (m < mn) mn = m;
             if (m > mx) mx = m;
+            /* Même règle que la couleur: l'INSTRUMENT quand il existe, sinon la
+             * voix — deux voix du même échantillon comptent pour un en mode
+             * instrument, une voix sans instrument compte pour elle-même. */
+            const int instr = byInstr ? g_pk_instr[c * vc + v] : 0;
+            if (instr > 0) {
+                const uint32_t bit = 1u << (instr & 31);
+                if (seenInstr[(instr >> 5) & 7] & bit) continue;
+                seenInstr[(instr >> 5) & 7] |= bit;
+            }
+            load++;
         }
+        if (load > peak) peak = load;
+    }
     if (!g_pk_seen_ready) {
         for (int k = 0; k <= PK_WHITES; k++) g_pk_lo_seen[k] = g_pk_hi_seen[k] = -1e18;
+        for (int k = 0; k <= PK_VOICES; k++) g_pk_load_seen[k] = -1e18;
         g_pk_range_changed = now;
         g_pk_seen_ready = 1;
     }
+    if (peak > PK_VOICES) peak = PK_VOICES;
+    if (peak > 0) g_pk_load_seen[peak] = now;
     if (mx < 0) return;   /* silence: keep what we have */
     /* In WHITE-KEY units: the outer edges of the lowest and highest keys, half
      * a white key of margin, whole keys, at least one octave. It used to be
@@ -1045,6 +1120,7 @@ REWAMP_EXPORT void rewamp_pianoviz_render(void) {
     pk_rebase_clock(now);
     pk_check_track_change();
     if (n > 0) pk_update_range(n, vc, now);
+    pk_update_rows_min(now);
     pk_update_view(now);
     /* The zoom floor depends on the surface: re-clamp the live view against
      * the floor the layout is about to compute (a rotation or a fullscreen

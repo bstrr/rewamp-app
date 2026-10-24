@@ -522,6 +522,15 @@ const List<BundledComponent> kComponents = [
       author: 'ScummVM team'),
   BundledComponent('webUADE (patches audio.device)', 'GPL-2.0',
       url: 'https://www.wothke.ch/', author: 'Jürgen Wothke'),
+  // stonepacker.library: bibliothèque AmigaOS 68k que le player UADE
+  // StoneTracker 1.6 ouvre (OpenLibrary) avant de jouer un .spm — sans elle,
+  // silence. Binaire d'origine tiré de l'édition gratuite de février 2001
+  // (Aminet mus/edit/stonefree1.lha); son readme, que la redistribution doit
+  // garder, est vendoré à côté (data/players/LIBS/StoneTracker.readme).
+  BundledComponent('StoneTracker (stonepacker.library)',
+      'gratuiciel, redistribution libre avec son readme',
+      url: 'https://aminet.net/package/mus/edit/stonefree1',
+      author: 'Michael Lavaire, Emmanuel Marty'),
   BundledComponent('projectM', 'LGPL-2.1',
       url: 'https://github.com/projectM-visualizer/projectm',
       author: 'projectM team'),

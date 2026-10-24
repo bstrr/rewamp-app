@@ -46,8 +46,8 @@
 #  endif
 #endif
 
-namespace reSIDfp {
-
+namespace reSIDfp
+{
     /**
      *  The SID chip model, either MOS6581 or CSG8580
      */
@@ -64,7 +64,11 @@ namespace reSIDfp {
     /**
      * The resampling method
      */
-    typedef enum { DECIMATE, RESAMPLE } SamplingMethod;
+    typedef enum {
+        DECIMATE,   ///< Linear interpolation (fast but low quality)
+        RESAMPLE,   ///< Sinc resampling (high quality but CPU intensive)
+        NONE        ///< No resampling (raw 1MHz output)
+    } SamplingMethod;
 }
 
 #endif

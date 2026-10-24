@@ -132,6 +132,12 @@ typedef struct {
     int64_t                   xfTailLen;
     int64_t                   xfTailPos;
     int                       xfMode;
+    // Tail frames played ALONE before the overlap: the overlap is capped to a
+    // quarter of either track, so a track shorter than the fade is still
+    // heard. While they play the incoming decoder is open but its boundary
+    // is not published yet (xfCommitPending).
+    int64_t                   xfMixStart;
+    int                       xfCommitPending;
     // Fondu de sortie armé par le producteur (fin de file sous crossfade) —
     // à DÉSARMER si un suivant est finalement armé avant la fin, sinon la
     // fenêtre de ds_read fondrait AUSSI le recouvrement du crossfade.

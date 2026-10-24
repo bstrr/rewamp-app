@@ -575,6 +575,10 @@ Future<void> showAlbumOptions(
   required Future<List<SearchResult>> Function() fetchTracks,
   Future<void> Function()? onRedownload,
   VoidCallback? onDeleted,
+  /// Faux pour des fichiers que l'app n'a pas téléchargés (zip déposé, import):
+  /// « Supprimer les fichiers de l'album » ne s'offre que pour un
+  /// téléchargement, comme sur l'écran des sous-chansons.
+  bool canDeleteFiles = true,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -593,6 +597,7 @@ Future<void> showAlbumOptions(
           fetchTracks:    fetchTracks,
           onRedownload:   onRedownload,
           onDeleted:      onDeleted,
+          canDeleteFiles: canDeleteFiles,
         ),
       ),
     ),
@@ -613,6 +618,7 @@ class _AlbumOptionsSheet extends StatefulWidget {
   /// Called after the album's files + DB rows were deleted — lets the caller
   /// pop the (now stale) album screen.
   final VoidCallback? onDeleted;
+  final bool canDeleteFiles;
 
   const _AlbumOptionsSheet({
     required this.albumName,
@@ -626,6 +632,7 @@ class _AlbumOptionsSheet extends StatefulWidget {
     required this.fetchTracks,
     this.onRedownload,
     this.onDeleted,
+    this.canDeleteFiles = true,
   });
 
   @override
@@ -833,6 +840,7 @@ class _AlbumOptionsSheetState extends State<_AlbumOptionsSheet> {
               widget.onRedownload!();
             },
           ),
+        if (widget.canDeleteFiles)
         ListTile(
           leading: Icon(Icons.delete_outline,
               color: Theme.of(context).colorScheme.error),
@@ -867,6 +875,22 @@ enum PlayChoice { now, next, end, open }
 /// liste au lieu de les recoder à chaque écran; les crochets viennent
 /// d'AppShell ([globalOnOpenSubsongs], [globalOnNavigateAlbum]).
 ///
+/// Une ligne LOCALE désigne-t-elle un ALBUM qu'on puisse ouvrir ?
+///
+/// `meta_album` ne suffit pas: c'est aussi le tag ALBUM que le moteur lit
+/// dans le FICHIER (`audio.tagAlbum`, un `.sc68` le remplit de son propre
+/// nom). Pour un morceau du CATALOGUE, l'album n'existe que s'il a son uuid
+/// (`albumId`) — sans lui, ouvrir l'écran par le NOM tombait sur un
+/// homonyme ou sur rien, et « Gunship 2000 », un fichier à 9 sous-chansons,
+/// proposait « Voir l'album ». Le lecteur suit déjà cette règle (la ligne
+/// d'album n'y est un lien qu'avec `metaAlbumId`). Hors catalogue, le nom EST
+/// l'identité de l'album importé (son dossier).
+bool trackOffersAlbumLink(TrackRecord t) {
+  if (t.metaAlbum == null || t.metaAlbum!.isEmpty) return false;
+  if (t.albumId != null && t.albumId!.isNotEmpty) return true;
+  return catalogueSongId(t.onlineId) == null;
+}
+
 /// [openLabel] reste distinct: il rend `PlayChoice.open`, que son appelant
 /// gère lui-même (la carte d'album de la bibliothèque).
 Future<PlayChoice?> showPlayChoiceSheet(
@@ -964,7 +988,7 @@ Future<PlayChoice?> showPlayChoiceSheet(
             if (openLabel == null &&
                 track != null &&
                 globalOnNavigateAlbum != null &&
-                (track.metaAlbum?.isNotEmpty ?? false))
+                trackOffersAlbumLink(track))
               ListTile(
                 leading: const Icon(Icons.album_outlined),
                 title: Text(l10n.playerViewAlbum),

@@ -2569,6 +2569,13 @@ class AppLocalizationsRu extends AppLocalizations {
       'Предпочитать японские поля (название, игра, исполнитель) тегов VGM, когда они есть.';
 
   @override
+  String get settingsVgmLoopFade => 'Затухание зацикленных треков';
+
+  @override
+  String get settingsVgmLoopFadeHelp =>
+      'В формате VGM нет затухания: зацикленный трек проигрывает цикл дважды, затем затухает за это время. Выкл. = резкая остановка. Треки без цикла заканчиваются как есть.';
+
+  @override
   String get localImportFolder => 'Импорт папки';
 
   @override
@@ -3976,6 +3983,117 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get podiumBrowserTitle => 'Пьедесталы';
+
+  @override
+  String get podiumHubBias =>
+      'Каждый трек учитывается один раз, по своему лучшему месту.';
+
+  @override
+  String get podiumRecentWinners => 'Недавние победители';
+
+  @override
+  String get podiumRecentWinnersSubtitle =>
+      'Золото за два последних года, новые компо сначала';
+
+  @override
+  String get podiumViaSelf => 'Музыкальные компо';
+
+  @override
+  String get podiumViaSelfSubtitle => 'Трек участвовал сам';
+
+  @override
+  String get podiumViaProduction => 'Саундтреки демо';
+
+  @override
+  String get podiumViaProductionSubtitle =>
+      'Демо или игра, которую он озвучивает, заняла место';
+
+  @override
+  String get podiumByKind => 'По виду компо';
+
+  @override
+  String get podiumByEra => 'По эпохе';
+
+  @override
+  String get podiumByParty => 'По пати';
+
+  @override
+  String get podiumByPartySubtitle => 'Серии пати по числу медалей';
+
+  @override
+  String get podiumTopArtists => 'Самые титулованные авторы';
+
+  @override
+  String get podiumAll => 'Все пьедесталы';
+
+  @override
+  String get podiumAllSubtitle => 'Новые компо сначала, затем по месту';
+
+  @override
+  String get podiumChipVia => 'Характер';
+
+  @override
+  String get podiumChipKind => 'Вид компо';
+
+  @override
+  String get podiumChipSeries => 'Пати';
+
+  @override
+  String get podiumChipEra => 'Эпоха';
+
+  @override
+  String get compoKindTracked => 'Tracked';
+
+  @override
+  String get compoKindChip => 'Chip';
+
+  @override
+  String get compoKindStreaming => 'Streaming';
+
+  @override
+  String get compoKindExecutable => 'Исполняемая';
+
+  @override
+  String get compoKindOldskool => 'Oldskool';
+
+  @override
+  String get compoKindCombined => 'Смешанная';
+
+  @override
+  String get compoKindSoundtrack => 'Саундтрек';
+
+  @override
+  String get compoKindTrackedHint => 'Трекерные модули: MOD, XM, IT…';
+
+  @override
+  String get compoKindChipHint => 'Чиптюн: SID, AY, NES, Game Boy…';
+
+  @override
+  String get compoKindStreamingHint => 'Потоковое аудио: MP3, OGG, WAV…';
+
+  @override
+  String get compoKindExecutableHint =>
+      'Музыка, генерируемая крошечной программой';
+
+  @override
+  String get compoKindOldskoolHint => 'Старое железо или трекер, без стриминга';
+
+  @override
+  String get compoKindCombinedHint => 'Компо без ограничений по формату';
+
+  @override
+  String get compoKindSoundtrackHint => 'Музыка демо или игры, занявшей место';
+
+  @override
+  String podiumDecadeLabel(String decade) {
+    return '$decade-е';
+  }
+
+  @override
+  String get podiumSortPodium => 'Новые компо сначала';
+
+  @override
   String get competitionEmpty => 'В этом конкурсе нет работ';
 
   @override
@@ -4004,11 +4122,11 @@ class AppLocalizationsRu extends AppLocalizations {
   String get onboardingStart => 'Начать';
 
   @override
-  String get onboardingBetaTitle => 'Бета-версия';
+  String get onboardingWelcomeTitle => 'Добро пожаловать в Rewamp';
 
   @override
-  String get onboardingBetaBody =>
-      'Rewamp ещё строится. Локальные данные — библиотека, плейлисты, избранное, статистика — могут быть обнулены до версии 1.0. Загруженным файлам ничего не грозит, но важное храните и в другом месте.';
+  String get onboardingWelcomeBody =>
+      'Плеер для чиптюнов, трекерных модулей и музыки из игр — Amiga, Atari, C64, консоли, аркады и ПК. Слушайте из крупных онлайн-архивов или открывайте свои файлы.';
 
   @override
   String onboardingVersion(String version, String build) {
@@ -4041,7 +4159,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get onboardingReplaySubtitle =>
-      'Снова показать уведомление о бете и обзор функций';
+      'Снова показать знакомство и обзор функций';
 
   @override
   String get settingsPatternTitle => 'Паттерны';
@@ -4227,52 +4345,56 @@ class AppLocalizationsRu extends AppLocalizations {
   String get releaseNotesTitle => 'Что нового';
 
   @override
-  String get releaseNotesV9Speed =>
-      'Скорость воспроизведения от 0,2× до 3× на панели «Голоса». Большинство движков меняют темп, сохраняя высоту звука; остальные выполняют передискретизацию.';
+  String get releaseNotesV10Loading =>
+      'Медленно загружающийся трек больше не подвешивает приложение: тонкое кольцо вокруг кнопки воспроизведения/паузы показывает, что загрузка ещё идёт.';
 
   @override
-  String get releaseNotesV9Windows =>
-      'Windows: мультимедийные клавиши и системные элементы управления мультимедиа (окно громкости, панель задач) управляют воспроизведением, а полноэкранная визуализация теперь занимает весь экран.';
+  String get releaseNotesV10Piano =>
+      'Визуализация «Пианино»: композиции с множеством одновременных голосов или инструментов распределяются по большему числу клавиатур.';
 
   @override
-  String get releaseNotesV9Formats =>
-      'Новые проигрыватели: NoiseTracker GS (Apple IIGS), Ron Klaren (Amiga) и программы .cop для SAM Coupé.';
+  String get releaseNotesV10Amiga =>
+      'Amiga: теперь воспроизводятся StoneTracker, SUNtronic (рипы TSM) и новые модули Soundtracker 2.6, а композиции SoundPlayer звучат на iOS.';
 
   @override
-  String get releaseNotesV9Amiga =>
-      'Amiga и Atari ST: теперь воспроизводятся SidMon 1, Sonic Arranger, Paul Robotham, Quartet, SoundFactory и некоторые модули Maximum Effect.';
+  String get releaseNotesV10ZxSpectrum =>
+      'ZX Spectrum: воспроизводятся файлы .mt3 с zxart, а в Linux доступны форматы ZXTune и программы .cop для SAM Coupé.';
 
   @override
-  String get releaseNotesV9MoonBlaster =>
-      'MSX MoonBlaster: композиции загружают свой набор сэмплов, а не играют шум, а файлы в режиме редактирования воспроизводятся правильно.';
+  String get releaseNotesV10OpenWith =>
+      'macOS и iOS: все поддерживаемые форматы теперь видны в меню «Открыть в программе».';
 
   @override
-  String get releaseNotesV9HideElsewhere =>
-      'Медиатека: параметр «Скрыть то, чего нет на этом устройстве» скрывает локальные записи, файл которых находится на другом устройстве.';
+  String get releaseNotesV10MtcCrash =>
+      'Исправлено: некоторые файлы .mtc, сочетающие PT3 с TFM или PSG, приводили к сбою приложения.';
 
   @override
-  String get releaseNotesV9ArtworkFullscreen =>
-      'Долгое нажатие на обложку в проигрывателе открывает её на весь экран.';
+  String get releaseNotesV10Podiums =>
+      'Новый раздел «Пьедесталы»: победители конкурсов демосцены по пати, году или типу конкурса, с залом славы.';
 
   @override
-  String get releaseNotesV9Viz =>
-      'Визуализации: по умолчанию осциллограф по голосам (линейный спектр для потоковых форматов), сетка и названия голосов переключаются прямо из осциллографа, а стереоосциллограф стал стабильнее.';
+  String get releaseNotesV10Arcade =>
+      'Аркады: музыка Ensoniq ES5505/ES5506 (Taito F3…) воспроизводится, VGM-файлы Apple IIGS больше не роняют приложение, движки обновлены (добавлен FM-Kingtracker .fmk).';
 
   @override
-  String get releaseNotesV9PsfTrack =>
-      'Исправлено: нажатие на трек некоторых альбомов PSF могло запустить другой трек.';
+  String get releaseNotesV10InfoPanel =>
+      'Панель сведений: формат, движок, каналы и точки цикла идут первыми, названия полей выделены.';
 
   @override
-  String get releaseNotesV9Playlists =>
-      'Папка с несколькими плейлистами теперь образует один альбом со всеми их треками, без повторов.';
+  String get releaseNotesV10LocalAlbums =>
+      'Экраны альбома и подтреков показывают коллекцию; перетащенный архив показывает все свои треки, помечен «локально» и после замены больше не появляется дважды.';
 
   @override
-  String get releaseNotesV9AmigaInfo =>
-      'Композиции Amiga без известной длительности или автора снова запрашивают сервер через неделю, а не никогда.';
+  String get releaseNotesV10Crossfade =>
+      'Исправлено: при плавном переходе трек короче перехода не было слышно.';
+
+  @override
+  String get releaseNotesV10Artwork =>
+      'Исправлено: обложка, заменённая на сервере, отображается везде после «Скачать файл заново».';
 
   @override
   String get releaseNotesDataReset =>
-      'Локальные данные сброшены для этой беты. Медиатека и плейлисты восстановятся из аккаунта; загрузки придётся повторить.';
+      'Локальные данные сброшены для этой версии. Медиатека и плейлисты восстановятся из аккаунта; загрузки придётся повторить.';
 
   @override
   String get releaseNotesDismiss => 'Продолжить';

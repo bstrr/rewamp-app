@@ -1,7 +1,7 @@
 /**
- * emu8950 v1.1.2
+ * emu8950 v1.2.3
  * https://github.com/digital-sound-antiques/emu8950
- * Copyright (C) 2001-2020 Mitsutaka Okazaki
+ * Copyright (C) 2001-2026 Mitsutaka Okazaki
  */
 #include "emu8950.h"
 #include <math.h>
@@ -47,9 +47,6 @@ enum __OPLKSS_TYPE { TYPE_Y8950 = 0, TYPE_YM3526, TYPE_YM3812, TYPE_MAX };
 /* dynamic range of sustine level */
 #define SL_STEP 3.0
 #define SL_BITS 4
-
-/* damper speed before key-on. key-scale affects. */
-#define DAMPER_RATE 12
 
 #define TL2EG(tl) ((tl) << 2)
 
@@ -154,12 +151,12 @@ static uint8_t eg_step_tables_fast[4][8] = {
 static uint32_t ml_table[16] = {1,     1 * 2, 2 * 2,  3 * 2,  4 * 2,  5 * 2,  6 * 2,  7 * 2,
                                 8 * 2, 9 * 2, 10 * 2, 10 * 2, 12 * 2, 12 * 2, 15 * 2, 15 * 2};
 
-#define dB2(x) ((x)*2)
+#define dB2(x) ((x) * 2)
 static double kl_table[16] = {dB2(0.000),  dB2(9.000),  dB2(12.000), dB2(13.875), dB2(15.000), dB2(16.125),
                               dB2(16.875), dB2(17.625), dB2(18.000), dB2(18.750), dB2(19.125), dB2(19.500),
                               dB2(19.875), dB2(20.250), dB2(20.625), dB2(21.000)};
 
-static uint32_t tll_table[8 * 16][1 << TL_BITS][4];
+static uint16_t tll_table[8 * 16][4];
 static int32_t rks_table[2][32][2];
 
 #define min(i, j) (((i) < (j)) ? (i) : (j))
@@ -181,8 +178,9 @@ static int32_t rks_table[2][32][2];
  */
 #define LW 16
 
-/* resolution of sinc(x) table. sinc(x) where 0.0<=x<1.0 corresponds to sinc_table[0...SINC_RESO-1] */
-#define SINC_RESO 256
+/* number of phases between two input samples. must be a power of 2. */
+#define SINC_RESO_BITS 8
+#define SINC_RESO (1 << SINC_RESO_BITS)
 #define SINC_AMP_BITS 12
 
 // double hamming(double x) { return 0.54 - 0.46 * cos(2 * PI * x); }
@@ -197,15 +195,18 @@ OPLKSS_RateConv *OPLKSS_RateConv_new(double f_inp, double f_out, int ch) {
 
   conv->ch = ch;
   conv->f_ratio = f_inp / f_out;
-  conv->buf = malloc(sizeof(void *) * ch);
+  conv->timer_step = (uint32_t)((conv->f_ratio - floor(conv->f_ratio)) * 4294967296.0);
+  conv->buf = malloc(sizeof(conv->buf[0]) * ch);
+  conv->pos = malloc(sizeof(conv->pos[0]) * ch);
   for (i = 0; i < ch; i++) {
-    conv->buf[i] = malloc(sizeof(conv->buf[0][0]) * LW);
+    conv->buf[i] = malloc(sizeof(conv->buf[0][0]) * LW * 2);
   }
 
-  /* create sinc_table for positive 0 <= x < LW/2 */
-  conv->sinc_table = malloc(sizeof(conv->sinc_table[0]) * SINC_RESO * LW / 2);
-  for (i = 0; i < SINC_RESO * LW / 2; i++) {
-    const double x = (double)i / SINC_RESO;
+  /* sinc_table[p * LW + k] is the coefficient for buf[k] at phase dn = p / SINC_RESO (0 <= p <= SINC_RESO).
+     The coefficients for p and SINC_RESO - p are the same in reverse order, but both are kept to avoid a branch. */
+  conv->sinc_table = malloc(sizeof(conv->sinc_table[0]) * (SINC_RESO + 1) * LW);
+  for (i = 0; i < (SINC_RESO + 1) * LW; i++) {
+    const double x = fabs((i % LW) - (LW / 2 - 1) - (double)(i / LW) / SINC_RESO);
     if (f_out < f_inp) {
       /* for downsampling */
       conv->sinc_table[i] = (int16_t)((1 << SINC_AMP_BITS) * windowed_sinc(x / conv->f_ratio) / conv->f_ratio);
@@ -218,47 +219,40 @@ OPLKSS_RateConv *OPLKSS_RateConv_new(double f_inp, double f_out, int ch) {
   return conv;
 }
 
-static INLINE int16_t lookup_sinc_table(int16_t *table, double x) {
-  int16_t index = (int16_t)(x * SINC_RESO);
-  if (index < 0)
-    index = -index;
-  return table[min(SINC_RESO * LW / 2 - 1, index)];
+/* p is the output phase in SINC_RESO units (0 <= p <= SINC_RESO). */
+static INLINE int16_t rateconv_get(OPLKSS_RateConv *conv, int ch, uint32_t p) {
+  const int16_t *buf = conv->buf[ch] + conv->pos[ch];
+  const int16_t *coef = conv->sinc_table + p * LW;
+  int32_t sum = 0;
+  int k;
+  for (k = 0; k < LW; k++) {
+    sum += buf[k] * coef[k];
+  }
+  return sum >> SINC_AMP_BITS;
 }
 
 void OPLKSS_RateConv_reset(OPLKSS_RateConv *conv) {
   int i;
   conv->timer = 0;
   for (i = 0; i < conv->ch; i++) {
-    memset(conv->buf[i], 0, sizeof(conv->buf[i][0]) * LW);
+    conv->pos[i] = 0;
+    memset(conv->buf[i], 0, sizeof(conv->buf[i][0]) * LW * 2);
   }
 }
 
 /* put original data to this converter at f_inp. */
 void OPLKSS_RateConv_putData(OPLKSS_RateConv *conv, int ch, int16_t data) {
   int16_t *buf = conv->buf[ch];
-  int i;
-  for (i = 0; i < LW - 1; i++) {
-    buf[i] = buf[i + 1];
-  }
-  buf[LW - 1] = data;
+  int pos = conv->pos[ch];
+  buf[pos] = buf[pos + LW] = data;
+  conv->pos[ch] = (pos + 1 == LW) ? 0 : pos + 1;
 }
 
 /* get resampled data from this converter at f_out. */
 /* this function must be called f_out / f_inp times per one putData call. */
 int16_t OPLKSS_RateConv_getData(OPLKSS_RateConv *conv, int ch) {
-  int16_t *buf = conv->buf[ch];
-  int32_t sum = 0;
-  int k;
-  double dn;
-  conv->timer += conv->f_ratio;
-  dn = conv->timer - floor(conv->timer);
-  conv->timer = dn;
-
-  for (k = 0; k < LW; k++) {
-    double x = ((double)k - (LW / 2 - 1)) - dn;
-    sum += buf[k] * lookup_sinc_table(conv->sinc_table, x);
-  }
-  return sum >> SINC_AMP_BITS;
+  conv->timer += conv->timer_step;
+  return rateconv_get(conv, ch, (uint32_t)(((uint64_t)conv->timer + (1u << (31 - SINC_RESO_BITS))) >> (32 - SINC_RESO_BITS)));
 }
 
 void OPLKSS_RateConv_delete(OPLKSS_RateConv *conv) {
@@ -267,6 +261,7 @@ void OPLKSS_RateConv_delete(OPLKSS_RateConv *conv) {
     free(conv->buf[i]);
   }
   free(conv->buf);
+  free(conv->pos);
   free(conv->sinc_table);
   free(conv);
 }
@@ -321,22 +316,20 @@ static void makeSinTable(void) {
 static void makeTllTable(void) {
 
   int32_t tmp;
-  int32_t fnum, block, TL, KL, kx;
+  int32_t fnum, block, KL, kx;
 
   for (fnum = 0; fnum < 16; fnum++) {
     for (block = 0; block < 8; block++) {
-      for (TL = 0; TL < 64; TL++) {
-        for (KL = 0; KL < 4; KL++) {
-          kx = ((KL & 1) << 1) | ((KL >> 1) & 1);
-          if (KL == 0) {
-            tll_table[(block << 4) | fnum][TL][KL] = TL2EG(TL);
-          } else {
-            tmp = (int32_t)(kl_table[fnum] - dB2(3.000) * (7 - block));
-            if (tmp <= 0)
-              tll_table[(block << 4) | fnum][TL][KL] = TL2EG(TL);
-            else
-              tll_table[(block << 4) | fnum][TL][KL] = (uint32_t)((tmp >> (3 - kx)) / EG_STEP) + TL2EG(TL);
-          }
+      for (KL = 0; KL < 4; KL++) {
+        kx = ((KL & 1) << 1) | ((KL >> 1) & 1);
+        if (KL == 0) {
+          tll_table[(block << 4) | fnum][KL] = 0;
+        } else {
+          tmp = (int32_t)(kl_table[fnum] - dB2(3.000) * (7 - block));
+          if (tmp <= 0)
+            tll_table[(block << 4) | fnum][KL] = 0;
+          else
+            tll_table[(block << 4) | fnum][KL] = (uint16_t)((tmp >> (3 - kx)) / EG_STEP);
         }
       }
     }
@@ -402,8 +395,6 @@ static char *_debug_eg_state_name(OPLKSS_SLOT *slot) {
     return "sustain";
   case RELEASE:
     return "release";
-  case DAMP:
-    return "damp";
   default:
     return "unknown";
   }
@@ -450,11 +441,7 @@ static void commit_slot_update(OPLKSS_SLOT *slot, uint8_t notesel) {
   }
 
   if (slot->update_requests & UPDATE_TLL) {
-    if ((slot->type & 1) == 0) {
-      slot->tll = tll_table[slot->blk_fnum >> 6][slot->patch->TL][slot->patch->KL];
-    } else {
-      slot->tll = tll_table[slot->blk_fnum >> 6][slot->patch->TL][slot->patch->KL];
-    }
+    slot->tll = tll_table[slot->blk_fnum >> 6][slot->patch->KL] + TL2EG(slot->patch->TL);
   }
 
   if (slot->update_requests & UPDATE_RKS) {
@@ -507,11 +494,15 @@ static void reset_slot(OPLKSS_SLOT *slot, int number) {
   slot->blk = 0;
   slot->fnum = 0;
   slot->pg_out = 0;
+  slot->eg_rate_h = 0;
+  slot->eg_rate_l = 0;
   slot->eg_out = EG_MUTE;
+  slot->update_requests = 0;
 }
 
 static INLINE void slotOn(OPLKSS *opl, int i) {
   OPLKSS_SLOT *slot = &opl->slot[i];
+  slot->rks = rks_table[opl->notesel][slot->blk_fnum >> 8][slot->patch->KR];
   if (min(15, slot->patch->AR + (slot->rks >> 2)) == 15) {
     slot->eg_state = DECAY;
     slot->eg_out = 0;
@@ -858,13 +849,9 @@ static INLINE int16_t calc_fm(OPLKSS *opl, int ch) {
   return calc_slot_car(opl, ch, calc_slot_mod(opl, ch));
 }
 
-static void latch_timer1(OPLKSS *opl) {
-  opl->timer1_counter = opl->reg[0x02] << 2;
-}
+static void latch_timer1(OPLKSS *opl) { opl->timer1_counter = opl->reg[0x02] << 2; }
 
-static void latch_timer2(OPLKSS *opl) {
-  opl->timer2_counter = opl->reg[0x03] << 4;
-}
+static void latch_timer2(OPLKSS *opl) { opl->timer2_counter = opl->reg[0x03] << 4; }
 
 static void csm_key_on(OPLKSS *opl) {
   opl->csm_key_count = 1;
@@ -905,7 +892,6 @@ static void update_timer(OPLKSS *opl) {
       latch_timer2(opl);
     }
   }
-
 }
 
 //YOYOFR: notes par voie (voir opllkss_capture_notes dans kss_emu2413.c).
@@ -1050,12 +1036,12 @@ INLINE static void mix_output_stereo(OPLKSS *opl) {
   int i;
   out[0] = out[1] = 0;
   for (i = 0; i < 15; i++) {
-      if (!(generic_mute_mask&((int64_t)1<<(m_voicesForceOfs+i)))) { //YOYOFR
-          if (opl->pan[i] & 2)
-              out[0] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][0]);
-          if (opl->pan[i] & 1)
-              out[1] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][1]);
-      }
+    if (!(generic_mute_mask&((int64_t)1<<(m_voicesForceOfs+i)))) { //YOYOFR
+      if (opl->pan[i] & 2)
+        out[0] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][0] / 4096);
+      if (opl->pan[i] & 1)
+        out[1] += (int16_t)(opl->ch_out[i] * opl->pan_fine[i][1] / 4096);
+    }
   }
   if (opl->conv) {
     OPLKSS_RateConv_putData(opl->conv, 0, out[0]);
@@ -1103,7 +1089,7 @@ OPLKSS *OPLKSS_new(uint32_t clk, uint32_t rate) {
     initializeTables();
   }
 
-  opl = (OPLKSS *)calloc(sizeof(OPLKSS), 1);
+  opl = (OPLKSS *)calloc(1, sizeof(OPLKSS));
   if (opl == NULL)
     return NULL;
 
@@ -1138,11 +1124,17 @@ void OPLKSS_delete(OPLKSS *opl) {
 
 static void reset_rate_conversion_params(OPLKSS *opl) {
   const double f_out = opl->rate;
-  const double f_inp = opl->clk / 72;
+  const double f_inp = opl->clk / 72.0;
 
   opl->out_time = 0;
-  opl->out_step = ((uint32_t)f_inp) << 8;
-  opl->inp_step = ((uint32_t)f_out) << 8;
+  opl->out_step = opl->clk;
+  opl->inp_step = opl->rate * 72;
+  /* the largest inp_shift such that inp_recip fits in 32 bits */
+  opl->inp_shift = 32;
+  while ((((uint64_t)1 << (opl->inp_shift + 1)) - 1) / opl->inp_step < 0xffffffff) {
+    opl->inp_shift++;
+  }
+  opl->inp_recip = (uint32_t)((((uint64_t)1 << opl->inp_shift) - 1) / opl->inp_step + 1);
 
   if (opl->conv) {
     OPLKSS_RateConv_delete(opl->conv);
@@ -1158,14 +1150,14 @@ static void reset_rate_conversion_params(OPLKSS *opl) {
   }
 }
 
-void refresh_adpcm_object(OPLKSS *opl) {
+static void refresh_adpcm_object(OPLKSS *opl) {
   if (opl->chip_type == TYPE_Y8950) {
     if (opl->adpcm == NULL) {
       opl->adpcm = OPLKSS_ADPCM_new(opl->clk);
     }
   } else {
     if (opl->adpcm != NULL) {
-      free(opl->adpcm);
+      OPLKSS_ADPCM_delete(opl->adpcm);
       opl->adpcm = NULL;
     }
   }
@@ -1194,11 +1186,18 @@ void OPLKSS_reset(OPLKSS *opl) {
   opl->am_phase = 0;
 
   opl->noise = 1;
+  opl->short_noise = 0;
   opl->mask = 0;
+
+  opl->test_flag = 0;
+  opl->lfo_am = 0;
 
   opl->rhythm_mode = 0;
   opl->slot_key_status = 0;
   opl->eg_counter = 0;
+
+  opl->mix_out[0] = 0;
+  opl->mix_out[1] = 0;
 
   reset_rate_conversion_params(opl);
 
@@ -1219,7 +1218,7 @@ void OPLKSS_reset(OPLKSS *opl) {
 
   for (i = 0; i < 15; i++) {
     opl->pan[i] = 3;
-    opl->pan_fine[i][1] = opl->pan_fine[i][0] = 1.0f;
+    opl->pan_fine[i][1] = opl->pan_fine[i][0] = 4096;
   }
 
   for (i = 0; i < 15; i++) {
@@ -1253,8 +1252,18 @@ void OPLKSS_writeIO(OPLKSS *opl, uint32_t adr, uint8_t val) {
 void OPLKSS_setPan(OPLKSS *opl, uint32_t ch, uint8_t pan) { opl->pan[ch & 15] = pan; }
 
 void OPLKSS_setPanFine(OPLKSS *opl, uint32_t ch, float pan[2]) {
-  opl->pan_fine[ch & 15][0] = pan[0];
-  opl->pan_fine[ch & 15][1] = pan[1];
+  opl->pan_fine[ch & 15][0] = (int32_t)floor(pan[0] * 4096.0 + 0.5);
+  opl->pan_fine[ch & 15][1] = (int32_t)floor(pan[1] * 4096.0 + 0.5);
+}
+
+/* output phase of the rate converter: round(dn * SINC_RESO), where dn = (inp_step - out_time) / inp_step
+   (or 0 if out_time is 0) is the position of the output sample between the last two input samples.
+   It is derived from out_time every time, so that it never drifts. */
+static INLINE uint32_t get_conv_phase(OPLKSS *opl) {
+  uint32_t d = opl->out_time ? opl->inp_step - opl->out_time : 0;
+  /* dn in 0.32 fixed point */
+  uint32_t dn = (uint32_t)(((uint64_t)d * opl->inp_recip) >> (opl->inp_shift - 32));
+  return (uint32_t)(((uint64_t)dn + (1u << (31 - SINC_RESO_BITS))) >> (32 - SINC_RESO_BITS));
 }
 
 int16_t OPLKSS_calc(OPLKSS *opl) {
@@ -1265,7 +1274,7 @@ int16_t OPLKSS_calc(OPLKSS *opl) {
   }
   opl->out_time -= opl->out_step;
   if (opl->conv) {
-    opl->mix_out[0] = OPLKSS_RateConv_getData(opl->conv, 0);
+    opl->mix_out[0] = rateconv_get(opl->conv, 0, get_conv_phase(opl));
   }
   return opl->mix_out[0];
 }
@@ -1278,8 +1287,9 @@ void OPLKSS_calcStereo(OPLKSS *opl, int32_t out[2]) {
   }
   opl->out_time -= opl->out_step;
   if (opl->conv) {
-    out[0] = OPLKSS_RateConv_getData(opl->conv, 0);
-    out[1] = OPLKSS_RateConv_getData(opl->conv, 1);
+    uint32_t p = get_conv_phase(opl);
+    out[0] = rateconv_get(opl->conv, 0, p);
+    out[1] = rateconv_get(opl->conv, 1, p);
   } else {
     out[0] = opl->mix_out[0];
     out[1] = opl->mix_out[1];
@@ -1361,7 +1371,7 @@ void OPLKSS_writeReg(OPLKSS *opl, uint32_t reg, uint8_t data) {
       opl->slot[s].patch->PM = (data >> 6) & 1;
       opl->slot[s].patch->EG = (data >> 5) & 1;
       opl->slot[s].patch->KR = (data >> 4) & 1;
-      opl->slot[s].patch->ML = (data)&15;
+      opl->slot[s].patch->ML = (data) & 15;
       request_update(&(opl->slot[s]), UPDATE_ALL);
     }
 
@@ -1370,7 +1380,7 @@ void OPLKSS_writeReg(OPLKSS *opl, uint32_t reg, uint8_t data) {
     s = stbl[reg - 0x40];
     if (s >= 0) {
       opl->slot[s].patch->KL = (data >> 6) & 3;
-      opl->slot[s].patch->TL = (data)&63;
+      opl->slot[s].patch->TL = (data) & 63;
       request_update(&(opl->slot[s]), UPDATE_ALL);
     }
 
@@ -1379,7 +1389,7 @@ void OPLKSS_writeReg(OPLKSS *opl, uint32_t reg, uint8_t data) {
     s = stbl[reg - 0x60];
     if (s >= 0) {
       opl->slot[s].patch->AR = (data >> 4) & 15;
-      opl->slot[s].patch->DR = (data)&15;
+      opl->slot[s].patch->DR = (data) & 15;
       request_update(&(opl->slot[s]), UPDATE_EG);
     }
 
@@ -1388,7 +1398,7 @@ void OPLKSS_writeReg(OPLKSS *opl, uint32_t reg, uint8_t data) {
     s = stbl[reg - 0x80];
     if (s >= 0) {
       opl->slot[s].patch->SL = (data >> 4) & 15;
-      opl->slot[s].patch->RR = (data)&15;
+      opl->slot[s].patch->RR = (data) & 15;
       request_update(&(opl->slot[s]), UPDATE_EG);
     }
 
@@ -1453,4 +1463,44 @@ void OPLKSS_writeADPCMData(OPLKSS *opl, uint8_t type, uint32_t start, uint32_t l
       OPLKSS_ADPCM_writeROM(opl->adpcm, start, length, data);
     }
   }
+}
+
+int OPLKSS_save_state(OPLKSS *opl, uint8_t *out) {
+  int n = (int)sizeof(OPLKSS);
+  if (out)
+    memcpy(out, opl, sizeof(OPLKSS));
+  /* The ADPCM engine (Y8950) is a separately malloc'd object, so its dynamic
+   * state lives outside sizeof(OPLKSS); append it. Its RAM/ROM sample buffers are
+   * not included (loaded once, constant). */
+  if (opl->adpcm != NULL)
+    n += OPLKSS_ADPCM_save_state(opl->adpcm, out ? out + n : (uint8_t *)0);
+  return n;
+}
+
+void OPLKSS_load_state(OPLKSS *opl, const uint8_t *in, int size) {
+  /* Preserve THIS instance's own allocations / host bindings across the struct
+   * copy, so the blob carries no source-instance pointers. This makes the state
+   * position-independent: it can be restored into a DIFFERENT OPLKSS instance
+   * (cross-instance copy), not only the one that produced it. */
+  OPLKSS_ADPCM *adpcm = opl->adpcm;
+  OPLKSS_RateConv *conv = opl->conv;
+  void *t1u = opl->timer1_user_data, *t2u = opl->timer2_user_data;
+  void (*t1f)(void *) = opl->timer1_func;
+  void (*t2f)(void *) = opl->timer2_func;
+  int i;
+  memcpy(opl, in, sizeof(OPLKSS));
+  opl->adpcm = adpcm;
+  opl->conv = conv;
+  /* reset SRC: its ring is stale after a load. Its phase is derived from out_time, so needs no re-alignment. */
+  if (opl->conv) OPLKSS_RateConv_reset(opl->conv);
+  opl->timer1_user_data = t1u;
+  opl->timer2_user_data = t2u;
+  opl->timer1_func = t1f;
+  opl->timer2_func = t2f;
+  /* each slot's `patch` aliases its own embedded __patch; wave_table points to a
+   * static table (stable address across instances) so it needs no relink. */
+  for (i = 0; i < 18; i++)
+    opl->slot[i].patch = &(opl->slot[i].__patch);
+  if (opl->adpcm != NULL)
+    OPLKSS_ADPCM_load_state(opl->adpcm, in + sizeof(OPLKSS), size - (int)sizeof(OPLKSS));
 }

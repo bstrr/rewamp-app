@@ -2404,6 +2404,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsVgmJapaneseTagsHelp => '当 VGM 标签包含日文标题/游戏/作者字段时优先使用。';
 
   @override
+  String get settingsVgmLoopFade => '循环曲目的结尾淡出';
+
+  @override
+  String get settingsVgmLoopFadeHelp =>
+      'VGM 格式没有淡出：循环曲目会播放两遍循环，然后在此时长内淡出。关闭 = 直接停止。无循环的曲目按原样结束。';
+
+  @override
   String get localImportFolder => '导入文件夹';
 
   @override
@@ -3703,6 +3710,113 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get podiumBrowserTitle => '领奖台';
+
+  @override
+  String get podiumHubBias => '每首乐曲只按其最佳名次计一次。';
+
+  @override
+  String get podiumRecentWinners => '近期获奖者';
+
+  @override
+  String get podiumRecentWinnersSubtitle => '最近两年的金奖，最新的 compo 优先';
+
+  @override
+  String get podiumViaSelf => '音乐 compo';
+
+  @override
+  String get podiumViaSelfSubtitle => '乐曲本身参赛';
+
+  @override
+  String get podiumViaProduction => 'Demo 配乐';
+
+  @override
+  String get podiumViaProductionSubtitle => '它配乐的 demo 或游戏获得了名次';
+
+  @override
+  String get podiumByKind => '按 compo 类型';
+
+  @override
+  String get podiumByEra => '按年代';
+
+  @override
+  String get podiumByParty => '按 party';
+
+  @override
+  String get podiumByPartySubtitle => '按奖牌排序的 party 系列';
+
+  @override
+  String get podiumTopArtists => '获奖最多的艺术家';
+
+  @override
+  String get podiumAll => '所有领奖台';
+
+  @override
+  String get podiumAllSubtitle => '最新的 compo 优先，再按名次';
+
+  @override
+  String get podiumChipVia => '性质';
+
+  @override
+  String get podiumChipKind => 'Compo 类型';
+
+  @override
+  String get podiumChipSeries => 'Party';
+
+  @override
+  String get podiumChipEra => '年代';
+
+  @override
+  String get compoKindTracked => 'Tracked';
+
+  @override
+  String get compoKindChip => 'Chip';
+
+  @override
+  String get compoKindStreaming => 'Streaming';
+
+  @override
+  String get compoKindExecutable => '可执行';
+
+  @override
+  String get compoKindOldskool => 'Oldskool';
+
+  @override
+  String get compoKindCombined => '综合';
+
+  @override
+  String get compoKindSoundtrack => '配乐';
+
+  @override
+  String get compoKindTrackedHint => 'Tracker 模块：MOD、XM、IT…';
+
+  @override
+  String get compoKindChipHint => '芯片音乐：SID、AY、NES、Game Boy…';
+
+  @override
+  String get compoKindStreamingHint => '流式音频：MP3、OGG、WAV…';
+
+  @override
+  String get compoKindExecutableHint => '由微型程序生成的音乐';
+
+  @override
+  String get compoKindOldskoolHint => '老硬件或 tracker，不含流式音频';
+
+  @override
+  String get compoKindCombinedHint => '不限格式的 compo';
+
+  @override
+  String get compoKindSoundtrackHint => '获得名次的 demo 或游戏的音乐';
+
+  @override
+  String podiumDecadeLabel(String decade) {
+    return '$decade 年代';
+  }
+
+  @override
+  String get podiumSortPodium => '最新的 compo 优先';
+
+  @override
   String get competitionEmpty => '本次比赛没有参赛作品';
 
   @override
@@ -3728,11 +3842,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingStart => '开始使用';
 
   @override
-  String get onboardingBetaTitle => '测试版';
+  String get onboardingWelcomeTitle => '欢迎使用 Rewamp';
 
   @override
-  String get onboardingBetaBody =>
-      'Rewamp 仍在开发中。本地数据——音乐库、播放列表、收藏、收听统计——可能在 1.0 版本前被清空。已下载的文件不会受影响，但重要内容请另行备份。';
+  String get onboardingWelcomeBody =>
+      '一款播放芯片音乐、Tracker 模块和游戏音乐的播放器——Amiga、Atari、C64、游戏机、街机和 PC。可从大型在线档案收听，也可打开你自己的文件。';
 
   @override
   String onboardingVersion(String version, String build) {
@@ -3764,7 +3878,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingReplayTitle => '功能介绍';
 
   @override
-  String get onboardingReplaySubtitle => '重新查看测试版提示与功能导览';
+  String get onboardingReplaySubtitle => '重新查看介绍与功能导览';
 
   @override
   String get settingsPatternTitle => 'Pattern';
@@ -3939,48 +4053,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String get releaseNotesTitle => '新功能';
 
   @override
-  String get releaseNotesV9Speed =>
-      '播放速度可在 0.2× 至 3× 之间调节（“声部”面板）。大多数引擎改变速度而保持音高；其余引擎进行重采样。';
+  String get releaseNotesV10Loading => '打开加载缓慢的曲目不再让应用卡住：播放/暂停按钮周围的细圆环表示仍在加载。';
 
   @override
-  String get releaseNotesV9Windows =>
-      'Windows：媒体键和系统媒体控件（音量弹窗、任务栏）可以控制播放，全屏可视化效果现在会铺满整个屏幕。';
+  String get releaseNotesV10Piano => '钢琴可视化：同时发声的声部或乐器较多的曲目会分布到更多键盘上。';
 
   @override
-  String get releaseNotesV9Formats =>
-      '新增播放器：NoiseTracker GS（Apple IIGS）、Ron Klaren（Amiga）以及 SAM Coupé 的 .cop 程序。';
+  String get releaseNotesV10Amiga =>
+      'Amiga：StoneTracker、SUNtronic（TSM 提取）以及更多 Soundtracker 2.6 模块现在可以播放，SoundPlayer 曲目也能在 iOS 上播放。';
 
   @override
-  String get releaseNotesV9Amiga =>
-      'Amiga 与 Atari ST：SidMon 1、Sonic Arranger、Paul Robotham、Quartet、SoundFactory 以及部分 Maximum Effect 模块现在可以播放。';
+  String get releaseNotesV10ZxSpectrum =>
+      'ZX Spectrum：可播放 zxart 的 .mt3 文件；Linux 版现已包含 ZXTune 格式和 SAM Coupé 的 .cop 程序。';
 
   @override
-  String get releaseNotesV9MoonBlaster =>
-      'MSX MoonBlaster：曲目会加载其采样包，不再播放噪音；编辑模式的文件也能正确播放。';
+  String get releaseNotesV10OpenWith => 'macOS 和 iOS：所有支持的格式现在都会出现在“打开方式”中。';
 
   @override
-  String get releaseNotesV9HideElsewhere =>
-      '资料库：“隐藏不在此设备上的项目”会隐藏文件位于其他设备上的本地条目。';
+  String get releaseNotesV10MtcCrash =>
+      '已修复：部分将 PT3 与 TFM 或 PSG 混合的 .mtc 文件会导致应用崩溃。';
 
   @override
-  String get releaseNotesV9ArtworkFullscreen => '在播放器中长按封面即可全屏查看。';
+  String get releaseNotesV10Podiums =>
+      '全新“领奖台”浏览器：按聚会、年份或比赛类型查看演示场景比赛的获奖作品，并附名人堂。';
 
   @override
-  String get releaseNotesV9Viz =>
-      '可视化：默认使用按声部示波器（流式格式使用线形频谱），可直接在示波器上切换网格和声部名称，立体声示波器也更稳定。';
+  String get releaseNotesV10Arcade =>
+      '街机：现可播放 Ensoniq ES5505/ES5506 音乐（Taito F3 等），Apple IIGS 的 VGM 文件不再导致应用崩溃，各引擎已更新（新增 FM-Kingtracker .fmk）。';
 
   @override
-  String get releaseNotesV9PsfTrack => '已修复：点击某些 PSF 专辑中的曲目可能会播放另一首。';
+  String get releaseNotesV10InfoPanel => '信息面板：格式、引擎、声道和循环点置于最前，字段名称突出显示。';
 
   @override
-  String get releaseNotesV9Playlists => '包含多个播放列表的文件夹现在会合并为一个专辑，包含所有曲目且不重复。';
+  String get releaseNotesV10LocalAlbums =>
+      '专辑和子曲目页面显示所属合集；拖入的压缩包会列出全部曲目，标为“本地”，被替换后不再重复出现。';
 
   @override
-  String get releaseNotesV9AmigaInfo =>
-      '没有已知时长或作者的 Amiga 曲目会在一周后重新向服务器查询，而不是永不再查询。';
+  String get releaseNotesV10Crossfade => '修复：开启淡入淡出时，比淡化时长更短的曲目听不到。';
 
   @override
-  String get releaseNotesDataReset => '本次测试版已重置本地数据。媒体库和播放列表将从账号重建；下载需要重新进行。';
+  String get releaseNotesV10Artwork => '修复：服务器上更换的封面在“重新下载文件”后会在所有地方显示。';
+
+  @override
+  String get releaseNotesDataReset => '本版本已重置本地数据。媒体库和播放列表将从账号重建；下载需要重新进行。';
 
   @override
   String get releaseNotesDismiss => '继续';

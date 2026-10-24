@@ -1123,6 +1123,17 @@ void uade_filemagic(unsigned char *buf, size_t bufsize, char *pre,
   } else if (sid1test(buf, bufsize, realfilesize, pre)) {
     /* is sid1, nothing to do here ('pre' set in sid1test() */
 
+  } else if (read_be_u32(&buf[0]) == 0x48e7fffe &&
+	     read_be_u16(&buf[4]) == 0x4dfa &&
+	     read_be_u32(&buf[8]) == 0x4a2e07c0) {
+    /* Rewamp: SUNtronic, 3e variante du replay (les deux rips de TSM sur
+     * modland). Le player SUN-Tronic de Wanted Team ne connaît que les
+     * variables en « tst.b $18(a6) » / « tst.b $10(a6) » à l'offset 8 et
+     * refuse celle-ci (« module check failed »); SUNtronic-TSM
+     * (amigasrc/players/SUNtronic-TSM) lui fournit l'init que le rip a perdue.
+     * Reconnue AU CONTENU parce que l'extension est la même (.sun). */
+    strcpy(pre, "SUN_TSM");
+
   } else if (buf[0] == 0x4e && buf[1] == 0xfa &&
 	     buf[4] == 0x4e && buf[5] == 0xfa &&
 	     buf[8] == 0x4e && buf[9] == 0xfa &&

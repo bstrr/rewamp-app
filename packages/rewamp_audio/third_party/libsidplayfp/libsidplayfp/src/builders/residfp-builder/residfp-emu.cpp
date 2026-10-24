@@ -31,6 +31,16 @@
 #  include "config.h"
 #endif
 
+#define xstr(s) str(s)
+#define str(s) #s
+
+#define _VERSION(a,b,c) a ##.## b ##.## c
+#define SID_VERSION(a,b,c) _VERSION(a,b,c)
+#define LIBRESIDFP_VERSION \
+    SID_VERSION(LIBRESIDFP_VERSION_MAJ, \
+        LIBRESIDFP_VERSION_MIN, \
+        LIBRESIDFP_VERSION_LEV)
+
 namespace libsidplayfp
 {
 
@@ -41,7 +51,7 @@ const char* reSIDfpEmu::getCredits()
     return
         "reSIDfpEmu V" VERSION " Engine:\n"
         "\t(C) 1999-2002 Simon White\n"
-        "MOS6581/CSG8580 (SID) Emulation:\n"
+        "libresidfp V" xstr(LIBRESIDFP_VERSION) ":\n"
         "\t(C) 1999-2002 Dag Lem\n"
         "\t(C) 2005-2011 Antti S. Lankila\n"
         "\t(C) 2010-2026 Leandro Nini\n";
@@ -58,21 +68,6 @@ reSIDfpEmu::~reSIDfpEmu()
 {
     delete &m_sid;
     delete[] m_buffer;
-}
-
-void reSIDfpEmu::filter6581Curve(double filterCurve)
-{
-   m_sid.setFilter6581Curve(filterCurve);
-}
-
-void reSIDfpEmu::filter6581Range(double adjustment)
-{
-   m_sid.setFilter6581Range(adjustment);
-}
-
-void reSIDfpEmu::filter8580Curve(double filterCurve)
-{
-   m_sid.setFilter8580Curve(filterCurve);
 }
 
 // Standard component options
@@ -100,11 +95,6 @@ void reSIDfpEmu::clock()
     const event_clock_t cycles = eventScheduler->getTime(EVENT_CLOCK_PHI1) - m_accessClk;
     m_accessClk += cycles;
     m_bufferpos += m_sid.clock(cycles, m_buffer+m_bufferpos);
-}
-
-void reSIDfpEmu::filter(bool enable)
-{
-      m_sid.enableFilter(enable);
 }
 
 void reSIDfpEmu::sampling(float systemclock, float freq,

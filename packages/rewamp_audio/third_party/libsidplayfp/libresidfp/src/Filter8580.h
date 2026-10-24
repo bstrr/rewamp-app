@@ -1,7 +1,7 @@
 /*
  * This file is part of libsidplayfp, a SID player engine.
  *
- * Copyright 2011-2024 Leandro Nini <drfiemost@users.sourceforge.net>
+ * Copyright 2011-2026 Leandro Nini <drfiemost@users.sourceforge.net>
  * Copyright 2007-2010 Antti Lankila
  * Copyright 2004,2010 Dag Lem <resid@nimrod.no>
  *
@@ -276,6 +276,8 @@ class Integrator8580;
  */
 class Filter8580 final : public Filter
 {
+    friend class State;
+
 private:
     /// VCR + associated capacitor connected to highpass output.
     Integrator8580 hpIntegrator;
@@ -291,11 +293,16 @@ protected:
      */
     void updateCenterFrequency() override;
 
-    int solveIntegrators() override;
+    void restartIntegrators() override { hpIntegrator.restart(); bpIntegrator.restart(); }
+
+    int32_t getNormalizedMixerVoice(float v, uint8_t env) const override
+    {
+        return getNormalizedVoice(v, env);
+    }
 
 public:
     Filter8580() :
-        Filter(*FilterModelConfig8580::getInstance()),
+        Filter(*FilterModelConfig8580::getInstance(), hpIntegrator, bpIntegrator),
         hpIntegrator(*FilterModelConfig8580::getInstance()),
         bpIntegrator(*FilterModelConfig8580::getInstance())
     {
@@ -307,7 +314,8 @@ public:
     /**
      * Set filter curve type based on single parameter.
      *
-     * @param curvePosition 0 .. 1, where 0 sets center frequency high ("light") and 1 sets it low ("dark"), default is 0.5
+     * @param curvePosition 0 .. 1, where 0 sets center frequency low ("dark") and 1 sets it high ("bright").
+     *                      Default is 0.5
      */
     void setFilterCurve(double curvePosition);
 };

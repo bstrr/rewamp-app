@@ -109,6 +109,11 @@ namespace Module
       return static_cast<uint_t>(std::count_if(Channels.begin(), Channels.end(), boost::bind(&Cell::HasData, _1)));
     }
 
+    virtual uint_t GetChannelsCount() const
+    {
+      return ChannelsCount;
+    }
+
     virtual uint_t GetTempo() const
     {
       return Tempo;

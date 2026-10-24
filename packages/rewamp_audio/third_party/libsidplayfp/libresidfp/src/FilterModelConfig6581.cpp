@@ -1,7 +1,7 @@
 /*
  * This file is part of libsidplayfp, a SID player engine.
  *
- * Copyright 2011-2024 Leandro Nini <drfiemost@users.sourceforge.net>
+ * Copyright 2011-2026 Leandro Nini <drfiemost@users.sourceforge.net>
  * Copyright 2007-2010 Antti Lankila
  * Copyright 2010 Dag Lem
  *
@@ -83,6 +83,9 @@ constexpr Spline::Point opamp_voltage[OPAMP_SIZE] =
   { 10.31,  0.81 },  // Approximate end of actual range
 };
 
+constexpr double CAPS_OLD = 2200e-12; // ASSY 326298 uses 2200pF caps
+constexpr double CAPS_NEW =  470e-12; // Standard 470pF caps used on other ASSY
+
 std::unique_ptr<FilterModelConfig6581> FilterModelConfig6581::instance(nullptr);
 
 std::once_flag flag6581;
@@ -110,13 +113,36 @@ void FilterModelConfig6581::setFilterRange(double adjustment)
     if (std::abs(uCox - new_uCox) < 1e-12)
         return;
 
-    setUCox(new_uCox);
+    uCox = new_uCox;
+    updateParams();
+}
+
+void FilterModelConfig6581::enableOldCaps(bool enable)
+{
+    if (m_oldCaps == enable)
+        return;
+
+    m_oldCaps = enable;
+    updateParams();
+}
+
+void FilterModelConfig6581::updateParams()
+{
+    calcCurrFactorCoeff();
+    vcr_mult = uCox;
+
+    if (m_oldCaps)
+    {
+        constexpr double caps_mult = CAPS_NEW/CAPS_OLD;
+        currFactorCoeff *= caps_mult;
+        vcr_mult *= caps_mult;
+    }
 }
 
 FilterModelConfig6581::FilterModelConfig6581() :
     FilterModelConfig(
         1.5,                    // voice voltage range FIXME should theoretically be ~3,571V
-        470e-12,                // capacitor value
+        CAPS_NEW,               // capacitor value
         12. * VOLTAGE_SKEW,     // Vdd
         1.31,                   // Vth
         20e-6,                  // uCox
@@ -125,10 +151,13 @@ FilterModelConfig6581::FilterModelConfig6581() :
     ),
     WL_vcr(9.0 / 1.0),
     WL_snake(1.0 / 115.0),
-    dac_zero(6.65),
+    dac_zero(7.15),
     dac_scale(2.63),
-    dac(DAC_BITS)
+    dac(DAC_BITS),
+    m_oldCaps(false)
 {
+    updateParams();
+
     dac.kinkedDac(MOS6581);
 
     {
@@ -169,7 +198,7 @@ FilterModelConfig6581::FilterModelConfig6581() :
             vmin,
             vmax);
 
-        buildMixerTable(opampModel, 8.0 / 6.0);
+        buildMixerTable(opampModel, 8.0 / (6.0 * VF_TR_RATIO));
     };
 
     auto filterGain = [this]
@@ -213,7 +242,7 @@ FilterModelConfig6581::FilterModelConfig6581() :
         {
             // The table index is right-shifted 16 times in order to fit in
             // 16 bits; the argument to sqrt is thus multiplied by (1 << 16).
-            vcr_nVg[i] = to_ushort(nVddt - std::sqrt(static_cast<double>(i << 16)));
+            vcr_nVg[i] = to_uint16(nVddt - std::sqrt(static_cast<double>(i << 16)));
         }
     };
 
@@ -269,16 +298,16 @@ FilterModelConfig6581::FilterModelConfig6581() :
 #endif
 }
 
-unsigned short* FilterModelConfig6581::getDAC(double adjustment) const
+uint16_t* FilterModelConfig6581::getDAC(double adjustment) const
 {
-    const double dac_zero = getDacZero(adjustment);
+    const double new_dac_zero = getDacZero(adjustment);
 
-    unsigned short* f0_dac = new unsigned short[1 << DAC_BITS];
+    uint16_t* f0_dac = new uint16_t[1 << DAC_BITS];
 
     for (unsigned int i = 0; i < (1 << DAC_BITS); i++)
     {
         const double fcd = dac.getOutput(i);
-        f0_dac[i] = getNormalizedValue(dac_zero + fcd * dac_scale);
+        f0_dac[i] = getNormalizedValue(new_dac_zero + fcd * dac_scale);
     }
 
     return f0_dac;
