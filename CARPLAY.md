@@ -55,6 +55,9 @@ an upstream pull request. Adding CarPlay source does not publish or submit the a
 
 For vehicle testing, use a Release build signed with a development profile that
 includes the test iPhone, so the app can start without a connected Flutter debugger.
+Apply a development bundle identifier to the Runner target only: a project-wide
+`PRODUCT_BUNDLE_IDENTIFIER` override also changes embedded framework identifiers
+and can prevent installation.
 
 See Apple's [entitlement setup](https://developer.apple.com/documentation/carplay/requesting-carplay-entitlements)
 and [CarPlay Developer Guide](https://developer.apple.com/download/files/CarPlay-Developer-Guide.pdf).
@@ -135,9 +138,10 @@ CarPlay and vehicle acceptance checks.
 - Real-engine smoke test on iOS 27 Simulator: output absent at startup, created
   on first play; play, pause, resume and stop passed.
 - Headless Flutter startup: the widget tree builds without a phone window.
-- Signed arm64 device builds: Debug and Release passed. The CarPlay audio
-  entitlement was verified in both the development profile and app signature;
-  the registered test iPhone is included in the profile.
+- Signed arm64 Release device build: passed. The CarPlay audio entitlement was
+  verified in both the development profile and app signature. Installation and
+  standalone launch passed on the registered test iPhone running iOS 26.7.1.
 - CarPlay screen/vehicle acceptance: pending a suitable simulator setup or an
-  entitled device build. No physical-phone installation or in-car testing
-  was performed during this work.
+  in-car test. Device Hub's CarPlay connection timed out with the USB-connected
+  test iPhone; a valid entitlement and successful installation do not replace
+  CarPlay screen and vehicle acceptance checks.
