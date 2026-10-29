@@ -28,6 +28,7 @@ import 'queue_persistence.dart';
 import 'queue_shuffle.dart';
 import 'transport_log.dart';
 import 'media_session.dart';
+import 'carplay.dart';
 import 'glass_chrome.dart';
 import 'mini_player.dart';
 import 'mini_window_player.dart';
@@ -136,6 +137,80 @@ final class _LocalItem extends _QueueItem {
 class _AppShellState extends State<AppShell>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   late final PlayerController _controller;
+  CarPlaySession? _carPlay;
+  bool _carPlaySelecting = false;
+  bool _carPlayLoadFailed = false;
+
+  Future<void> _initCarPlayAndMedia() async {
+    await initMediaSession(_controller,
+        armAppleCommands: !await CarPlaySession.isConnected());
+    if (!Platform.isIOS || !mounted) return;
+    _carPlay = CarPlaySession(_controller, CarPlayBrowser(
+      library: LocalCarPlayLibrary(),
+      queue: () => _controller.queue,
+      queueIndex: () => _controller.queueIdx,
+      playQueueIndex: (index) => _carPlayPlay(() => _playAt(index)),
+      playTracks: (tracks, index) => _carPlayPlay(() async {
+        final selected = tracks[index];
+        if (!await File(selected.filePath).exists() && selected.onlineId != null) {
+          final song = await RewampDb.getSongEntry(selected.onlineId!,
+              fileName: selected.filePath.isEmpty ? null : p.basename(selected.filePath));
+          if (song == null) throw StateError('Catalogue track unavailable');
+          final prepared = await _prepareCarPlayOnline(
+              song.withSubsong(selected.subsongIdx, title: selected.displayTitle));
+          tracks = List<TrackRecord>.of(tracks)..[index] = prepared;
+        }
+        if (mounted) await _startLocalTrackQueue(context, tracks, startIndex: index);
+      }),
+      playOnline: (song) => _carPlayPlay(() async {
+        song = await RewampDb.resolveMatchedTrack(song);
+        final track = await _prepareCarPlayOnline(song);
+        final rows = _rotateToTopEntry(song, await _subsongEntries(
+            song.copyWith(localPath: track.filePath)));
+        DownloadCancelToken.current?.throwIfCancelled();
+        final tracks = carPlayResolvedSubsongs(track, rows);
+        if (mounted) await _startLocalTrackQueue(context, tracks, startIndex: 0);
+      }),
+    ), () => context.l10n);
+    await _carPlay!.start();
+  }
+
+  Future<void> _carPlayPlay(Future<void> Function() play) async {
+    _carPlaySelecting = true;
+    _carPlayLoadFailed = false;
+    try {
+      await play();
+      DownloadCancelToken.current?.throwIfCancelled();
+      if (_carPlayLoadFailed) throw StateError('CarPlay playback failed');
+    } finally { _carPlaySelecting = false; }
+  }
+
+  void _carPlayPlaybackFailed() {
+    _carPlayLoadFailed = true;
+    if (!_carPlaySelecting) _carPlay?.reportPlaybackError();
+  }
+
+  Future<TrackRecord> _prepareCarPlayOnline(SearchResult song) async {
+    TrackRecord? track;
+    // Use exactly the phone's resolver: mirrors, cached files, album archives,
+    // auxiliary PSF files and subsong identities follow the same code path.
+    await downloadAndPlay(context, song, (path, title, {
+      artist, album, albumId, formatExt, onlineId, artworkUrl, artworkTargetDir,
+      int subsongIdx = 0, durationS, subsongCount,
+    }) {
+      DownloadCancelToken.current?.throwIfCancelled();
+      track = TrackRecord(id: '${onlineId ?? song.songId}?subsong=$subsongIdx',
+        filePath: path, entryPath: '', subsongIdx: subsongIdx,
+        title: title, artist: artist, metaAlbum: album, albumId: albumId,
+        formatExt: formatExt, onlineId: onlineId, artworkUrl: artworkUrl,
+        durationS: durationS, subsongCount: subsongCount,
+        source: 'online', collectionSlug: song.collection,
+        platformName: song.platform, year: song.year,
+        isFavorite: false, inLibrary: false, playCount: 0);
+    }, showUI: false);
+    if (track == null) throw StateError('Download produced no playable track');
+    return track!;
+  }
   late final List<Widget> _screens;
   Timer? _ticker;
   /// L'onglet affiché. Initialisé au réglage « onglet au lancement » — lu ICI
@@ -601,7 +676,7 @@ class _AppShellState extends State<AppShell>
     // System media session (lock screen / Control Center / artwork / remote).
     // Playback stays in the C engine; this only mirrors state + forwards
     // commands. No-op on Windows/Linux. Fire-and-forget.
-    initMediaSession(_controller);
+    unawaited(_initCarPlayAndMedia());
 
     // Restore recently-played list from the local DB.
     _controller.loadHistory();
@@ -794,6 +869,7 @@ class _AppShellState extends State<AppShell>
 
   @override
   void dispose() {
+    _carPlay?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     SyncService.instance.stopPolling();
     _playerCtrl.dispose();
@@ -1565,7 +1641,7 @@ class _AppShellState extends State<AppShell>
   /// Same as [_onFileReady] but records the play against the album
   /// (updates recent_albums.last_played_at, not track.last_played_at).
   /// Used by all album-queue play paths.
-  void _onFileReadyAsAlbum(
+  Future<void> _onFileReadyAsAlbum(
     String path,
     String label, {
     String? artist,
@@ -1584,7 +1660,7 @@ class _AppShellState extends State<AppShell>
     // PlayerController.loadFile's adoptHandoff) — metadata only, and the
     // missing-file recovery is moot (the file is being DECODED right now).
     bool adopt = false,
-  }) {
+  }) async {
     // The file may simply not be HERE. An account syncs its history and its
     // library between devices, so a row can name a track this device never
     // downloaded - and this path used to hand that path straight to the
@@ -1609,7 +1685,7 @@ class _AppShellState extends State<AppShell>
     )) {
       return;
     }
-    _controller.loadFile(
+    await _controller.loadFile(
       path,
       label,
       subsongIdx:       subsongIdx,
@@ -2504,7 +2580,7 @@ class _AppShellState extends State<AppShell>
   }
 
   /// Same for a LOCAL queue entry whose file exists.
-  void _playResolvedLocal(TrackRecord track, {bool adopt = false}) {
+  Future<void> _playResolvedLocal(TrackRecord track, {bool adopt = false}) async {
     final artworkDir = track.source == 'online' ? p.dirname(track.filePath) : null;
     // TEMP (diagnostic « écritures croisées »): d'OÙ vient l'album qu'on va
     // attacher à cette piste. `_queueAlbumId` survit à l'album qui l'a posé —
@@ -2514,7 +2590,7 @@ class _AppShellState extends State<AppShell>
           'sur ${p.basename(track.filePath)} '
           '(meta="${track.metaAlbum ?? ''}")');
     }
-    _onFileReadyAsAlbum(
+    await _onFileReadyAsAlbum(
       track.filePath,
       track.displayTitle,
       artist:           track.artist,
@@ -2767,6 +2843,7 @@ class _AppShellState extends State<AppShell>
           // Genuinely unsupported — say so explicitly (not "download failed")
           // and report the song. Advance so the queue keeps flowing, WITHOUT
           // counting toward the network-down threshold.
+          _carPlayPlaybackFailed();
           debugPrint('[queue] unsupported format at $i: ${e.filename} .${e.ext}');
           _reportUnsupportedFormat(
             file: e.filename,
@@ -2801,6 +2878,7 @@ class _AppShellState extends State<AppShell>
                 return _playAt(i, revertTo: prevIdx);
               }
             }
+            _carPlayPlaybackFailed();
             debugPrint('[queue] file gone at $i (HTTP ${e.statusCode}): ${e.url}');
             _reportDownloadGone(result, e);
             if (i + 1 < _queue.length) return _playAt(i + 1, revertTo: prevIdx);
@@ -2831,6 +2909,7 @@ class _AppShellState extends State<AppShell>
           // Download failed (network down/slow, timeout, 5xx…). Surface it and
           // auto-advance so the radio/queue keeps flowing — but stop after 3
           // consecutive failures (network is likely fully down).
+          _carPlayPlaybackFailed();
           debugPrint('[queue] download error at $i: $e');
           _consecutiveDlFailures++;
           if (mounted) {
@@ -2857,6 +2936,29 @@ class _AppShellState extends State<AppShell>
         // Playlist/library trace whose file was deleted: re-resolve through
         // the online download machinery (get_song_context et al) instead of
         // failing the load and silently skipping.
+        if (track.onlineId != null &&
+            !await File(track.filePath).exists() && (_carPlay?.connected ?? false)) {
+          try {
+            final song = await RewampDb.getSongEntry(track.onlineId!,
+                fileName: track.filePath.isEmpty ? null : p.basename(track.filePath));
+            if (song == null) throw StateError('Catalogue track unavailable');
+            final prepared = await _prepareCarPlayOnline(
+                song.withSubsong(track.subsongIdx, title: track.displayTitle));
+            if (i >= _queue.length || !identical(_queue[i], item)) return;
+            _queue[i] = _LocalItem(prepared, item.seq);
+            _syncControllerQueue();
+            await _playResolvedLocal(prepared);
+            _prefetchNextDownload();
+          } on DownloadCancelledException {
+            _restoreQueueIdx(prevIdx);
+            if (_carPlaySelecting) rethrow;
+          } catch (_) {
+            _carPlayPlaybackFailed();
+            _restoreQueueIdx(prevIdx);
+            if (_carPlaySelecting) rethrow;
+          }
+          return;
+        }
         if (track.onlineId != null &&
             !await File(track.filePath).exists()) {
           // The collection is derivable from where the file lives/lived
@@ -2910,7 +3012,8 @@ class _AppShellState extends State<AppShell>
           );
           if (!mounted) return; // File.exists() was awaited above
           final before = _controller.filePath;
-          await downloadAndPlay(context, r, _onFileReadyAsAlbum);
+          await downloadAndPlay(context, r, _onFileReadyAsAlbum,
+              showUI: !(_carPlay?.connected ?? false));
           // downloadAndPlay swallows a FormatUnsupportedException (it shows the
           // message itself). If nothing new actually loaded, the counter is
           // stranded on this unplayable entry while the previous track still
@@ -2924,7 +3027,7 @@ class _AppShellState extends State<AppShell>
           _prefetchNextDownload();
           return;
         }
-        _playResolvedLocal(track);
+        await _playResolvedLocal(track);
     }
     // A backfill may have just resolved the album id for this queue — keep it
     // so the NEXT track gets the link without its own lookup.
@@ -2969,6 +3072,7 @@ class _AppShellState extends State<AppShell>
   }
 
   void _onLoadResult(bool ok) {
+    if (!ok) _carPlayPlaybackFailed();
     if (ok) {
       _consecutiveLoadFailures = 0;
       _lastGoodIdx = _queueIdx;   // this entry is now genuinely playing

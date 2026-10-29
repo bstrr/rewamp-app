@@ -37,7 +37,7 @@ import 'transport_log.dart';
 RewampAudioHandler? gMediaHandler;
 bool _mediaInited = false;
 
-Future<void> initMediaSession(PlayerController c) async {
+Future<void> initMediaSession(PlayerController c, {bool armAppleCommands = true}) async {
   // Pochette des notifications système macOS — voir notificationArtFor.
   PlayerController.notificationArtProvider =
       () => RewampAudioHandler.notificationArtFor(c);
@@ -78,7 +78,7 @@ Future<void> initMediaSession(PlayerController c) async {
   } catch (e, s) {
     debugPrint('[media] AudioService.init failed: $e\n$s');
   }
-  await _armAppleCommandCenter(c);
+  if (armAppleCommands) await _armAppleCommandCenter(c);
 
   // Android 13+ (API 33): the media-playback notification — the ONLY place the
   // lock-screen / shade transport controls live — is silently dropped unless

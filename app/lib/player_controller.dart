@@ -1040,7 +1040,11 @@ class PlayerController extends ChangeNotifier {
       // décodeur prime côté C quand il en a une; re-posée à chaque
       // correction asynchrone (songdb UADE, songlengths SID).
       audio.setTrackEndSeconds(_producerTrackEndSecs);
-      if (!adoptHandoff && _autoplayAfterLoad) _playAndConfirmStart();
+      if (!adoptHandoff && _autoplayAfterLoad) {
+        await ensureAudioSession?.call();
+        // A pause/stop may have arrived while session activation was pending.
+        if (_autoplayAfterLoad) _playAndConfirmStart();
+      }
       notifyListeners();
       _notifyTrackChange();
 
@@ -2662,13 +2666,16 @@ class PlayerController extends ChangeNotifier {
 
   List<QueueEntry> _queue    = const [];
   int               _queueIdx = -1;
+  int               _queueRevision = 0;
 
   List<QueueEntry> get queue    => _queue;
   int               get queueIdx => _queueIdx;
+  int               get queueRevision => _queueRevision;
 
   void setQueue(List<QueueEntry> entries, {int currentIdx = 0}) {
     _queue    = entries;
     _queueIdx = currentIdx;
+    _queueRevision++;
     notifyListeners();
   }
 
@@ -2700,6 +2707,7 @@ class PlayerController extends ChangeNotifier {
     for (var i = 0; i < _queue.length; i++) {
       if (!identical(next[i], _queue[i])) {
         _queue = next;
+        _queueRevision++;
         notifyListeners();
         return;
       }
@@ -2709,6 +2717,7 @@ class PlayerController extends ChangeNotifier {
   void clearQueue() {
     _queue    = const [];
     _queueIdx = -1;
+    _queueRevision++;
     notifyListeners();
   }
 

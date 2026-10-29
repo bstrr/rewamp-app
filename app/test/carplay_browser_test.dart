@@ -1,0 +1,299 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rewamp/carplay.dart';
+import 'package:rewamp/local_db.dart';
+import 'package:rewamp/player_controller.dart';
+import 'package:rewamp/rewamp_db.dart';
+
+TrackRecord track(String id, {int subsong = 0, String? onlineId}) =>
+    TrackRecord(
+        id: id,
+        filePath: '/music/$id.sid',
+        entryPath: '',
+        subsongIdx: subsong,
+        title: 'Tune $id',
+        artist: 'Composer',
+        metaAlbum: 'Game soundtrack',
+        source: onlineId == null ? 'local' : 'online',
+        onlineId: onlineId,
+        isFavorite: true,
+        inLibrary: true,
+        playCount: 1);
+
+SearchResult song(int i) => SearchResult(
+    songId: 'song-$i',
+    collection: 'test',
+    filename: '$i.sid',
+    title: 'Online $i',
+    album: null,
+    formatExt: 'sid',
+    downloadUrl: 'https://example.invalid/$i.sid',
+    fileSize: 10,
+    year: null,
+    artistNames: const ['Composer'],
+    totalCount: 0,
+    subsongIdx: i);
+
+class Library implements CarPlayLibrary {
+  List<TrackRecord> records = [];
+  List<SearchResult> songs = List.generate(12, song);
+  final calls = <(String, String, int, int)>[];
+  Object? error;
+  @override
+  Future<List<TrackRecord>> tracks(String source) async => records;
+  @override
+  Future<List<UserPlaylist>> playlists() async => [
+        UserPlaylist(
+            id: 'playlist-1',
+            name: 'Road music',
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026))
+      ];
+  @override
+  Future<List<Collection>> collections() async =>
+      const [Collection(slug: 'test', name: 'Test collection', filesCount: 12)];
+  @override
+  Future<List<SearchResult>> online(
+      String source, String query, int offset, int limit) async {
+    calls.add((source, query, offset, limit));
+    if (error != null) throw error!;
+    return songs.skip(offset).take(limit).toList();
+  }
+}
+
+List<Map<String, Object?>> rows(Map<String, Object?> page) =>
+    (page['items'] as List).cast<Map<String, Object?>>();
+
+void main() {
+  test(
+      'expanded online subsongs keep their real indices and independent lengths',
+      () {
+    final tracks = carPlayResolvedSubsongs(track('file', onlineId: 'file-id'), [
+      song(3).copyWith(title: 'Third subsong', durationMs: 12000),
+      song(9).copyWith(title: 'Ninth subsong', dropDurationMs: true),
+    ]);
+    expect(tracks.map((t) => t.subsongIdx), [3, 9]);
+    expect(tracks.map((t) => t.title), ['Third subsong', 'Ninth subsong']);
+    expect(tracks.map((t) => t.durationS), [12.0, null]);
+    expect(tracks.map((t) => t.filePath).toSet(), {'/music/file.sid'});
+    expect(tracks[1].onlineId, 'song-9');
+  });
+
+  test('a playlist restored from an account keeps downloadable snapshots', () {
+    final tracks = carPlayPlaylistTracks([
+      PlaylistEntry(rowId: 1, track: track('local', subsong: 3)),
+      const PlaylistEntry(
+          rowId: 2,
+          songId: 'online-song',
+          subsongIdx: 8,
+          title: 'Remote subsong',
+          albumId: 'album-id',
+          formatExt: 'sid'),
+      const PlaylistEntry(rowId: 3, title: 'Missing local file'),
+    ]);
+    expect(tracks.length, 2);
+    expect(tracks[1].onlineId, 'online-song');
+    expect(tracks[1].subsongIdx, 8);
+    expect(tracks[1].albumId, 'album-id');
+    expect(tracks[1].title, 'Remote subsong');
+  });
+
+  late Library library;
+  late CarPlayBrowser browser;
+  late List<QueueEntry> queue;
+  late Set<String> missing;
+  int? playedQueue;
+  (List<TrackRecord>, int)? playedTracks;
+  SearchResult? playedOnline;
+  Completer<void>? waitForPlay;
+
+  setUp(() {
+    library = Library();
+    queue = [
+      const QueueEntry(id: 1, title: 'Same', subsongIdx: 0),
+      const QueueEntry(id: 2, title: 'Same', subsongIdx: 1)
+    ];
+    missing = {};
+    playedQueue = null;
+    playedTracks = null;
+    playedOnline = null;
+    waitForPlay = null;
+    browser = CarPlayBrowser(
+        library: library,
+        queue: () => queue,
+        queueIndex: () => 1,
+        playQueueIndex: (index) async {
+          playedQueue = index;
+          await waitForPlay?.future;
+        },
+        playTracks: (tracks, index) async {
+          playedTracks = (tracks, index);
+        },
+        playOnline: (song) async {
+          playedOnline = song;
+        },
+        fileExists: (path) => !missing.contains(path));
+  });
+
+  test('a displayed queue row follows its identity after reorder and rename',
+      () async {
+    final page = rows(await browser.browse('queue'));
+    expect(page[1]['playing'], true);
+    final selected = page[1]['id'] as String;
+    queue = [queue[1].copyWith(title: 'Renamed'), queue[0]];
+    await browser.select('queue', selected);
+    expect(playedQueue, 0);
+  });
+
+  test('removing a displayed row cannot play its replacement', () async {
+    final selected = rows(await browser.browse('queue'))[0]['id'] as String;
+    queue.removeAt(0);
+    await expectLater(browser.select('queue', selected), throwsStateError);
+    expect(playedQueue, isNull);
+  });
+
+  test('stand-in queue rows use object identity', () async {
+    queue = [const QueueEntry(title: 'Stand-in')];
+    final token = rows(await browser.browse('queue'))[0]['id'] as String;
+    queue = [QueueEntry(title: String.fromCharCodes('Stand-in'.codeUnits))];
+    await expectLater(browser.select('queue', token), throwsStateError);
+  });
+
+  test('selection completion waits for queue playback/download', () async {
+    waitForPlay = Completer<void>();
+    final token = rows(await browser.browse('queue'))[0]['id'] as String;
+    var completed = false;
+    final playing =
+        browser.select('queue', token).then((_) => completed = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(completed, false);
+    waitForPlay!.complete();
+    await playing;
+    expect(completed, true);
+  });
+
+  test(
+      'library includes redownloadable references and excludes missing local files',
+      () async {
+    library.records = [
+      track('local'),
+      track('missing'),
+      track('online', onlineId: 'catalogue-id')
+    ];
+    missing.addAll(['/music/missing.sid', '/music/online.sid']);
+    final page = rows(await browser.browse('favorites'));
+    expect(page.map((r) => r['title']), ['Tune local', 'Tune online']);
+    await browser.select('favorites', page[1]['id'] as String);
+    expect(playedTracks!.$1[playedTracks!.$2].onlineId, 'catalogue-id');
+  });
+
+  test('file deleted after display fails before playback', () async {
+    library.records = [track('local')];
+    final token = rows(await browser.browse('recent'))[0]['id'] as String;
+    missing.add('/music/local.sid');
+    await expectLater(browser.select('recent', token), throwsStateError);
+    expect(playedTracks, isNull);
+  });
+
+  test('duplicate playlist tracks preserve the selected subsong and row',
+      () async {
+    library.records = [
+      track('a', subsong: 2),
+      track('a', subsong: 9),
+      track('a', subsong: 2)
+    ];
+    final page = rows(await browser.browse('playlist:playlist-1'));
+    await browser.select('playlist:playlist-1', page[1]['id'] as String);
+    expect(playedTracks!.$2, 1);
+    expect(playedTracks!.$1[1].subsongIdx, 9);
+    expect(playedTracks!.$1.length, 3);
+  });
+
+  test('local search matches words across title, artist and album', () async {
+    library.records = [track('one'), track('two')];
+    final page =
+        rows(await browser.browse('search', query: 'COMPOSER two soundtrack'));
+    expect(page.single['title'], 'Tune two');
+    expect(library.calls, isEmpty);
+  });
+
+  test('paging leaves other displayed snapshots selectable', () async {
+    library.records = [track('a'), track('b'), track('c')];
+    final first = await browser.browse('recent', limit: 2);
+    final oldToken = rows(first)[0]['id'] as String;
+    final second = await browser.browse('recent', offset: 2, limit: 2);
+    expect(first['nextOffset'], 2);
+    expect(second['nextOffset'], isNull);
+    await browser.select('recent', oldToken);
+    expect(playedTracks!.$1[playedTracks!.$2].id, 'a');
+  });
+
+  test('navigation preserves collection and playlist IDs', () async {
+    expect(rows(await browser.browse('catalogue')).single['source'],
+        'collection:test');
+    expect(rows(await browser.browse('playlists')).single['source'],
+        'playlist:playlist-1');
+    expect(rows(await browser.browse('library')).map((r) => r['source']),
+        ['favorites', 'recent', 'playlists']);
+    expect(playedOnline, isNull);
+  });
+
+  test('an archive album opens its track list without downloading or playing',
+      () async {
+    library.songs = [
+      song(0).copyWith(
+          album: 'Game album',
+          albumId: 'album-id',
+          filename: 'game.7z',
+          formatExt: '7z',
+          subsongCount: 20,
+          downloadUrl: 'https://example.invalid/game.7z')
+    ];
+    final page = rows(await browser.browse('collection:test'));
+    expect(page.single['source'], 'album:album-id');
+    expect(playedOnline, isNull);
+    await browser.browse('album:album-id');
+    expect(library.calls.last.$1, 'album:album-id');
+  });
+
+  test('online pages use server pagination and download only the selection',
+      () async {
+    final page = await browser.browse('collection:test', offset: 3, limit: 4);
+    expect(library.calls.single, ('collection:test', '', 3, 5));
+    expect(rows(page).length, 4);
+    expect(page['nextOffset'], 7);
+    expect(playedOnline, isNull);
+    await browser.select('collection:test', rows(page)[2]['id'] as String);
+    expect(playedOnline!.songId, 'song-5');
+    expect(playedOnline!.subsongIdx, 5);
+    expect(
+        (await browser.browse('collection:test',
+            offset: 10, limit: 4))['nextOffset'],
+        isNull);
+  });
+
+  test(
+      'online search forwards the query without filtering only downloaded files',
+      () async {
+    missing.addAll(library.songs.map((s) => s.filename));
+    final page =
+        await browser.browse('onlineSearch', query: 'Last Ninja', limit: 3);
+    expect(library.calls.single, ('onlineSearch', 'Last Ninja', 0, 4));
+    expect(rows(page).length, 3);
+  });
+
+  test('network errors propagate for the native retry UI', () async {
+    library.error = TimeoutException('offline');
+    await expectLater(
+        browser.browse('collection:test'), throwsA(isA<TimeoutException>()));
+    expect(playedOnline, isNull);
+  });
+
+  test('invalid pagination and unknown selections fail safely', () async {
+    await expectLater(browser.browse('queue', limit: 0), throwsArgumentError);
+    await expectLater(browser.browse('queue', offset: -1), throwsArgumentError);
+    await expectLater(browser.select('queue', 'unknown'), throwsStateError);
+    expect(playedQueue, isNull);
+  });
+}
