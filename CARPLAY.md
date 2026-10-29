@@ -133,5 +133,5 @@ CarPlay and vehicle acceptance checks.
   on first play; play, pause, resume and stop passed.
 - Headless Flutter startup: the widget tree builds without a phone window.
 - CarPlay screen/vehicle acceptance: pending a suitable simulator setup or an
-  entitled device build. No physical-phone installation or entitlement request
-  was made during this work.
+  entitled device build. No physical-phone installation or in-car testing
+  was performed during this work.
