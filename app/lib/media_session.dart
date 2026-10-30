@@ -285,6 +285,7 @@ class RewampAudioHandler extends BaseAudioHandler {
         MediaAction.play,
         MediaAction.pause,
         MediaAction.stop,
+        MediaAction.setShuffleMode,
         if (c.canGoPrev) MediaAction.skipToPrevious,
         if (c.canGoNext) MediaAction.skipToNext,
       },
@@ -297,6 +298,8 @@ class RewampAudioHandler extends BaseAudioHandler {
           c.playbackPreparing ? AudioProcessingState.buffering :
           c.hasFile ? AudioProcessingState.ready : AudioProcessingState.idle,
       playing: c.isPlaying,
+      shuffleMode: c.shuffleEnabled
+          ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none,
       updatePosition: Duration(milliseconds: (c.position * 1000).round()),
     ));
     // iOS: l'état que le plugin oublie. Après la publication, pour qu'il
@@ -478,5 +481,11 @@ class RewampAudioHandler extends BaseAudioHandler {
   Future<void> skipToPrevious() {
     logTransport('précédent', source: 'session média', detail: 'jouait=${c.isPlaying}');
     return c.goPrev();
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    final enabled = shuffleMode != AudioServiceShuffleMode.none;
+    if (c.shuffleEnabled != enabled) c.toggleShuffle();
   }
 }

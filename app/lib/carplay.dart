@@ -399,6 +399,7 @@ class CarPlaySession {
   bool _disposed = false;
   Timer? _debounce;
   (int, int, bool, bool)? _lastQueue;
+  bool? _lastShuffle;
   DownloadInfo? _currentDownload;
   bool get connected => _connected;
 
@@ -428,8 +429,14 @@ class CarPlaySession {
       switch (call.method) {
         case 'setConnected':
           _connected = args['connected'] == true;
-          if (_connected) _changed();
+          if (_connected) {
+            _syncShuffle(force: true);
+            _changed();
+          }
           return null;
+        case 'toggleShuffle':
+          controller.toggleShuffle();
+          return controller.shuffleEnabled;
         case 'browse':
           return browser.browse(args['source'] as String,
               query: args['query'] as String? ?? '',
@@ -470,7 +477,10 @@ class CarPlaySession {
     try {
       _connected =
           await channel.invokeMethod<bool>('ready', _strings()) ?? false;
-      if (_connected && !_disposed) _changed();
+      if (_connected && !_disposed) {
+        _syncShuffle(force: true);
+        _changed();
+      }
     } on PlatformException catch (e) {
       debugPrint('[carplay] initialization failed: $e');
     } on MissingPluginException {
@@ -537,6 +547,7 @@ class CarPlaySession {
   }
 
   void _playerChanged() {
+    _syncShuffle();
     // PlayerController ticks four times a second. Only structural/metadata
     // changes cross this channel; audio_service owns transport and progress.
     final key = (
@@ -549,6 +560,18 @@ class CarPlaySession {
     _lastQueue = key;
     if (playback.busy) _sendDownload(_currentDownload);
     _changed();
+  }
+
+  void _syncShuffle({bool force = false}) {
+    if (!_connected || _disposed) return;
+    final enabled = controller.shuffleEnabled;
+    if (!force && _lastShuffle == enabled) return;
+    _lastShuffle = enabled;
+    unawaited(channel
+        .invokeMethod<void>('shuffleState', enabled)
+        .catchError((Object error) {
+      debugPrint('[carplay] shuffle state: $error');
+    }));
   }
 
   void _changed() {

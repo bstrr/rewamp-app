@@ -22,6 +22,16 @@ class Controller extends ChangeNotifier implements PlayerController {
   @override
   bool canGoPrev = false;
   @override
+  bool shuffleEnabled = false;
+  int shuffleToggles = 0;
+  @override
+  void toggleShuffle() {
+    shuffleToggles++;
+    shuffleEnabled = !shuffleEnabled;
+    notifyListeners();
+  }
+
+  @override
   void setPlaybackPreparing(bool value) {}
   Future<void> Function()? next;
   @override
@@ -118,6 +128,35 @@ void main() {
         const DownloadInfo('Download', progress: .5);
     await tester.pump(const Duration(milliseconds: 250));
     expect(calls, isEmpty);
+  });
+
+  testWidgets('Now Playing toggles the shared shuffle state on and off',
+      (tester) async {
+    await session.start();
+    expect(calls.lastWhere((c) => c.method == 'shuffleState').arguments, false);
+    expect(await incoming('toggleShuffle', {}), true);
+    expect(controller.shuffleToggles, 1);
+    expect(calls.lastWhere((c) => c.method == 'shuffleState').arguments, true);
+    expect(await incoming('toggleShuffle', {}), false);
+    expect(controller.shuffleToggles, 2);
+    expect(calls.lastWhere((c) => c.method == 'shuffleState').arguments, false);
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  testWidgets('phone shuffle changes and reconnect refresh the car indicator',
+      (tester) async {
+    controller.shuffleEnabled = true;
+    await session.start();
+    expect(calls.lastWhere((c) => c.method == 'shuffleState').arguments, true);
+    controller.toggleShuffle();
+    expect(calls.lastWhere((c) => c.method == 'shuffleState').arguments, false);
+    await incoming('setConnected', {'connected': false});
+    calls.clear();
+    controller.toggleShuffle();
+    expect(calls, isEmpty);
+    await incoming('setConnected', {'connected': true});
+    expect(calls.lastWhere((c) => c.method == 'shuffleState').arguments, true);
+    await tester.pump(const Duration(milliseconds: 250));
   });
 
   testWidgets(

@@ -2,6 +2,7 @@ import CarPlay
 import Flutter
 import UIKit
 import Intents
+import MediaPlayer
 
 /// One bridge for the process, shared by the phone and CarPlay scenes.
 final class CarPlayBridge {
@@ -10,6 +11,13 @@ final class CarPlayBridge {
   private(set) var ready = false
   weak var scene: CarPlaySceneDelegate?
   private var strings: [String: String] = [:]
+
+  func updateShuffle(_ enabled: Bool) {
+    // System shuffle buttons derive their selected appearance from the media
+    // command state; assigning CPNowPlayingShuffleButton.isSelected is ignored.
+    MPRemoteCommandCenter.shared().changeShuffleModeCommand.currentShuffleType =
+        enabled ? .items : .off
+  }
 
   func text(_ key: String) -> String {
     strings[key] ?? ["queue": "Queue", "library": "Library",
@@ -39,6 +47,9 @@ final class CarPlayBridge {
         result(nil)
       case "error":
         self.scene?.showError()
+        result(nil)
+      case "shuffleState":
+        self.updateShuffle(call.arguments as? Bool ?? false)
         result(nil)
       default: result(FlutterMethodNotImplemented)
       }
@@ -157,6 +168,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
   private var closingProgress = false
   private var progressCompletions: [() -> Void] = []
   private var latestDownload: [String: Any]?
+  private var shuffleButton: CPNowPlayingShuffleButton?
   private let bridge = CarPlayBridge.shared
 
   func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
@@ -180,6 +192,16 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                                        completion: nil)
     CPNowPlayingTemplate.shared.add(self)
     CPNowPlayingTemplate.shared.isUpNextButtonEnabled = true
+    let shuffle = CPNowPlayingShuffleButton { [weak self] _ in
+      guard let self = self else { return }
+      self.bridge.call("toggleShuffle", [:]) { [weak self] result in
+        if let enabled = result as? Bool { self?.bridge.updateShuffle(enabled) }
+        else if result is FlutterError { self?.showError() }
+      }
+    }
+    shuffle.isEnabled = bridge.ready
+    shuffleButton = shuffle
+    CPNowPlayingTemplate.shared.updateNowPlayingButtons([shuffle])
     bridge.connected(true)
     refresh(includeOnline: true)
   }
@@ -187,6 +209,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
   func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
                                didDisconnectInterfaceController interfaceController: CPInterfaceController) {
     CPNowPlayingTemplate.shared.remove(self)
+    shuffleButton = nil
     if bridge.scene === self { bridge.scene = nil }
     bridge.connected(false)
     self.interfaceController = nil
@@ -206,6 +229,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
   func refresh(includeOnline: Bool = false) {
     guard let controller = interfaceController else { return }
+    shuffleButton?.isEnabled = bridge.ready
     let live = controller.templates
     lists = lists.filter { _, value in
       tabs.contains(where: { $0 === value.0 }) || live.contains(where: { $0 === value.0 })

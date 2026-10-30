@@ -37,8 +37,12 @@ same engine when needed.
   resolver/download/decoder failure produces an error. Rewamp downloads/cache-fills before
   decoding; this integration does not add progressive network audio streaming.
 - **Now Playing:** Apple's shared template uses `audio_service`'s existing
-  metadata, artwork, transport commands and interruption handling. Up Next opens
-  the queue. Disconnecting the display leaves playback running.
+  metadata, artwork, transport commands and interruption handling. A native
+  shuffle button toggles the existing queue's shuffle mode on/off, keeping the
+  current track playing. Its selected appearance follows the shared shuffle
+  state, including changes from the phone and playlists and after reconnect.
+  System media shuffle commands use that same state. Up Next opens the queue.
+  Disconnecting the display leaves playback running.
 
 Visualizers and videos are not placed in the CarPlay audio interface. List
 pagination replaces the current list, and search/download UI observes the
@@ -161,7 +165,9 @@ Use a signed device in a CarPlay vehicle for final acceptance.
    to find and play a catalogue track and a named playlist. Verify Siri's
    disambiguation and behaviour while the phone is locked.
 7. Start Play all and Shuffle from a playlist page other than the first. Check
-   the full queue, explicit shuffle mode and duplicate/subsong entries.
+   the full queue, explicit shuffle mode and duplicate/subsong entries. Toggle
+   shuffle on/off from Now Playing without restarting the current track; verify
+   the selected appearance after phone-side changes and CarPlay reconnect.
 8. During an uncached first track, skip using the on-screen progress control
    and a steering-wheel button. The skipped track must not start later, and no
    error should appear for intentional cancellation.
@@ -209,3 +215,17 @@ require a signed device test.
   account and the cached development profile did not contain Siri. The original
   installed CarPlay build is unaffected. Refresh the account/profile before
   installing this update.
+
+### Now Playing shuffle follow-up
+
+Added the system `CPNowPlayingShuffleButton` to the player view, wired through
+`PlayerController.toggleShuffle` to the existing queue reorder/persistence path.
+The car's selected appearance uses `MPChangeShuffleModeCommand.currentShuffleType`,
+as required for system-provided shuffle buttons. The media handler also reports
+shuffle mode and handles absolute system shuffle requests idempotently.
+
+Regression tests cover on/off taps, restored state, phone-side updates,
+reconnect and repeated system requests. The full Flutter suite passed all 847
+tests; changed Dart source/tests have no analyzer findings and the native SDK
+type-check passed. The new button's actual car-screen rendering remains a device
+acceptance check.
