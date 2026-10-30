@@ -201,7 +201,7 @@ The tester confirmed that the original CarPlay build works in the vehicle.
 Reported follow-ups were first-time download playback errors, skipping during
 those downloads, catalogue search, and playlist Play/Shuffle actions. The update
 addresses those paths; its new vehicle behaviour and Siri interaction still
-require a signed device test.
+require in-car acceptance testing.
 
 - Full Flutter suite: 844 tests passed (35 focused CarPlay tests).
 - Analyzer: no findings in changed Dart source, tests and download smoke tool.
@@ -212,9 +212,9 @@ require a signed device test.
   skipped during its download; the next track downloaded and played, while the
   skipped selection returned cancellation without starting later.
 - Updated physical-device signing initially failed: Xcode reported no available
-  account and the cached development profile did not contain Siri. The original
-  installed CarPlay build is unaffected. Refresh the account/profile before
-  installing this update.
+  account and the cached development profile did not contain Siri. Signing was
+  subsequently resolved by authenticating the test developer account and
+  refreshing the profile, as recorded below.
 
 ### Now Playing shuffle follow-up
 
@@ -229,3 +229,17 @@ reconnect and repeated system requests. The full Flutter suite passed all 847
 tests; changed Dart source/tests have no analyzer findings and the native SDK
 type-check passed. The new button's actual car-screen rendering remains a device
 acceptance check.
+
+### Updated signed phone installation on 2026-10-30
+
+The Release build from source commit `921b7ae` was signed, installed as an update
+on the registered test iPhone running iOS 26.7.1, and launched normally without
+a debugger. The new process remained running after launch.
+
+Both the embedded provisioning profile and app signature were verified to
+contain CarPlay Audio and Siri, with the test device included in the profile.
+Deep strict signature verification passed, and all 16 nested bundle identifiers
+were distinct. The build used the normal `lib/main.dart` entrypoint; upstream
+bundle/team settings and the tracked dependency lockfile were restored after
+building. Downloads, skipping, search, playlist actions and the Now Playing
+shuffle toggle are now available for a new in-car acceptance test.
