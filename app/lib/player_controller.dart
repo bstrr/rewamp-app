@@ -2672,6 +2672,14 @@ class PlayerController extends ChangeNotifier {
   int               get queueIdx => _queueIdx;
   int               get queueRevision => _queueRevision;
 
+  bool _playbackPreparing = false;
+  bool get playbackPreparing => _playbackPreparing;
+  void setPlaybackPreparing(bool value) {
+    if (_playbackPreparing == value) return;
+    _playbackPreparing = value;
+    notifyListeners();
+  }
+
   void setQueue(List<QueueEntry> entries, {int currentIdx = 0}) {
     _queue    = entries;
     _queueIdx = currentIdx;
@@ -2903,7 +2911,8 @@ class PlayerController extends ChangeNotifier {
     // seek to zero makes no sound, and the button read as broken: that is the
     // case after a queue finishes, and after a queue is restored at launch and
     // sits primed. Both are exactly when a user reaches for "previous".
-    final restartInPlace = isPlaying && position >= _kPrevRestartSecs;
+    final restartInPlace =
+        !playbackPreparing && isPlaying && position >= _kPrevRestartSecs;
     if (_queuePrev != null && !restartInPlace) {
       await _queuePrev!.call();
       return;

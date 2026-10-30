@@ -138,9 +138,6 @@ class _AppShellState extends State<AppShell>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   late final PlayerController _controller;
   CarPlaySession? _carPlay;
-  bool _carPlaySelecting = false;
-  bool _carPlayLoadFailed = false;
-
   Future<void> _initCarPlayAndMedia() async {
     await initMediaSession(_controller,
         armAppleCommands: !await CarPlaySession.isConnected());
@@ -149,45 +146,101 @@ class _AppShellState extends State<AppShell>
       library: LocalCarPlayLibrary(),
       queue: () => _controller.queue,
       queueIndex: () => _controller.queueIdx,
-      playQueueIndex: (index) => _carPlayPlay(() => _playAt(index)),
-      playTracks: (tracks, index) => _carPlayPlay(() async {
-        final selected = tracks[index];
-        if (!await File(selected.filePath).exists() && selected.onlineId != null) {
-          final song = await RewampDb.getSongEntry(selected.onlineId!,
-              fileName: selected.filePath.isEmpty ? null : p.basename(selected.filePath));
-          if (song == null) throw StateError('Catalogue track unavailable');
-          final prepared = await _prepareCarPlayOnline(
-              song.withSubsong(selected.subsongIdx, title: selected.displayTitle));
-          tracks = List<TrackRecord>.of(tracks)..[index] = prepared;
-        }
-        if (mounted) await _startLocalTrackQueue(context, tracks, startIndex: index);
-      }),
-      playOnline: (song) => _carPlayPlay(() async {
-        song = await RewampDb.resolveMatchedTrack(song);
-        final track = await _prepareCarPlayOnline(song);
-        final rows = _rotateToTopEntry(song, await _subsongEntries(
-            song.copyWith(localPath: track.filePath)));
-        DownloadCancelToken.current?.throwIfCancelled();
-        final tracks = carPlayResolvedSubsongs(track, rows);
-        if (mounted) await _startLocalTrackQueue(context, tracks, startIndex: 0);
-      }),
+      playQueueIndex: (index) => _playAt(index),
+      playTracks: (tracks, index) =>
+          _startLocalTrackQueue(context, tracks, startIndex: index),
+      playPlaylist: (tracks, shuffle) async {
+        // Set the mode explicitly: Play preserves playlist order, including
+        // when the previous queue had shuffle enabled.
+        _shuffleEnabled = shuffle;
+        _controller.setShuffleEnabled(shuffle);
+        UserSettings.instance.transportShuffle = shuffle;
+        await _startLocalTrackQueue(context, tracks);
+      },
+      playOnline: (song) => _startCarPlayOnlineQueue([song], 0),
+      playOnlineQueue: _startCarPlayOnlineQueue,
     ), () => context.l10n);
     await _carPlay!.start();
   }
 
-  Future<void> _carPlayPlay(Future<void> Function() play) async {
-    _carPlaySelecting = true;
-    _carPlayLoadFailed = false;
-    try {
-      await play();
-      DownloadCancelToken.current?.throwIfCancelled();
-      if (_carPlayLoadFailed) throw StateError('CarPlay playback failed');
-    } finally { _carPlaySelecting = false; }
+  Future<void> _startCarPlayOnlineQueue(List<SearchResult> songs, int index) async {
+    _exitRadio();
+    _queue
+      ..clear()
+      ..addAll([for (final song in songs) _OnlineItem(song, _seq())]);
+    _queueAlbumId = null;
+    _queueAlbumName = null;
+    _prefetchFailed.clear();
+    _prefetchDone.clear();
+    _queueIdx = index;
+    _syncControllerQueue();
+    _refreshQueueNav();
+    await _playAt(index);
   }
 
   void _carPlayPlaybackFailed() {
-    _carPlayLoadFailed = true;
-    if (!_carPlaySelecting) _carPlay?.reportPlaybackError();
+    if (!(_carPlay?.playback.busy ?? false)) _carPlay?.reportPlaybackError();
+  }
+
+  Future<void> _playCarPlayAt(int index) async {
+    if (index < 0 || index >= _queue.length) return;
+    final item = _queue[index];
+    final previous = _lastGoodIdx;
+    _queueIdx = index;
+    _controller.updateQueueIdx(index);
+    _refreshQueueNav(); // Transport skips work before the first byte arrives.
+    final cancel = DownloadCancelToken.current!;
+    try {
+      TrackRecord track;
+      if (item is _OnlineItem) {
+        final song = await RewampDb.resolveMatchedTrack(item.result);
+        cancel.throwIfCancelled();
+        track = await _prepareCarPlayOnline(song);
+        cancel.throwIfCancelled();
+        final rows = _rotateToTopEntry(song, await _subsongEntries(
+            song.copyWith(localPath: track.filePath)));
+        cancel.throwIfCancelled();
+        final expanded = carPlayResolvedSubsongs(track, rows);
+        if (expanded.isNotEmpty) {
+          track = expanded.first;
+          _queue.replaceRange(index, index + 1,
+              [for (final t in expanded) _LocalItem(t, _seq())]);
+          _syncControllerQueue();
+          _refreshQueueNav();
+        }
+      } else {
+        track = (item as _LocalItem).track;
+        if (track.filePath.isNotEmpty && !await File(track.filePath).exists()) {
+          await RewampDb.reExtractForMissingLocalPath(track.filePath);
+        }
+        cancel.throwIfCancelled();
+        if (!await File(track.filePath).exists()) {
+          if (track.onlineId == null) throw StateError('File is unavailable');
+          final song = await RewampDb.getSongEntry(track.onlineId!,
+              fileName: track.filePath.isEmpty ? null : p.basename(track.filePath));
+          cancel.throwIfCancelled();
+          if (song == null) throw StateError('Catalogue track unavailable');
+          track = await _prepareCarPlayOnline(
+              song.withSubsong(track.subsongIdx, title: track.displayTitle));
+          cancel.throwIfCancelled();
+          _queue[index] = _LocalItem(track, item.seq);
+          _syncControllerQueue();
+        }
+      }
+      cancel.throwIfCancelled();
+      if (!mounted) throw const DownloadCancelledException();
+      await _playResolvedLocal(track);
+      cancel.throwIfCancelled();
+      if (!_controller.isPlaying) throw StateError('Unable to decode track');
+    } catch (_) {
+      // A superseded download must not restore the old highlight or playback.
+      if (cancel.isCancelled && (_carPlay?.playback.ownsCurrent ?? false)) {
+        _restoreQueueIdx(previous); // Explicit Cancel, with no newer selection.
+      }
+      cancel.throwIfCancelled();
+      _restoreQueueIdx(previous);
+      rethrow;
+    }
   }
 
   Future<TrackRecord> _prepareCarPlayOnline(SearchResult song) async {
@@ -1685,7 +1738,8 @@ class _AppShellState extends State<AppShell>
     )) {
       return;
     }
-    await _controller.loadFile(
+    DownloadCancelToken.current?.throwIfCancelled();
+    final loaded = await _controller.loadFile(
       path,
       label,
       subsongIdx:       subsongIdx,
@@ -1704,6 +1758,9 @@ class _AppShellState extends State<AppShell>
       recordAsAlbum:    true,
       adoptHandoff:     adopt,
     );
+    if (!loaded && (_carPlay?.playback.busy ?? false)) {
+      throw StateError('Unable to decode track');
+    }
   }
 
   static const _kSidExts = {
@@ -2748,6 +2805,19 @@ class _AppShellState extends State<AppShell>
   }
 
   Future<void> _playAt(int i, {int? revertTo}) async {
+    final carPlay = _carPlay;
+    if (carPlay != null && (carPlay.connected || carPlay.playback.busy)) {
+      try {
+        await carPlay.playback.run(() => _playCarPlayAt(i));
+      } on DownloadCancelledException {
+        if (DownloadCancelToken.current != null) rethrow;
+      } catch (error, stack) {
+        if (DownloadCancelToken.current != null) rethrow;
+        debugPrint('[carplay] playback failed: $error\n$stack');
+        carPlay.reportPlaybackError();
+      }
+      return;
+    }
     final prevIdx = revertTo ?? _queueIdx;
     _queueIdx = i;
     _controller.updateQueueIdx(i);
@@ -2933,32 +3003,6 @@ class _AppShellState extends State<AppShell>
         if (!await File(track.filePath).exists()) {
           await RewampDb.reExtractForMissingLocalPath(track.filePath);
         }
-        // Playlist/library trace whose file was deleted: re-resolve through
-        // the online download machinery (get_song_context et al) instead of
-        // failing the load and silently skipping.
-        if (track.onlineId != null &&
-            !await File(track.filePath).exists() && (_carPlay?.connected ?? false)) {
-          try {
-            final song = await RewampDb.getSongEntry(track.onlineId!,
-                fileName: track.filePath.isEmpty ? null : p.basename(track.filePath));
-            if (song == null) throw StateError('Catalogue track unavailable');
-            final prepared = await _prepareCarPlayOnline(
-                song.withSubsong(track.subsongIdx, title: track.displayTitle));
-            if (i >= _queue.length || !identical(_queue[i], item)) return;
-            _queue[i] = _LocalItem(prepared, item.seq);
-            _syncControllerQueue();
-            await _playResolvedLocal(prepared);
-            _prefetchNextDownload();
-          } on DownloadCancelledException {
-            _restoreQueueIdx(prevIdx);
-            if (_carPlaySelecting) rethrow;
-          } catch (_) {
-            _carPlayPlaybackFailed();
-            _restoreQueueIdx(prevIdx);
-            if (_carPlaySelecting) rethrow;
-          }
-          return;
-        }
         if (track.onlineId != null &&
             !await File(track.filePath).exists()) {
           // The collection is derivable from where the file lives/lived
@@ -3072,6 +3116,7 @@ class _AppShellState extends State<AppShell>
   }
 
   void _onLoadResult(bool ok) {
+    if (!ok && (_carPlay?.playback.busy ?? false)) return;
     if (!ok) _carPlayPlaybackFailed();
     if (ok) {
       _consecutiveLoadFailures = 0;

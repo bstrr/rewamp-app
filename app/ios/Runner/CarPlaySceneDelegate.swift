@@ -1,6 +1,7 @@
 import CarPlay
 import Flutter
 import UIKit
+import Intents
 
 /// One bridge for the process, shared by the phone and CarPlay scenes.
 final class CarPlayBridge {
@@ -55,6 +56,89 @@ final class CarPlayBridge {
     }
     channel.invokeMethod(method, arguments: args, result: completion)
   }
+
+  func whenReady(_ method: String, _ args: [String: Any],
+                 deadline: Date = Date().addingTimeInterval(15),
+                 completion: @escaping (Any?) -> Void) {
+    if ready { call(method, args, completion: completion); return }
+    guard Date() < deadline else {
+      completion(FlutterError(code: "starting", message: nil, details: nil)); return
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+      self?.whenReady(method, args, deadline: deadline, completion: completion)
+    }
+  }
+}
+
+/// Scene-based SiriKit handling runs in the app's existing playback engine.
+/// This also supplies voice search on systems where audio keyboard search is
+/// unavailable. No recording session or custom keyboard is required.
+final class RewampMediaIntentHandler: NSObject, INPlayMediaIntentHandling,
+    INSearchForMediaIntentHandling {
+  private let bridge = CarPlayBridge.shared
+  static let identifierPrefix = "rewamp-voice:" + UUID().uuidString + ":"
+
+  private func query(_ search: INMediaSearch?) -> String {
+    var terms: [String] = []
+    for value in [search?.mediaName, search?.artistName, search?.albumName] {
+      if let value = value, !value.isEmpty, !terms.contains(value) { terms.append(value) }
+    }
+    return terms.joined(separator: " ")
+  }
+
+  private func find(_ search: INMediaSearch?, shuffle: Bool = false,
+                    completion: @escaping ([INMediaItem]) -> Void) {
+    bridge.whenReady("voiceSearch", ["query": query(search),
+      "playlist": search?.mediaType == .playlist, "shuffle": shuffle]) { value in
+      let rows = value as? [[String: Any]] ?? []
+      completion(rows.compactMap { row -> INMediaItem? in
+        guard let token = row["id"] as? String else { return nil }
+        let item = INMediaItem(identifier: Self.identifierPrefix + token,
+          title: row["title"] as? String,
+          type: row["playlist"] as? Bool == true ? .playlist : .song, artwork: nil,
+          artist: row["subtitle"] as? String)
+        return item
+      })
+    }
+  }
+
+  func resolveMediaItems(for intent: INPlayMediaIntent,
+                        with completion: @escaping ([INPlayMediaMediaItemResolutionResult]) -> Void) {
+    if let item = intent.mediaItems?.first,
+       item.identifier?.hasPrefix(RewampMediaIntentHandler.identifierPrefix) == true {
+      completion([.success(with: item)]); return
+    }
+    if query(intent.mediaSearch).isEmpty { completion([.needsValue()]); return }
+    find(intent.mediaSearch, shuffle: intent.playShuffled == true) { items in
+      if items.isEmpty { completion([.unsupported()]) }
+      else if items.count == 1 { completion([.success(with: items[0])]) }
+      else { completion([.disambiguation(with: items)]) }
+    }
+  }
+
+  func handle(intent: INPlayMediaIntent,
+              completion: @escaping (INPlayMediaIntentResponse) -> Void) {
+    guard let identifier = intent.mediaItems?.first?.identifier,
+          identifier.hasPrefix(RewampMediaIntentHandler.identifierPrefix) else {
+      completion(INPlayMediaIntentResponse(code: .failure, userActivity: nil)); return
+    }
+    bridge.whenReady("select", ["source": "voiceSearch",
+      "id": String(identifier.dropFirst(RewampMediaIntentHandler.identifierPrefix.count))]) { result in
+      completion(INPlayMediaIntentResponse(
+        code: result is FlutterError ? .failure : .success, userActivity: nil))
+    }
+  }
+
+  func handle(intent: INSearchForMediaIntent,
+              completion: @escaping (INSearchForMediaIntentResponse) -> Void) {
+    find(intent.mediaSearch) { [weak self] items in
+      let response = INSearchForMediaIntentResponse(
+        code: items.isEmpty ? .failure : .success, userActivity: nil)
+      response.mediaItems = items
+      self?.bridge.scene?.showVoiceResults(items)
+      completion(response)
+    }
+  }
 }
 
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate,
@@ -67,9 +151,12 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
   private var searchSource = "search"
   private var searchQuery = ""
   private var latestSearchItems: [CPListItem] = []
-  private var selecting = false
+  private var selectionGeneration = UUID()
   private var progressTemplate: CPListTemplate?
   private var progressAlert: CPAlertTemplate?
+  private var closingProgress = false
+  private var progressCompletions: [() -> Void] = []
+  private var latestDownload: [String: Any]?
   private let bridge = CarPlayBridge.shared
 
   func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
@@ -82,6 +169,10 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
       let template = CPListTemplate(title: bridge.text(source), sections: [])
       template.tabTitle = bridge.text(source)
       template.tabImage = UIImage(systemName: symbol)
+      if source == "catalogue" {
+        template.assistantCellConfiguration = CPAssistantCellConfiguration(
+          position: .top, visibility: .always, assistantAction: .playMedia)
+      }
       lists[ObjectIdentifier(template)] = (template, source, "", 0)
       return template
     }
@@ -104,6 +195,10 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     tabs.removeAll()
     progressTemplate = nil
     progressAlert = nil
+    latestDownload = nil
+    closingProgress = false
+    progressCompletions.removeAll()
+    selectionGeneration = UUID()
     searchGeneration = UUID()
     latestSearchItems = []
     // Disconnecting the display never stops audio or destroys the engine.
@@ -121,13 +216,13 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
       }
       template.emptyViewTitleVariants = [bridge.text("empty")]
       // Search is an audio-app template only from iOS 27 (Apple's guide).
-      if #available(iOS 27.0, *), tabs.contains(where: { $0 === template }) {
+      if #available(iOS 27.0, *), source != "queue", !source.hasPrefix("album:") {
         template.trailingNavigationBarButtons = [CPBarButton(
           image: UIImage(systemName: "magnifyingglass")!) { [weak self] _ in
-            self?.showSearch(online: source == "catalogue" || source.hasPrefix("collection:"))
+            self?.showSearch(source: source)
           }]
       }
-      let online = source == "catalogue" || source == "onlineSearch" ||
+      let online = source == "catalogue" || source.hasPrefix("onlineSearch") ||
           source.hasPrefix("collection:") || source.hasPrefix("album:")
       if bridge.ready && (includeOnline || !online) {
         load(template, source: source, query: query, offset: offset)
@@ -136,10 +231,18 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     CPNowPlayingTemplate.shared.upNextTitle = bridge.text("queue")
   }
 
-  private var pageSize: Int { max(1, min(100, CPListTemplate.maximumItemCount - 2)) }
+  // Some cars truncate lists to twelve rows. Reserve room for playlist actions
+  // and previous/next-page navigation so those controls remain reachable.
+  private var pageSize: Int { max(1, min(8, CPListTemplate.maximumItemCount - 4)) }
 
   private func load(_ template: CPListTemplate, source: String, query: String = "", offset: Int = 0) {
     lists[ObjectIdentifier(template)] = (template, source, query, offset)
+    if #available(iOS 27.0, *), source != "queue", !source.hasPrefix("album:") {
+      template.trailingNavigationBarButtons = [CPBarButton(
+        image: UIImage(systemName: "magnifyingglass")!) { [weak self] _ in
+          self?.showSearch(source: source)
+        }]
+    }
     let request = UUID()
     requests[ObjectIdentifier(template)] = request
     bridge.call("browse", ["source": source, "query": query,
@@ -155,6 +258,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         template.updateSections([CPListSection(items: [retry])]); return
       }
       var items = self.items(page, source: source)
+      let controls = self.items(["items": page["controls"] ?? []], source: source)
       if offset > 0 {
         let previous = CPListItem(text: "1–\(offset)", detailText: nil,
                                   image: UIImage(systemName: "chevron.left"))
@@ -174,13 +278,17 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         }
         items.append(more)
       }
-      template.updateSections(items.isEmpty ? [] : [CPListSection(items: items)])
+      var sections: [CPListSection] = []
+      if !controls.isEmpty { sections.append(CPListSection(items: controls)) }
+      if !items.isEmpty { sections.append(CPListSection(items: items)) }
+      template.updateSections(sections)
     }
   }
 
   private func items(_ page: [String: Any], source: String) -> [CPListItem] {
     (page["items"] as? [[String: Any]] ?? []).map { data in
-      let title = data["title"] as? String ?? bridge.text(data["label"] as? String ?? "empty")
+      let title = (data["label"] as? String).map { bridge.text($0) }
+        ?? data["title"] as? String ?? bridge.text("empty")
       let item = CPListItem(text: title, detailText: data["subtitle"] as? String)
       item.isPlaying = data["playing"] as? Bool ?? false
       if let child = data["source"] as? String {
@@ -189,7 +297,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
           guard let self = self else { done(); return }
           let template = CPListTemplate(title: title, sections: [])
           template.emptyViewTitleVariants = [self.bridge.text("empty")]
-          self.interfaceController?.pushTemplate(template, animated: true, completion: nil)
+          self.push(template)
           self.load(template, source: child)
           done()
         }
@@ -201,28 +309,42 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
   }
 
   private func select(_ source: String, id: String, done: @escaping () -> Void) {
-    guard !selecting else { done(); return }
-    selecting = true
-    bridge.call("select", ["source": source, "id": id]) { [weak self] result in
-      done() // Every CarPlay selection is completed, including a failed download.
-      guard let self = self else { return }
-      self.selecting = false
-      guard let controller = self.interfaceController else { return }
+    // Complete the row promptly; a long download has its own progress screen
+    // and must not hold CarPlay's selection spinner/timeout or block another tap.
+    done()
+    perform("select", ["source": source, "id": id])
+  }
+
+  private func perform(_ method: String, _ arguments: [String: Any]) {
+    let generation = UUID()
+    selectionGeneration = generation
+    bridge.call(method, arguments) { [weak self] result in
+      guard let self = self, self.selectionGeneration == generation,
+            let controller = self.interfaceController else { return }
       self.closeProgress {
+        guard self.selectionGeneration == generation else { return }
         if let error = result as? FlutterError {
           if error.code != "cancelled" { self.showError() }
           return
         }
         if controller.templates.contains(where: { $0 === CPNowPlayingTemplate.shared }) {
           controller.pop(to: CPNowPlayingTemplate.shared, animated: true, completion: nil)
-        } else {
+        } else if controller.templates.count < 5 {
           controller.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)
+        } else {
+          controller.popToRootTemplate(animated: false) { _, _ in
+            controller.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)
+          }
         }
       }
     }
   }
 
   func showError() {
+    closeProgress { [weak self] in self?.presentError() }
+  }
+
+  private func presentError() {
     guard let controller = interfaceController, controller.presentedTemplate == nil else { return }
     let action = CPAlertAction(title: bridge.text("ok"), style: .default) { [weak self] _ in
       self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
@@ -232,10 +354,13 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
   }
 
   func updateDownload(_ info: [String: Any]?) {
-    // Only a CarPlay selection owns this progress screen; phone-initiated and
-    // speculative prefetch downloads must not interrupt the car's interface.
-    guard selecting, let info = info, let controller = interfaceController else { return }
-    let progress: String? = (info["progress"] as? Double).map { "\(Int($0 * 100))%" }
+    latestDownload = info
+    guard !closingProgress else { return }
+    guard let controller = interfaceController else { return }
+    guard let info = info else { closeProgress {}; return }
+    let progress: String? = (info["progress"] as? Double).flatMap {
+      $0.isFinite ? "\(Int(max(0, min(1, $0)) * 100))%" : nil
+    }
     let item = CPListItem(text: info["title"] as? String ?? bridge.text("downloading"),
                           detailText: progress ?? bridge.text("downloading"))
     item.isEnabled = false
@@ -244,7 +369,21 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
       guard let self = self else { done(); return }
       self.bridge.call("cancel", [:]) { _ in done() }
     }
-    let sections = [CPListSection(items: [item, cancel])]
+    var items = [item]
+    for (key, previous, symbol) in [("canNext", false, "forward.end.fill"),
+                                    ("canPrevious", true, "backward.end.fill")] {
+      if info[key] as? Bool == true {
+        let skip = CPListItem(text: bridge.text(previous ? "previous" : "next"),
+                              detailText: nil, image: UIImage(systemName: symbol))
+        skip.handler = { [weak self] _, done in
+          done()
+          self?.perform("skip", ["previous": previous])
+        }
+        items.append(skip)
+      }
+    }
+    items.append(cancel)
+    let sections = [CPListSection(items: items)]
     if let template = progressTemplate { template.updateSections(sections) }
     else if controller.templates.count < 5 {
       let template = CPListTemplate(title: bridge.text("downloading"), sections: sections)
@@ -261,15 +400,46 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
   }
 
   private func closeProgress(_ completion: @escaping () -> Void) {
+    progressCompletions.append(completion)
+    guard !closingProgress else { return }
+    closingProgress = true
+    let finish = { [weak self] in
+      guard let self = self else { return }
+      self.closingProgress = false
+      let completions = self.progressCompletions
+      self.progressCompletions.removeAll()
+      completions.forEach { $0() }
+      if let info = self.latestDownload { self.updateDownload(info) }
+    }
     if let alert = progressAlert, interfaceController?.presentedTemplate === alert {
       progressAlert = nil
-      interfaceController?.dismissTemplate(animated: true) { _, _ in completion() }
+      interfaceController?.dismissTemplate(animated: true) { _, _ in finish() }
       return
     }
     if let template = progressTemplate, interfaceController?.topTemplate === template {
       progressTemplate = nil
-      interfaceController?.popTemplate(animated: true) { _, _ in completion() }
-    } else { progressTemplate = nil; completion() }
+      interfaceController?.popTemplate(animated: true) { _, _ in finish() }
+    } else { progressTemplate = nil; finish() }
+  }
+
+  func showVoiceResults(_ results: [INMediaItem]) {
+    let rows: [[String: Any]] = results.compactMap { item in
+      guard let id = item.identifier, id.hasPrefix(RewampMediaIntentHandler.identifierPrefix) else { return nil }
+      return ["id": String(id.dropFirst(RewampMediaIntentHandler.identifierPrefix.count)),
+              "title": item.title ?? bridge.text("search"), "subtitle": item.artist ?? ""]
+    }
+    let template = CPListTemplate(title: bridge.text("search"),
+      sections: [CPListSection(items: items(["items": rows], source: "voiceSearch"))])
+    push(template)
+  }
+
+  private func push(_ template: CPTemplate) {
+    guard let controller = interfaceController else { return }
+    if controller.templates.count >= 5 {
+      controller.popToRootTemplate(animated: false) { _, _ in
+        controller.pushTemplate(template, animated: true, completion: nil)
+      }
+    } else { controller.pushTemplate(template, animated: true, completion: nil) }
   }
 
   func nowPlayingTemplateUpNextButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {
@@ -284,14 +454,16 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     } else { show() }
   }
 
-  private func showSearch(online: Bool) {
+  private func showSearch(source: String) {
     guard #available(iOS 27.0, *) else { return }
-    searchSource = online ? "onlineSearch" : "search"
+    searchSource = source.hasPrefix("collection:")
+        ? "onlineSearch:" + source.dropFirst("collection:".count)
+        : (source == "catalogue" || source.hasPrefix("onlineSearch") ? "onlineSearch" : "search")
     searchQuery = ""
     latestSearchItems = []
     let template = CPSearchTemplate()
     template.delegate = self
-    interfaceController?.pushTemplate(template, animated: true, completion: nil)
+    push(template)
   }
 
   func searchTemplate(_ searchTemplate: CPSearchTemplate, updatedSearchText searchText: String,
@@ -325,7 +497,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
           more.handler = { [weak self] _, done in
             guard let self = self else { done(); return }
             let template = CPListTemplate(title: self.bridge.text("search"), sections: [])
-            self.interfaceController?.pushTemplate(template, animated: true, completion: nil)
+            self.push(template)
             self.load(template, source: source, query: searchText, offset: next)
             done()
           }
@@ -345,7 +517,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
   func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
     let template = CPListTemplate(title: bridge.text("search"), sections: [])
-    interfaceController?.pushTemplate(template, animated: true, completion: nil)
+    push(template)
     load(template, source: searchSource, query: searchQuery)
   }
 }

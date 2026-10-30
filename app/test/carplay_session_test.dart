@@ -18,6 +18,15 @@ class Controller extends ChangeNotifier implements PlayerController {
   @override
   int queueRevision = 0;
   @override
+  bool canGoNext = true;
+  @override
+  bool canGoPrev = false;
+  @override
+  void setPlaybackPreparing(bool value) {}
+  Future<void> Function()? next;
+  @override
+  Future<void> goNext() async => next?.call();
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -109,6 +118,80 @@ void main() {
         const DownloadInfo('Download', progress: .5);
     await tester.pump(const Duration(milliseconds: 250));
     expect(calls, isEmpty);
+  });
+
+  testWidgets(
+      'slow download publishes progress until playback actually completes',
+      (tester) async {
+    await session.start();
+    final resume = Completer<void>();
+    play = () async {
+      RewampDb.downloadStatus.value =
+          const DownloadInfo('New tune', progress: .35);
+      await resume.future;
+    };
+    final page = await incoming('browse', {'source': 'queue'}) as Map;
+    var complete = false;
+    final selection = incoming('select', {
+      'source': 'queue',
+      'id': (page['items'] as List).single['id']
+    }).then((_) => complete = true);
+    await tester.pump();
+    expect(complete, false);
+    final progress =
+        calls.lastWhere((c) => c.method == 'download').arguments as Map;
+    expect(progress['title'], 'New tune');
+    expect(progress['progress'], .35);
+    expect(progress['canNext'], true);
+    controller.canGoNext = false;
+    controller.notifyListeners();
+    final updated =
+        calls.lastWhere((c) => c.method == 'download').arguments as Map;
+    expect(updated['canNext'], false);
+    expect(updated['progress'], .35);
+    // Unrelated background downloads may not steal the progress display.
+    final count = calls.where((c) => c.method == 'download').length;
+    RewampDb.downloadStatus.value =
+        const DownloadInfo('Prefetch', progress: .9);
+    expect(calls.where((c) => c.method == 'download').length, count);
+    resume.complete();
+    await selection;
+    expect(calls.lastWhere((c) => c.method == 'download').arguments, isNull);
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  testWidgets(
+      'skip supersedes a pending download without a busy or failure alert',
+      (tester) async {
+    await session.start();
+    final resume = Completer<void>();
+    final started = Completer<void>();
+    late DownloadCancelToken original;
+    play = () async {
+      original = DownloadCancelToken.current!;
+      started.complete();
+      await resume.future;
+      original.throwIfCancelled();
+    };
+    final page = await incoming('browse', {'source': 'queue'}) as Map;
+    final selection = incoming('select',
+        {'source': 'queue', 'id': (page['items'] as List).single['id']});
+    final cancelled = expectLater(
+        selection,
+        throwsA(isA<PlatformException>()
+            .having((e) => e.code, 'code', 'cancelled')));
+    await started.future;
+    var skipped = false;
+    controller.next = () async {
+      skipped = true;
+    };
+    await incoming('skip', {});
+    expect(original.isCancelled, true);
+    expect(skipped, true);
+    resume.complete();
+    await cancelled;
+    expect(calls.where((c) => c.method == 'error'), isEmpty);
+    await tester.pump(const Duration(milliseconds: 250));
   });
 
   testWidgets(

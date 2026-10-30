@@ -15,21 +15,35 @@ same engine when needed.
   exists. Missing files without a catalogue identity are omitted.
 - **Browse:** select a catalogue collection and browse its tracks, ordered by
   popularity, with server pagination. Archive albums open their track lists.
-- **Search on iOS 27+:** the search button in Queue/Library searches the library;
-  the button in Browse searches the online catalogue. Older iOS versions keep
-  the browsing interface. The car controls when its keyboard is available.
+- **Search:** Siri media search works on iOS 15+, including the Siri assistant
+  row in Browse. Try “Play Ocean Loader in Rewamp” or “Shuffle my Road music
+  playlist in Rewamp”; Siri can ask which matching track you mean. Siri search
+  results can also open a selectable CarPlay list. On iOS 27+, the magnifying
+  glass in Library searches local tracks, Browse searches the full catalogue,
+  and a collection's button searches within that collection. The car controls
+  when the keyboard is available.
+- **Playlists:** Play all starts in playlist order; Shuffle starts a new shuffled
+  queue. Both actions cover the complete playlist, including downloadable
+  entries and tracks beyond the current display page.
 - **Download and play:** the phone's existing resolver handles cached files,
   mirrors, archive albums, auxiliary files and subsongs. Progress, cancellation
   and errors are presented in CarPlay without a phone dialog. Cancellation uses
-  a token scoped to the CarPlay selection. Rewamp downloads/cache-fills before
+  a token scoped to the current playback request. The queue is published before
+  downloading, and Next/Previous remain available on the progress screen and
+  through remote transport controls. Skipping or selecting another track
+  cancels the previous request; late results cannot start the skipped track or
+  overwrite the newer progress screen. List-row completion happens immediately
+  so a long download does not hold CarPlay's selection spinner. Only a genuine
+  resolver/download/decoder failure produces an error. Rewamp downloads/cache-fills before
   decoding; this integration does not add progressive network audio streaming.
 - **Now Playing:** Apple's shared template uses `audio_service`'s existing
   metadata, artwork, transport commands and interruption handling. Up Next opens
   the queue. Disconnecting the display leaves playback running.
 
 Visualizers and videos are not placed in the CarPlay audio interface. List
-pagination replaces the current list, search starts from a top-level tab, and
-download UI observes the five-template stack limit.
+pagination replaces the current list, and search/download UI observes the
+five-template stack limit. Pages reserve room for playback and page-navigation
+controls even in cars that truncate lists to twelve rows.
 
 On iOS the native output device is created on the first playback request;
 `audio_session` owns audio-session activation before that request. CarPlay
@@ -39,8 +53,18 @@ audio session and interrupt the car's other audio source.
 
 ## Signing and distribution
 
-`Runner/Runner.entitlements` requests `com.apple.developer.carplay-audio` in all
-build configurations. This file is a request, not an Apple approval.
+`Runner/Runner.entitlements` requests `com.apple.developer.carplay-audio` and
+`com.apple.developer.siri` in all build configurations. Enable both CarPlay Audio
+and Siri on the distributing App ID and regenerate its profile. An existing
+CarPlay-only profile cannot sign the Siri search update. This file is a request,
+not an Apple approval.
+
+SiriKit uses scene-based in-app intent handling (`INIntentsSupported`) in
+`AppDelegate`, sharing the normal Flutter engine. `INPlayMediaIntent` resolves
+catalogue or playlist results and supports Siri's disambiguation;
+`INSearchForMediaIntent` supplies results without starting playback. Only
+process-specific resolved identifiers are accepted, preventing an old Siri
+selection from being reused for a different item after relaunch.
 
 The developer distributing a device build must:
 
@@ -90,11 +114,23 @@ first play, pause, resume and stop through the normal media handler. Look for
 `FLUTTER_TARGET=lib/main.dart` afterward; the smoke entrypoint is not the app's
 shipping entrypoint.
 
+For the real catalogue/download/decoder path, build the disposable simulator
+with `FLUTTER_TARGET=tool/carplay_download_smoke.dart`. It plays a catalogue
+selection, then skips an uncached selection during its download. Look for
+`[CarPlay download smoke] PASSED` in the simulator's unified log. This does not
+exercise rendering on an actual CarPlay display. Restore `lib/main.dart` after
+running the smoke entrypoint.
+
 Focused tests are in `test/carplay_browser_test.dart`,
-`test/carplay_download_test.dart` and `test/carplay_session_test.dart`. They
+`test/carplay_download_test.dart`, `test/carplay_playback_test.dart` and
+`test/carplay_session_test.dart`. They
 exercise queue mutations, duplicate/subsong identity, restored playlists,
 online pagination, redownloadable library rows, offline errors, the native/Dart
 handshake, progress subscriptions, cancellation and phone-dialog isolation.
+A local HTTP server holds a real download open to verify that playback waits
+for all bytes and progress is visible before completion. Superseded downloads,
+remote skipping, full-playlist actions and Siri search snapshots have dedicated
+regression coverage.
 
 ## Manual acceptance checks
 
@@ -119,10 +155,17 @@ Use a signed device in a CarPlay vehicle for final acceptance.
 5. Restore a playlist on a device without its downloads and play several
    consecutive catalogue entries. Verify offline cached playback and missing
    local-only files.
-6. On iOS 27+, search locally and online, type quickly, clear the query, and
-   test with the car's keyboard disabled. On iOS 15–26 verify that no search
-   template is offered and lists still work.
-7. Test while the phone is locked, during calls/audio interruptions, at the
+6. On iOS 27+, search locally, globally and within a collection, type quickly,
+   clear the query, and test with the car's keyboard disabled. On iOS 15–26
+   verify that keyboard search is not offered, and use the Browse Siri assistant
+   to find and play a catalogue track and a named playlist. Verify Siri's
+   disambiguation and behaviour while the phone is locked.
+7. Start Play all and Shuffle from a playlist page other than the first. Check
+   the full queue, explicit shuffle mode and duplicate/subsong entries.
+8. During an uncached first track, skip using the on-screen progress control
+   and a steering-wheel button. The skipped track must not start later, and no
+   error should appear for intentional cancellation.
+9. Test while the phone is locked, during calls/audio interruptions, at the
    maximum navigation depth, and while another car audio source is playing.
    Opening Rewamp for browsing alone must not interrupt that source.
 
@@ -145,3 +188,24 @@ CarPlay and vehicle acceptance checks.
   in-car test. Device Hub's CarPlay connection timed out with the USB-connected
   test iPhone; a valid entitlement and successful installation do not replace
   CarPlay screen and vehicle acceptance checks.
+
+## Vehicle feedback on 2026-10-30
+
+The tester confirmed that the original CarPlay build works in the vehicle.
+Reported follow-ups were first-time download playback errors, skipping during
+those downloads, catalogue search, and playlist Play/Shuffle actions. The update
+addresses those paths; its new vehicle behaviour and Siri interaction still
+require a signed device test.
+
+- Full Flutter suite: 844 tests passed (35 focused CarPlay tests).
+- Analyzer: no findings in changed Dart source, tests and download smoke tool.
+- Native host: SDK type-check and full arm64 simulator build passed. A complete
+  Release iPhone build also compiled successfully with signing disabled.
+- Real catalogue/download/decoder smoke: first uncached selection downloaded
+  and started playback in the iOS 27 simulator. A second uncached request was
+  skipped during its download; the next track downloaded and played, while the
+  skipped selection returned cancellation without starting later.
+- Updated physical-device signing initially failed: Xcode reported no available
+  account and the cached development profile did not contain Siri. The original
+  installed CarPlay build is unaffected. Refresh the account/profile before
+  installing this update.

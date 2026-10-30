@@ -106,6 +106,7 @@ void main() {
   int? playedQueue;
   (List<TrackRecord>, int)? playedTracks;
   SearchResult? playedOnline;
+  bool? playlistShuffle;
   Completer<void>? waitForPlay;
 
   setUp(() {
@@ -118,6 +119,7 @@ void main() {
     playedQueue = null;
     playedTracks = null;
     playedOnline = null;
+    playlistShuffle = null;
     waitForPlay = null;
     browser = CarPlayBrowser(
         library: library,
@@ -132,6 +134,10 @@ void main() {
         },
         playOnline: (song) async {
           playedOnline = song;
+        },
+        playPlaylist: (tracks, shuffle) async {
+          playedTracks = (tracks, 0);
+          playlistShuffle = shuffle;
         },
         fileExists: (path) => !missing.contains(path));
   });
@@ -288,6 +294,79 @@ void main() {
     await expectLater(
         browser.browse('collection:test'), throwsA(isA<TimeoutException>()));
     expect(playedOnline, isNull);
+  });
+
+  test('playlist Play and Shuffle include the entire playlist across pages',
+      () async {
+    library.records = [track('a'), track('a', subsong: 9), track('b')];
+    final page =
+        await browser.browse('playlist:playlist-1', offset: 2, limit: 1);
+    final controls = (page['controls'] as List).cast<Map<String, Object?>>();
+    expect(controls.map((c) => c['label']), ['playAll', 'shuffle']);
+    await browser.select('playlist:playlist-1', controls[0]['id'] as String);
+    expect(playlistShuffle, false);
+    expect(playedTracks!.$1.map((t) => (t.id, t.subsongIdx)),
+        [('a', 0), ('a', 9), ('b', 0)]);
+    await browser.select('playlist:playlist-1', controls[1]['id'] as String);
+    expect(playlistShuffle, true);
+    expect(playedTracks!.$1.length, 3);
+  });
+
+  test('empty playlists have no playback actions', () async {
+    expect((await browser.browse('playlist:empty'))['controls'], isEmpty);
+  });
+
+  test('collection search retains query and scope while paging', () async {
+    await browser.browse('onlineSearch:test',
+        query: 'Hubbard', offset: 4, limit: 3);
+    expect(library.calls.single, ('onlineSearch:test', 'Hubbard', 4, 4));
+  });
+
+  test('online selection supplies a queue before downloading', () async {
+    (List<SearchResult>, int)? selected;
+    final queuedBrowser = CarPlayBrowser(
+      library: library,
+      queue: () => [],
+      queueIndex: () => -1,
+      playQueueIndex: (_) async {},
+      playTracks: (tracks, index) async {},
+      playOnline: (_) async => fail('single-track fallback'),
+      playOnlineQueue: (songs, index) async => selected = (songs, index),
+    );
+    final page = rows(await queuedBrowser.browse('collection:test', limit: 3));
+    await queuedBrowser.select('collection:test', page[1]['id'] as String);
+    expect(selected!.$1.map((s) => s.songId), ['song-0', 'song-1', 'song-2']);
+    expect(selected!.$2, 1);
+  });
+
+  test(
+      'Siri searches uncached catalogue tracks and keeps disambiguated selections',
+      () async {
+    final results = await browser.voiceSearch('Last Ninja');
+    expect(library.calls.single, ('onlineSearch', 'Last Ninja', 0, 5));
+    final token = results[2]['id'] as String;
+    await browser.voiceSearch('Other query');
+    await browser.select('voiceSearch', token);
+    expect(playedOnline!.songId, 'song-2');
+  });
+
+  test(
+      'Siri playlist shuffle uses the matched playlist and explicit shuffle action',
+      () async {
+    library.records = [track('a'), track('b')];
+    final results =
+        await browser.voiceSearch('road', playlistsOnly: true, shuffle: true);
+    expect(results.single['title'], 'Road music');
+    expect(results.single['playlist'], true);
+    expect(library.calls, isEmpty);
+    await browser.select('voiceSearch', results.single['id'] as String);
+    expect(playlistShuffle, true);
+    expect(playedTracks!.$1.map((t) => t.id), ['a', 'b']);
+  });
+
+  test('empty Siri search makes no catalogue request', () async {
+    expect(await browser.voiceSearch('  '), isEmpty);
+    expect(library.calls, isEmpty);
   });
 
   test('invalid pagination and unknown selections fail safely', () async {

@@ -10,6 +10,44 @@ import 'player_controller.dart';
 import 'rewamp_db.dart';
 import 'download_cancel.dart';
 
+/// A new selection or transport skip supersedes the pending download. The
+/// cancelled task may still unwind, but it can never clear its successor's UI.
+class CarPlayPlayback extends ChangeNotifier {
+  DownloadCancelToken? _active;
+  bool get busy => _active != null;
+  bool get ownsCurrent =>
+      _active != null && identical(_active, DownloadCancelToken.current);
+
+  Future<void> run(Future<void> Function() action) async {
+    if (ownsCurrent) return action();
+    _active?.cancel();
+    final token = DownloadCancelToken();
+    _active = token;
+    notifyListeners();
+    try {
+      await token.run(action);
+      token.throwIfCancelled();
+    } catch (_) {
+      token.throwIfCancelled(); // A superseded network error is cancellation.
+      rethrow;
+    } finally {
+      if (identical(_active, token)) {
+        _active = null;
+        notifyListeners();
+      }
+    }
+  }
+
+  void cancel() => _active?.cancel();
+
+  @override
+  void dispose() {
+    cancel();
+    _active = null;
+    super.dispose();
+  }
+}
+
 /// Now Playing uses audio_service's
 /// existing MPNowPlayingInfoCenter / MPRemoteCommandCenter integration.
 abstract class CarPlayLibrary {
@@ -60,8 +98,13 @@ class LocalCarPlayLibrary implements CarPlayLibrary {
   @override
   Future<List<SearchResult>> online(
           String source, String query, int offset, int limit) =>
-      source == 'onlineSearch'
-          ? RewampDb.search(query, offset: offset, limit: limit)
+      source.startsWith('onlineSearch')
+          ? RewampDb.search(query,
+              offset: offset,
+              limit: limit,
+              collection: source.startsWith('onlineSearch:')
+                  ? source.substring('onlineSearch:'.length)
+                  : null)
           : source.startsWith('album:')
               ? RewampDb.albumTracks(
                   albumId: source.substring('album:'.length),
@@ -128,6 +171,8 @@ class CarPlayBrowser {
     required this.playQueueIndex,
     required this.playTracks,
     required this.playOnline,
+    this.playPlaylist,
+    this.playOnlineQueue,
     bool Function(String)? fileExists,
   }) : fileExists = fileExists ?? ((path) => File(path).existsSync());
 
@@ -137,6 +182,8 @@ class CarPlayBrowser {
   final Future<void> Function(int) playQueueIndex;
   final Future<void> Function(List<TrackRecord>, int) playTracks;
   final Future<void> Function(SearchResult) playOnline;
+  final Future<void> Function(List<TrackRecord>, bool)? playPlaylist;
+  final Future<void> Function(List<SearchResult>, int)? playOnlineQueue;
   final bool Function(String) fileExists;
   final Map<String, Map<String, Future<void> Function()>> _selections = {};
   int _nextToken = 0;
@@ -161,6 +208,7 @@ class CarPlayBrowser {
     }
 
     final rows = <Map<String, Object?>>[];
+    final controls = <Map<String, Object?>>[];
     int? onlineNext;
     var alreadyPaged = false;
     if (source == 'library') {
@@ -176,11 +224,14 @@ class CarPlayBrowser {
       }
     } else if (source.startsWith('collection:') ||
         source.startsWith('album:') ||
-        source == 'onlineSearch') {
+        source.startsWith('onlineSearch')) {
       final songs = await library.online(source, query, offset, limit + 1);
       alreadyPaged = true;
       if (songs.length > limit) onlineNext = offset + limit;
-      for (final song in songs.take(limit)) {
+      final playable = songs.take(limit).toList();
+      for (var i = 0; i < playable.length; i++) {
+        final song = playable[i];
+        final index = i;
         if (!source.startsWith('album:') &&
             song.albumId != null &&
             (RewampDb.isArchiveAlbumRow(song) ||
@@ -191,8 +242,12 @@ class CarPlayBrowser {
             'source': 'album:${song.albumId}'
           });
         } else {
-          rows.add(
-              row(song.displayTitle, song.artistLabel, () => playOnline(song)));
+          rows.add(row(
+              song.displayTitle,
+              song.artistLabel,
+              () => playOnlineQueue != null
+                  ? playOnlineQueue!(playable, index)
+                  : playOnline(song)));
         }
       }
     } else if (source == 'playlists') {
@@ -230,6 +285,16 @@ class CarPlayBrowser {
             .split(RegExp(r'\s+'))
             .every(text.contains);
       }).toList();
+      if (source.startsWith('playlist:') &&
+          tracks.isNotEmpty &&
+          playPlaylist != null) {
+        for (final shuffle in [false, true]) {
+          final control = row('', null,
+              () => playPlaylist!(List<TrackRecord>.of(tracks), shuffle));
+          control['label'] = shuffle ? 'shuffle' : 'playAll';
+          controls.add(control);
+        }
+      }
       for (var i = 0; i < tracks.length; i++) {
         final index = i;
         final track = tracks[i];
@@ -244,7 +309,9 @@ class CarPlayBrowser {
       }
     }
     final page = alreadyPaged ? rows : rows.skip(offset).take(limit).toList();
-    final visible = {for (final item in page) item['id']};
+    final visible = {
+      for (final item in [...controls, ...page]) item['id']
+    };
     actions.removeWhere((token, _) => !visible.contains(token));
     final retained = _selections.putIfAbsent(source, () => {});
     retained.addAll(actions);
@@ -255,6 +322,7 @@ class CarPlayBrowser {
     if (_selections.length > 32) _selections.remove(_selections.keys.first);
     return {
       'items': page,
+      'controls': controls,
       'nextOffset': alreadyPaged
           ? onlineNext
           : offset + page.length < rows.length
@@ -268,6 +336,54 @@ class CarPlayBrowser {
     if (action == null) throw StateError('CarPlay list has changed');
     await action();
   }
+
+  /// Siri supplies recognized text; use the catalogue, including uncached
+  /// tracks. Keep the resolved action snapshot for Siri's disambiguation step.
+  Future<List<Map<String, Object?>>> voiceSearch(String query,
+      {bool playlistsOnly = false, bool shuffle = false}) async {
+    if (query.trim().isEmpty) return [];
+    final actions = <String, Future<void> Function()>{};
+    final results = <Map<String, Object?>>[];
+    if (playlistsOnly) {
+      for (final playlist in await library.playlists()) {
+        if (!playlist.name.toLowerCase().contains(query.trim().toLowerCase())) {
+          continue;
+        }
+        final token = '${_nextToken++}';
+        actions[token] = () async {
+          final tracks = (await library.tracks('playlist:${playlist.id}'))
+              .where((t) => fileExists(t.filePath) || t.onlineId != null)
+              .toList();
+          if (tracks.isEmpty) throw StateError('Playlist is empty');
+          if (playPlaylist != null) {
+            await playPlaylist!(tracks, shuffle);
+          } else {
+            await playTracks(tracks, 0);
+          }
+        };
+        results.add({'id': token, 'title': playlist.name, 'playlist': true});
+        if (results.length == 5) break;
+      }
+    } else {
+      final songs = await library.online('onlineSearch', query.trim(), 0, 5);
+      for (final song in songs) {
+        final token = '${_nextToken++}';
+        actions[token] = () => playOnline(song);
+        results.add({
+          'id': token,
+          'title': song.displayTitle,
+          'subtitle': song.artistLabel,
+          'playlist': false
+        });
+      }
+    }
+    final retained = _selections.putIfAbsent('voiceSearch', () => {});
+    retained.addAll(actions);
+    while (retained.length > 100) {
+      retained.remove(retained.keys.first);
+    }
+    return results;
+  }
 }
 
 class CarPlaySession {
@@ -278,11 +394,12 @@ class CarPlaySession {
   final CarPlayBrowser browser;
   final AppLocalizations Function() labels;
   final MethodChannel channel;
+  final playback = CarPlayPlayback();
   bool _connected = false;
   bool _disposed = false;
   Timer? _debounce;
-  (int, int)? _lastQueue;
-  DownloadCancelToken? _selectionCancel;
+  (int, int, bool, bool)? _lastQueue;
+  DownloadInfo? _currentDownload;
   bool get connected => _connected;
 
   static Future<bool> isConnected() async {
@@ -318,23 +435,29 @@ class CarPlaySession {
               query: args['query'] as String? ?? '',
               offset: args['offset'] as int? ?? 0,
               limit: args['limit'] as int? ?? 100);
+        case 'voiceSearch':
+          return browser.voiceSearch(args['query'] as String,
+              playlistsOnly: args['playlist'] == true,
+              shuffle: args['shuffle'] == true);
         case 'select':
-          if (_selectionCancel != null) {
-            throw PlatformException(code: 'busy');
-          }
-          final cancel = DownloadCancelToken();
-          _selectionCancel = cancel;
           try {
-            await cancel.run(() =>
+            await playback.run(() =>
                 browser.select(args['source'] as String, args['id'] as String));
           } on DownloadCancelledException {
             throw PlatformException(code: 'cancelled');
-          } finally {
-            _selectionCancel = null;
+          }
+          return null;
+        case 'skip':
+          try {
+            await playback.run(args['previous'] == true
+                ? controller.goPrev
+                : controller.goNext);
+          } on DownloadCancelledException {
+            throw PlatformException(code: 'cancelled');
           }
           return null;
         case 'cancel':
-          _selectionCancel?.cancel();
+          playback.cancel();
           return null;
         default:
           throw MissingPluginException('Unknown CarPlay method ${call.method}');
@@ -343,6 +466,7 @@ class CarPlaySession {
     controller.addListener(_playerChanged);
     LocalDb.instance.addListener(_changed);
     RewampDb.downloadStatus.addListener(_downloadChanged);
+    playback.addListener(_playbackChanged);
     try {
       _connected =
           await channel.invokeMethod<bool>('ready', _strings()) ?? false;
@@ -370,22 +494,42 @@ class CarPlaySession {
       'more': l.navMore,
       'cancel': l.downloadsCancel,
       'ok': l.commonOk,
-      'downloading': l.searchDownloading
+      'downloading': l.searchDownloading,
+      'playAll': l.commonPlayAll,
+      'shuffle': l.browseShuffle,
+      'next': l.carPlayNext,
+      'previous': l.carPlayPrevious,
     };
   }
 
   void _downloadChanged() {
-    if (!_connected || _disposed) return;
+    if (!_connected || _disposed || !playback.ownsCurrent) return;
     final status = RewampDb.downloadStatus.value;
+    // Global download banners also describe background prefetch. Only the
+    // currently-owned playback operation is allowed to update the car screen.
+    if (status?.error != null) return;
+    _currentDownload = status;
+    _sendDownload(_currentDownload);
+  }
+
+  void _playbackChanged() {
+    _currentDownload = null;
+    controller.setPlaybackPreparing(playback.busy);
+    _sendDownload(null);
+  }
+
+  void _sendDownload(DownloadInfo? status) {
+    if (!_connected || _disposed) return;
     unawaited(channel
         .invokeMethod<void>(
             'download',
-            status == null
+            !playback.busy
                 ? null
                 : {
-                    'title': status.label,
-                    'progress': status.progress,
-                    'error': status.error,
+                    'title': status?.label ?? labels().searchDownloading,
+                    'progress': status?.progress,
+                    'canNext': controller.canGoNext,
+                    'canPrevious': controller.canGoPrev,
                   })
         .catchError((Object e) {
       debugPrint('[carplay] download status: $e');
@@ -395,9 +539,15 @@ class CarPlaySession {
   void _playerChanged() {
     // PlayerController ticks four times a second. Only structural/metadata
     // changes cross this channel; audio_service owns transport and progress.
-    final key = (controller.queueRevision, controller.queueIdx);
+    final key = (
+      controller.queueRevision,
+      controller.queueIdx,
+      controller.canGoNext,
+      controller.canGoPrev
+    );
     if (_lastQueue == key) return;
     _lastQueue = key;
+    if (playback.busy) _sendDownload(_currentDownload);
     _changed();
   }
 
@@ -419,6 +569,8 @@ class CarPlaySession {
     controller.removeListener(_playerChanged);
     LocalDb.instance.removeListener(_changed);
     RewampDb.downloadStatus.removeListener(_downloadChanged);
+    playback.removeListener(_playbackChanged);
+    playback.dispose();
     channel.setMethodCallHandler(null);
   }
 }

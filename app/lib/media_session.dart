@@ -231,11 +231,14 @@ class RewampAudioHandler extends BaseAudioHandler {
   }
 
   void _sync() {
+    final pending = c.playbackPreparing && c.queueIdx >= 0 &&
+            c.queueIdx < c.queue.length ? c.queue[c.queueIdx] : null;
     // Publish a new MediaItem only when the track identity/metadata changes —
     // re-emitting every 250 ms tick would thrash artwork loading.
     final key = '${c.filePath}|${c.subsongIdx}|${c.fileName}|'
         '${c.currentArtist}|${c.currentAlbum}|${c.duration}|${c.artworkUrl}|'
-        '${c.currentPlatformName}|${c.currentFormatExt}';
+        '${c.currentPlatformName}|${c.currentFormatExt}|${pending?.id}|'
+        '${pending?.title}|${c.playbackPreparing}';
     if (key != _lastMediaKey) {
       _lastMediaKey = key;
       // Le plugin RÉÉCRIT `nowPlayingInfo` à chaque `setMediaItem`: on
@@ -244,7 +247,13 @@ class RewampAudioHandler extends BaseAudioHandler {
       // sur ce que le système déduit d'un dictionnaire tout neuf.
       unawaited(Future<void>.delayed(const Duration(milliseconds: 120),
           () => _pushIosPlaybackState(c.isPlaying, force: true)));
-      if (c.hasFile) {
+      if (pending != null) {
+        mediaItem.add(MediaItem(
+          id: 'carplay-pending:${pending.id ?? c.queueIdx}',
+          title: pending.title,
+          artist: pending.artist,
+        ));
+      } else if (c.hasFile) {
         mediaItem.add(MediaItem(
           id: c.currentOnlineId ?? c.filePath ?? c.fileName,
           title: c.fileName.isNotEmpty ? c.fileName : 'Unknown',
@@ -285,6 +294,7 @@ class RewampAudioHandler extends BaseAudioHandler {
       androidCompactActionIndices:
           c.canGoNext ? const [0, 1, 2] : const [0, 1],
       processingState:
+          c.playbackPreparing ? AudioProcessingState.buffering :
           c.hasFile ? AudioProcessingState.ready : AudioProcessingState.idle,
       playing: c.isPlaying,
       updatePosition: Duration(milliseconds: (c.position * 1000).round()),

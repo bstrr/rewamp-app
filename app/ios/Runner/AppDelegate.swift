@@ -3,6 +3,7 @@ import UIKit
 import AVKit
 import MediaPlayer
 import UniformTypeIdentifiers
+import Intents
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -10,6 +11,12 @@ import UniformTypeIdentifiers
   // scene, and opening the phone later must use the same player and library.
   let playbackEngine = FlutterEngine(name: "rewamp.playback", project: nil,
                                     allowHeadlessExecution: true)
+  private let mediaIntents = RewampMediaIntentHandler()
+
+  override func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
+    if intent is INPlayMediaIntent || intent is INSearchForMediaIntent { return mediaIntents }
+    return nil
+  }
 
   override func application(_ application: UIApplication,
       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
